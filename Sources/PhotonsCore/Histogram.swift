@@ -77,6 +77,12 @@ import CryptoKit
 //     belong to the working primaries are `ColorPrimaries.working.luminanceWeights` (what S1/S2/S1.7
 //     use, and what a picture-wide scene luma is in `LinearImage.statistics()`); changing them here is
 //     a separate decision because the pointer readout shares this constant.
+//
+//     **403 — luma is measured and read, but no longer painted.** The card draws R/G/B as an additive
+//     stack only (「直方图取消白色线，只绘制 RGB，RGB 重叠部分的颜色按光叠加展示」); `luma` keeps its
+//     bins, its `clippedHigh`/`clippedCeiling`/`clippedLow` (the 过白/削顶/削底 numbers) and its use in
+//     the pointer readout, so nothing in this file's counting changed — only the card's fourth outline
+//     went away.
 
 /// Scene-linear RGB, as S3 hands it to S4 — **no** transfer function, **no** headroom clamp.
 ///
