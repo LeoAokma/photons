@@ -10,6 +10,36 @@ public final class EditorWindowController: NSWindowController {
 
     public let session = CatalogSession()
     public private(set) var rootView: WorkspaceRootView!
+    private var toolWindows: [NSWindowController] = []
+
+    public static func panoramaSelectionMessage(count: Int) -> String? {
+        count == 0 ? "请先选中需要拼接的图片" : (count == 1 ? "请至少选中两张需要拼接的图片" : nil)
+    }
+
+    @objc public func panoramaAction(_ sender: Any?) {
+        let assets = session.selectedAssets
+        if let message = Self.panoramaSelectionMessage(count: assets.count) {
+            showToolMessage(message); return
+        }
+        let urls = assets.compactMap { session.fileURL(for: $0) }
+        guard urls.count == assets.count, urls.allSatisfy({ FileManager.default.isReadableFile(atPath: $0.path) }) else {
+            showToolMessage("部分原始图片离线或无法读取，请先重新连接原片。"); return
+        }
+        let controller = PanoramaWindowController(urls: urls)
+        controller.onClose = { [weak self, weak controller] in self?.toolWindows.removeAll { $0 === controller } }
+        toolWindows.append(controller); controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc public func lccAction(_ sender: Any?) {
+        let controller = LCCWindowController(urls: session.selectedAssets.compactMap { session.fileURL(for: $0) })
+        controller.onClose = { [weak self, weak controller] in self?.toolWindows.removeAll { $0 === controller } }
+        toolWindows.append(controller); controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func showToolMessage(_ message: String) {
+        let alert = NSAlert(); alert.messageText = message; alert.addButton(withTitle: "好")
+        if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+    }
 
     public init(size: NSSize = NSSize(width: 1440, height: 900)) {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: size.width, height: size.height),

@@ -1,0 +1,193 @@
+import Foundation
+import CoreGraphics
+import CoreImage
+import ImageIO
+
+public struct PanoramaFailure: LocalizedError {
+    public let message: String
+    public var errorDescription: String? { message }
+    public init(_ message: String) { self.message = message }
+}
+
+/// A token shared by the window and its serial worker. Closing the window cancels that job.
+public final class PanoramaCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    public init() {}
+    public func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    public func check() throws {
+        lock.lock(); let value = cancelled; lock.unlock()
+        if value { throw CancellationError() }
+    }
+}
+
+public struct SensorSize: Equatable, Sendable {
+    public var width: Double
+    public var height: Double
+    public var source: String
+    public init(width: Double, height: Double, source: String) {
+        self.width = width; self.height = height; self.source = source
+    }
+    public static func identify(properties: [String: Any]) -> SensorSize? {
+        let tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
+        let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
+        let model = (tiff[kCGImagePropertyTIFFModel as String] as? String ?? "").uppercased()
+        // Focal-plane resolutions describe physical pitch, unlike print DPI. Reject implausible
+        // units and dimensions; missing tags are not evidence of a 36 × 24 mm sensor.
+        let unit = (exif[kCGImagePropertyExifFocalPlaneResolutionUnit as String] as? NSNumber)?.intValue
+        let mm: Double? = unit == 2 ? 25.4 : (unit == 3 ? 10 : (unit == 4 ? 1 : (unit == 5 ? 0.001 : nil)))
+        if let mm, let xr = (exif[kCGImagePropertyExifFocalPlaneXResolution as String] as? NSNumber)?.doubleValue,
+           let yr = (exif[kCGImagePropertyExifFocalPlaneYResolution as String] as? NSNumber)?.doubleValue,
+           let w = (exif[kCGImagePropertyExifPixelXDimension as String] as? NSNumber)?.doubleValue,
+           let h = (exif[kCGImagePropertyExifPixelYDimension as String] as? NSNumber)?.doubleValue, xr > 0, yr > 0 {
+            let sw = w / xr * mm, sh = h / yr * mm
+            if (10...70).contains(sw), (10...60).contains(sh) {
+                return SensorSize(width: sw, height: sh, source: "RAW 焦平面像素密度")
+            }
+        }
+        // Hasselblad's CFV 100C data sheet: 43.8 × 32.9 mm. The actual 3FR model string also
+        // contains '/Electronic Shutter'; match the back, not the attached camera or lens.
+        if model.contains("CFV 100C") || model.contains("X2D 100C") {
+            return SensorSize(width: 43.8, height: 32.9, source: "\(model) 型号规格")
+        }
+        return nil
+    }
+}
+
+public struct PanoramaSource {
+    public let url: URL
+    public let size: CGSize
+    public let sensor: SensorSize?
+    public let camera: String
+    public let orientation: Int
+    public let temperature: Float?
+    public let tint: Float?
+    private let fileSize: Int?
+    private let modified: Date?
+    public init(url: URL) throws {
+        let identity = try url.resourceValues(forKeys:[.fileSizeKey,.contentModificationDateKey])
+        fileSize = identity.fileSize; modified = identity.contentModificationDate
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [String: Any] else {
+            throw PanoramaFailure("无法读取图片：\(url.lastPathComponent)")
+        }
+        self.url = url
+        orientation = (props[kCGImagePropertyOrientation as String] as? NSNumber)?.intValue ?? 1
+        let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
+        camera = tiff[kCGImagePropertyTIFFModel as String] as? String ?? "未知机身"
+        var identified = SensorSize.identify(properties: props)
+        if let f = CIRAWFilter(imageURL: url) {
+            f.isLensCorrectionEnabled = false
+            guard let image = f.outputImage else { throw PanoramaFailure("RAW 解码失败：\(url.lastPathComponent)") }
+            size = image.extent.size
+            temperature = f.neutralTemperature; tint = f.neutralTint
+        } else if let image = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) {
+            size = image.extent.size; temperature = nil; tint = nil
+        } else { throw PanoramaFailure("不支持这张图片：\(url.lastPathComponent)") }
+        if orientation >= 5, let s = identified {
+            identified = SensorSize(width: s.height, height: s.width, source: s.source)
+        }
+        sensor = identified
+    }
+    public func checkUnchanged() throws {
+        var fresh = url; fresh.removeAllCachedResourceValues()
+        let identity = try fresh.resourceValues(forKeys:[.fileSizeKey,.contentModificationDateKey])
+        guard identity.fileSize == fileSize, identity.contentModificationDate == modified else {
+            throw PanoramaFailure("原片已变更，请重新生成预览：\(url.lastPathComponent)")
+        }
+    }
+}
+
+public struct PanoramaOptions: Equatable {
+    public var avoidMotion = true
+    public var matchExposure = true
+    public var seamSoftness = 6.0
+    /// -1: automatic. Otherwise prefer this source through ambiguous overlap regions.
+    public var preferredSource = -1
+    public init() {}
+}
+
+public struct OpticalEstimate {
+    /// In panorama pixels, upper-left origin. Nil means the fit is underdetermined.
+    public var center: CGPoint?
+    public var confidence: Double
+    public var explanation: String
+    public var occludedEdges: [String]
+}
+
+/// The same full-resolution geometry and low-resolution ownership field are consumed by BOTH
+/// renderers. Export cannot call registration. Stored coordinates use an upper-left origin;
+/// only the Core Image compositor converts them to lower-left coordinates.
+public struct PanoramaPlan {
+    public let sources: [PanoramaSource]
+    public let origins: [CGPoint]
+    public let size: CGSize
+    public let registrationScores: [Double]
+    public let whiteBalance: (Float, Float)?
+    public var gains: [Double]
+    public var ownership: [Int16]
+    public var blendMasks: [Data] = []
+    public var maskWidth: Int
+    public var maskHeight: Int
+    public var optical: OpticalEstimate
+    public var options: PanoramaOptions
+    public var previewScale: Double
+    public var previewImages: [CIImage]
+    public var preview: CGImage?
+
+    public var megapixels: Double { size.width * size.height / 1_000_000 }
+    public func sourceRect(_ index: Int, scale: Double = 1) -> CGRect {
+        CGRect(origin: origins[index], size: sources[index].size).applying(CGAffineTransform(scaleX: scale, y: scale))
+    }
+}
+
+/// Small CPU raster for matching/photometry; final pixels stay half-float, scene-linear on the GPU.
+struct PanoramaRaster {
+    let width: Int
+    let height: Int
+    let rgba: [Float]
+    init(image: CIImage, context: CIContext, width: Int, height: Int) {
+        self.width = width; self.height = height
+        let scaled = image.transformed(by: CGAffineTransform(scaleX: Double(width) / image.extent.width,
+                                                             y: Double(height) / image.extent.height))
+        var pixels = [Float](repeating: 0, count: width * height * 4)
+        context.render(scaled, toBitmap: &pixels, rowBytes: width * 16,
+                       bounds: CGRect(x: 0, y: 0, width: width, height: height), format: .RGBAf,
+                       colorSpace: PanoramaEngine.linearSpace)
+        rgba = pixels
+    }
+    func rgb(_ x: Double, _ y: Double) -> SIMD3<Double>? {
+        guard x >= 0, y >= 0, x < Double(width), y < Double(height) else { return nil }
+        let cx = min(x, Double(width-1)), cy = min(y, Double(height-1))
+        let ix = min(width-2, Int(cx)), iy = min(height-2, Int(cy)), fx = cx - Double(ix), fy = cy - Double(iy)
+        func value(_ x: Int, _ y: Int) -> SIMD3<Double> {
+            let p = (y * width + x) * 4
+            return SIMD3(Double(rgba[p]), Double(rgba[p + 1]), Double(rgba[p + 2]))
+        }
+        return (value(ix, iy) * (1-fx) + value(ix+1, iy) * fx) * (1-fy)
+            + (value(ix, iy+1) * (1-fx) + value(ix+1, iy+1) * fx) * fy
+    }
+    var gray: GrayRaster {
+        GrayRaster(width: width, height: height, values: stride(from: 0, to: rgba.count, by: 4).map {
+            sqrt(max(0, Double(rgba[$0]) * 0.2126 + Double(rgba[$0+1]) * 0.7152 + Double(rgba[$0+2]) * 0.0722))
+        })
+    }
+}
+
+struct GrayRaster {
+    let width: Int
+    let height: Int
+    let values: [Double]
+    func sample(_ x: Double, _ y: Double) -> Double {
+        let ix = min(width-2, max(0, Int(x))), iy = min(height-2, max(0, Int(y)))
+        let fx = min(1, max(0, x-Double(ix))), fy = min(1, max(0, y-Double(iy)))
+        let p = iy * width + ix
+        return (values[p] * (1-fx) + values[p+1] * fx) * (1-fy)
+            + (values[p+width] * (1-fx) + values[p+width+1] * fx) * fy
+    }
+}
+
+func median(_ input: [Double]) -> Double {
+    guard !input.isEmpty else { return 0 }
+    let sorted = input.sorted(); return sorted[sorted.count / 2]
+}

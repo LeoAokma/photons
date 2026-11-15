@@ -45,7 +45,7 @@ public enum RawLosslessJPEG {
         }
     }
 
-    /// Encodes one tile/strip. `components` is 1 or 2 (see note 2 above); `width` is the *sample*
+    /// Encodes one tile/strip. `components` is 1…4; `width` is the *sample*
     /// width, so with two components each component row is `width / 2` samples.
     public static func encode(
         _ samples: UnsafeBufferPointer<UInt16>,
@@ -54,7 +54,7 @@ public enum RawLosslessJPEG {
         tables: [HuffmanTable],
         precision: Int = 16
     ) -> [UInt8] {
-        precondition(components == 1 || components == 2)
+        precondition((1...4).contains(components))
         precondition(tables.count == components)
         precondition(width % components == 0)
         precondition(samples.count >= width * height)
@@ -121,6 +121,10 @@ public enum RawLosslessJPEG {
                     let magnitude: Int32 = d > 0 ? d : -d
                     let category = Int(Int32.bitWidth - magnitude.leadingZeroBitCount)
                     writer.write(table.code[category], Int(table.length[category]))
+                    // In 16-bit lossless JPEG, category 16 represents -32768 by itself, with
+                    // NO following amplitude bits. Writing 16 extra bits corrupts the rest of
+                    // a tile, especially when its first sample is black (0 - 32768).
+                    if category == 16 { continue }
                     // Negative differences are signed-magnitude shifted by (2^cat - 1), per JPEG.
                     let extra = d > 0 ? d : d + (1 << category) - 1
                     writer.write(UInt32(extra) & ((1 << category) - 1), category)
@@ -177,15 +181,22 @@ public enum RawLosslessJPEG {
         for c in 0...16 where counts[c] == 0 { counts[c] = 1 }      // every category gets a code
 
         let total = Double(counts.reduce(0, +))
+        // Apple's DNG reader rejects some extremely sparse adaptive DC tables (reproduced
+        // by a constant RGB tile). A compact, fixed five-bit table is interoperable, still
+        // lossless, and only needed for these nearly constant components.
+        if Double(counts.max() ?? 0) / total > 0.98 {
+            return HuffmanTable(code: (0...16).map(UInt32.init), length: [UInt8](repeating: 5, count: 17))
+        }
         var lengths = (0...16).map { c -> Int in
             let p = Double(counts[c]) / total
             return min(16, max(1, Int((-log2(p)).rounded(.up))))
         }
 
-        // Kraft: shrink the longest code until the prefix code is not oversubscribed.
-        while lengths.reduce(0.0, { $0 + pow(2.0, -Double($1)) }) > 1.0 + 1e-12 {
-            if let longest = lengths.indices.max(by: { lengths[$0] < lengths[$1] }), lengths[longest] > 1 {
-                lengths[longest] -= 1
+        // Lengthening a code frees prefix space. Keep the sum STRICTLY below one: JPEG
+        // reserves the all-ones code for entropy padding, so a complete tree is not valid.
+        while lengths.reduce(0.0, { $0 + pow(2.0, -Double($1)) }) >= 1.0 - 1e-12 {
+            if let rare = lengths.indices.filter({ lengths[$0] < 16 }).min(by: { counts[$0] < counts[$1] }) {
+                lengths[rare] += 1
             } else {
                 break
             }

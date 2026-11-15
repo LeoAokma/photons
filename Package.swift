@@ -11,6 +11,7 @@ let package = Package(
         // Optional post-processing that writes a NEW file (AI denoise, HDR merge). No
         // dependency on PhotonsCore by design; see Sources/PhotonsExtensions/README.md.
         .library(name: "PhotonsExtensions", targets: ["PhotonsExtensions"]),
+        .library(name: "PhotonsPanorama", targets: ["PhotonsPanorama"]),
         // The UI shell lives in a library so its pure layout math and model are unit-testable;
         // `PhotonsApp` is the thin `@main` + `AppDelegate`/menu/bundle shim; a test target can depend on
         // a library, not on an executable, which is the other reason the shell lives here.
@@ -31,6 +32,7 @@ let package = Package(
         .target(name: "PhotonsCore", resources: [.copy("Kernels")]),
         .target(name: "PhotonsExport", dependencies: ["PhotonsCore"]),
         .target(name: "PhotonsExtensions"),
+        .target(name: "PhotonsPanorama", dependencies: ["PhotonsExtensions"]),
         .target(name: "PhotonsCatalog", dependencies: [
             "PhotonsCore",
             .product(name: "GRDB", package: "GRDB.swift"),
@@ -44,12 +46,13 @@ let package = Package(
         // `HDRMergeService` — the GPLv3 `hdrmerge-swift` binary is spawned as a child process by that
         // module, never linked, so this edge keeps Photons MIT.
         .target(name: "PhotonsUI", dependencies: ["PhotonsCore", "PhotonsExport", "PhotonsCatalog",
-                                                  "PhotonsExtensions"],
+                                                  "PhotonsExtensions", "PhotonsPanorama"],
                 resources: []),
         .executableTarget(name: "PhotonsApp", dependencies: ["PhotonsCore", "PhotonsExport", "PhotonsCatalog", "PhotonsUI"]),
         .testTarget(name: "PhotonsCoreTests", dependencies: ["PhotonsCore", "PhotonsExport"]),
         .testTarget(name: "PhotonsExportTests", dependencies: ["PhotonsExport", "PhotonsCore"]),
         .testTarget(name: "PhotonsExtensionsTests", dependencies: ["PhotonsExtensions"]),
+        .testTarget(name: "PhotonsPanoramaTests", dependencies: ["PhotonsPanorama"]),
         .testTarget(name: "PhotonsCatalogTests", dependencies: ["PhotonsCatalog", "PhotonsCore"]),
         .testTarget(name: "PhotonsUITests", dependencies: ["PhotonsUI", "PhotonsCatalog", "PhotonsExtensions"]),
     ],

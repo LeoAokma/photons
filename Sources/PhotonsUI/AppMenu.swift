@@ -187,6 +187,13 @@ public enum MainMenu {
         presetItem.submenu = PresetMenu(kind: .apply)
         main.addItem(presetItem)
 
+        let toolsItem = NSMenuItem()
+        main.addItem(toolsItem)
+        let tools = NSMenu(title: "工具")
+        toolsItem.submenu = tools
+        tools.addItem(withTitle: "全景拼接…", action: #selector(EditorWindowController.panoramaAction(_:)), keyEquivalent: "")
+        tools.addItem(withTitle: "LCC矫正…", action: #selector(EditorWindowController.lccAction(_:)), keyEquivalent: "")
+
         // View
         let viewItem = NSMenuItem()
         main.addItem(viewItem)
