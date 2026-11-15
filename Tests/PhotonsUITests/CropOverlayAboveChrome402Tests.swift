@@ -97,6 +97,43 @@ final class CropOverlayAboveChrome402Tests: XCTestCase {
         String(format: "(%.1f, %.1f) %.1f×%.1f", r.minX, r.minY, r.width, r.height)
     }
 
+    /// One real offscreen composite of the whole workspace (`cacheDisplay`, the same path
+    /// `HistogramCardHeightTests` / `NativeTrafficLightsTests` measure through).
+    ///
+    /// Why not `CGWindowListCreateImage`: it returns an all-zero bitmap in this process (no screen
+    /// recording permission), so it cannot tell anything. `cacheDisplay` composites the view tree the
+    /// way `draw` sees it, which is what this lane's claim is about: is the overhanging overlay
+    /// painted into the top bar's pixels or not.
+    private struct Snapshot {
+        let rep: NSBitmapImageRep
+        let scale: CGFloat
+
+        func rgb(at p: NSPoint) -> (r: Double, g: Double, b: Double) {
+            let x = Int((p.x * scale).rounded()), y = Int((p.y * scale).rounded())
+            guard x >= 0, y >= 0, x < rep.pixelsWide, y < rep.pixelsHigh,
+                  let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return (-1, -1, -1) }
+            return (Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent))
+        }
+
+        func triple(_ p: NSPoint) -> String {
+            let v = rgb(at: p)
+            return String(format: "(%.3f, %.3f, %.3f)", v.r, v.g, v.b)
+        }
+    }
+
+    private func snapshot(_ root: WorkspaceRootView) throws -> Snapshot {
+        guard let rep = root.bitmapImageRepForCachingDisplay(in: root.bounds) else {
+            throw XCTSkip("root cannot cache its display")
+        }
+        root.cacheDisplay(in: root.bounds, to: rep)
+        return Snapshot(rep: rep, scale: CGFloat(rep.pixelsWide) / root.bounds.width)
+    }
+
+    private func maxChannelDelta(_ a: (r: Double, g: Double, b: Double),
+                                 _ b: (r: Double, g: Double, b: Double)) -> Double {
+        max(abs(a.r - b.r), max(abs(a.g - b.g), abs(a.b - b.b)))
+    }
+
     /// The five faces, in `subviews` order, as one report line.
     private func inventory(_ w: Workspace) throws -> String {
         let host = try canvasHost(w)
@@ -178,8 +215,120 @@ final class CropOverlayAboveChrome402Tests: XCTestCase {
                       + "\(describe(glassOverCanvas))（必须为 0 高）")
     }
 
-    // MARK: - ② the filmstrip plate
+    // MARK: - ①b the pixels: the top bar really is opaque over the overhang
 
+    /// ①b — ① 的索引关系只证明「顺序对」。这条证明**屏幕上真的看不见**：越界 overlay 现在压在
+    /// `headerGlass`（`.headerView` / `.behindWindow` 的半透明采样层）**与** `topBar`（不填底色）之下，
+    /// 两者自身都不遮挡。所以唯一能证明遮挡成立的是像素：整窗离屏合成一帧，
+    /// 在三条带上读实测 RGB，并把这三条带与 `.aqua` / `.darkAqua` 两个外观各测一遍。
+    ///
+    ///   · a 带：顶栏那条里、越界 overlay 与 `topBar` 交集内部，**避开所有控件与描边**的纯背景列；
+    ///   · b 带：顶栏里同一 `y`、交集之外（overlay 没画到）的同宽纯背景列；
+    ///   · c 带：红绿灯所在那一行的三颗按钮之间的空白。
+    ///
+    /// 判据 a↔b 差 ≤ 0.06（同一条顶栏的同一行背景，overlay 在不在必须看不出来）；c 带不许偏青蓝，
+    /// 且与 b 带差 ≤ 0.06。两条都有区分力，实测见 ⑧c：把 `headerGlass` 沉回数组最前（最底层）后
+    /// aqua 的 |Δa−b| = 0.4481、darkAqua = 0.0923，两外观都红；本单顺序下两外观都是 0.0000。
+    func testTheOverhangIsActuallyOpaqueUnderTheTopBar() throws {
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let w = try makeWorkspace()
+            w.window.appearance = NSAppearance(named: appearanceName)
+            w.root.layoutSubtreeIfNeeded()
+            CropUITestSupport.pump(0.05)
+
+            XCTAssertTrue(CropUITestSupport.openCropTool(w.loupe, w.session))
+            CropUITestSupport.pump(0.05)
+            // Control frame **before** the draft moves: the same bar row, nothing overhanging.
+            w.root.layoutSubtreeIfNeeded()
+            w.window.displayIfNeeded()
+            let control = try snapshot(w.root)
+
+            // The draft of ① but reaching **left as well**, so the overhang also crosses the
+            // traffic-light end of the bar (`x < 88`): the intersection with `topBar` then starts at
+            // x 0, which is where the traffic lights live.
+            w.loupe.cropTool.clampsFrameToView = false
+            w.loupe.cropTool.draft.crop = CropRect(left: -0.55, top: -0.35, right: 0.80, bottom: 0.75)
+            w.loupe.refreshCropTool()
+            w.root.layoutSubtreeIfNeeded()
+            CropUITestSupport.pump(0.10)
+            w.window.displayIfNeeded()
+
+            let overlay = w.loupe.cropOverlayViewForAudit
+            let layout = try XCTUnwrap(w.loupe.cropOverlayLayoutForTesting, "no frame drawn")
+            let drawnInRoot = overlay.convert(drawnRect(layout), to: w.root)
+            let bar = w.root.topBar.frame
+            let inter = drawnInRoot.intersection(bar)
+            XCTAssertFalse(inter.isNull, "①b 前提：越界部分必须真的压在顶栏上")
+
+            let shot = try snapshot(w.root)
+            // A column inside the intersection that is plain bar background: the bar's own controls
+            // end at `sortButton.frame.maxX` (~452) and the status cluster starts at 1425, so
+            // 460…1400 is bare. 700 is the column `NativeTrafficLightsTests` also measures.
+            let yInBar = inter.minY + bar.height / 2          // middle of the bar row
+            let insideX = max(inter.minX + 4, 700)
+            let outsideX = min(inter.maxX + 40, bar.maxX - 20)
+            XCTAssertTrue(inter.minX <= insideX && insideX <= inter.maxX,
+                          "①b 前提：a 带 x=\(insideX) 必须落在交集 \(describe(inter)) 内")
+            XCTAssertFalse(inter.minX <= outsideX && outsideX <= inter.maxX,
+                           "①b 前提：b 带 x=\(outsideX) 必须在交集之外")
+            // The traffic-light row: the gap between the mini and the zoom button (they are at
+            // x 32…46 and 55…69 in this window), i.e. x = 50, and the gap before `close` (x < 9).
+            let lightY = try XCTUnwrap(w.root.trafficLightCentreY(), "no traffic-light centre")
+            let lightGapX: CGFloat = 50
+
+            let a = shot.rgb(at: NSPoint(x: insideX, y: yInBar))
+            let b = shot.rgb(at: NSPoint(x: outsideX, y: yInBar))
+            let c = shot.rgb(at: NSPoint(x: lightGapX, y: lightY))
+            // The same three points on the control frame (no overhang at all).
+            let a0 = control.rgb(at: NSPoint(x: insideX, y: yInBar))
+            let c0 = control.rgb(at: NSPoint(x: lightGapX, y: lightY))
+
+            let abDelta = maxChannelDelta(a, b)
+            let abControlDelta = maxChannelDelta(a, a0)
+            let cbDelta = maxChannelDelta(c, b)
+            let cc0Delta = maxChannelDelta(c, c0)
+            let cIsCyan = c.b <= max(c.r, c.g) + 0.08
+
+            print("""
+            402 ①b [\(appearanceName.rawValue)] · 交集 \(describe(inter)) · \
+            a-band (\(Int(insideX)),\(Int(yInBar))) \(shot.triple(NSPoint(x: insideX, y: yInBar))) · \
+            b-band (\(Int(outsideX)),\(Int(yInBar))) \(shot.triple(NSPoint(x: outsideX, y: yInBar))) · \
+            |Δa−b| \(String(format: "%.4f", abDelta)) · \
+            c-band (\(Int(lightGapX)),\(Int(lightY))) \(shot.triple(NSPoint(x: lightGapX, y: lightY))) · \
+            |Δc−b| \(String(format: "%.4f", cbDelta)) · c 不偏青蓝? \(cIsCyan) · \
+            对照(无越界) a \(control.triple(NSPoint(x: insideX, y: yInBar))) c \
+            \(control.triple(NSPoint(x: lightGapX, y: lightY))) · \
+            |Δa−a0| \(String(format: "%.4f", abControlDelta)) |Δc−c0| \(String(format: "%.4f", cc0Delta))
+            """)
+
+            // ①b-1 the bar row: the overhang must not be visible.
+            XCTAssertLessThanOrEqual(abDelta, 0.06,
+                                     "\(appearanceName.rawValue): 顶栏里 overlay 越界那一段与没越界那一段差 "
+                                     + "\(String(format: "%.4f", abDelta)) > 0.06 —— a \(shot.triple(NSPoint(x: insideX, y: yInBar)))"
+                                     + " vs b \(shot.triple(NSPoint(x: outsideX, y: yInBar)))")
+            // and it must not have changed at all vs the no-overhang frame.
+            XCTAssertLessThanOrEqual(abControlDelta, 0.06,
+                                     "\(appearanceName.rawValue): 画上越界 overlay 之后顶栏那段像素变了 "
+                                     + "\(String(format: "%.4f", abControlDelta))："
+                                     + "\(control.triple(NSPoint(x: insideX, y: yInBar))) → \(shot.triple(NSPoint(x: insideX, y: yInBar)))")
+            // ①b-2 the traffic-light row: no crop-stroke colour bleeding in.
+            XCTAssertTrue(cIsCyan,
+                          "\(appearanceName.rawValue): 红绿灯那一行偏青蓝，落到 \(shot.triple(NSPoint(x: lightGapX, y: lightY)))"
+                          + "（r \(String(format: "%.3f", c.r)) g \(String(format: "%.3f", c.g)) b \(String(format: "%.3f", c.b))）")
+            XCTAssertLessThanOrEqual(cbDelta, 0.06,
+                                     "\(appearanceName.rawValue): 红绿灯那一行与顶栏背景差 "
+                                     + String(format: "%.4f", cbDelta) + " > 0.06")
+            XCTAssertLessThanOrEqual(cc0Delta, 0.06,
+                                     "\(appearanceName.rawValue): 红绿灯那一行被 overlay 改了 "
+                                     + "\(String(format: "%.4f", cc0Delta))")
+
+            w.window.appearance = nil
+            for editor in editors { editor.window?.close() }
+            editors.removeAll()
+        }
+    }
+
+    // MARK: - ② the filmstrip plate
     /// ② — the filmstrip has a real plate: an `NSVisualEffectView` added **after** `canvasHost` (so it
     /// covers the overhang) and **before** `filmstripController.view` (so the thumbnails are on top),
     /// with exactly the strip's frame, `.underWindowBackground` / `.behindWindow`.
