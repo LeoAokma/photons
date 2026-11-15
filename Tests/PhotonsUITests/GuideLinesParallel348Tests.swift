@@ -604,6 +604,279 @@ final class GuideLinesParallel348Tests: XCTestCase {
                                  "348 ⑨② 写了 straighten 才绿")
     }
 
+    // MARK: - 400: 孤线（一横一竖 / 一横两竖 / 两横一竖）真的进了方程
+
+    /// 400's own picture: 6000 × 4000, every line `0.8W` long, each turned about **its own midpoint**
+    /// so the fixture says nothing about where the frame's centre is.
+    private let loneSource = ImageSize(width: 6000, height: 4000)
+
+    private func loneTurned(_ segment: (CGPoint, CGPoint), _ degrees: Double) -> (CGPoint, CGPoint) {
+        let pivot = CGPoint(x: (segment.0.x + segment.1.x) / 2,
+                            y: (segment.0.y + segment.1.y) / 2)
+        let radians = degrees * .pi / 180
+        func turn(_ p: CGPoint) -> CGPoint {
+            let x = Double(p.x - pivot.x), y = Double(p.y - pivot.y)
+            return CGPoint(x: x * cos(radians) - y * sin(radians) + Double(pivot.x),
+                           y: x * sin(radians) + y * cos(radians) + Double(pivot.y))
+        }
+        return (turn(segment.0), turn(segment.1))
+    }
+
+    private func loneVertical(at x: Double) -> (CGPoint, CGPoint) {
+        let w = Double(loneSource.width), h = Double(loneSource.height), length = 0.8 * w
+        return (CGPoint(x: x * w, y: 0.5 * h - length / 2),
+                CGPoint(x: x * w, y: 0.5 * h + length / 2))
+    }
+
+    private func loneHorizontal(at y: Double) -> (CGPoint, CGPoint) {
+        let w = Double(loneSource.width), h = Double(loneSource.height), length = 0.8 * w
+        return (CGPoint(x: 0.5 * w - length / 2, y: y * h),
+                CGPoint(x: 0.5 * w + length / 2, y: y * h))
+    }
+
+    private func loneLines(_ segments: [(CGPoint, CGPoint)]) -> [GuideLine] {
+        segments.map { segment in
+            let a = angle(segment.0, segment.1)
+            return GuideLine(a: segment.0, b: segment.1, viewAngle: a,
+                             axis: GuideLinesSolve.axis(forFoldedAngle: a))
+        }
+    }
+
+    private func loneFit(_ segments: [(CGPoint, CGPoint)],
+                         current: PerspectiveMap = PerspectiveMap(vertical: 0, horizontal: 0),
+                         straighten: Double = 0) -> GuideLineFit {
+        GuideLinesSolve.fit(lines: loneLines(segments), current: current, source: loneSource,
+                            straightenDegrees: straighten)
+    }
+
+    private func loneDeviations(_ segments: [(CGPoint, CGPoint)], _ solution: GuideLineSolution) -> [Double] {
+        loneLines(segments).map {
+            GuideLinesSolve.deviation(of: $0, source: loneSource, vertical: solution.vertical,
+                                      horizontal: solution.horizontal,
+                                      straightenDegrees: solution.straighten)
+        }
+    }
+
+    /// §5.6① — 一横一竖 is now **solved**, not silently accepted: both lines land on their own axes,
+    /// and the turn stays small because the answer is the least-deforming point of the family.
+    func testOneVerticalPlusOneHorizontalIsNowSolved() throws {
+        let segments = [loneTurned(loneVertical(at: 0.2), -3), loneTurned(loneHorizontal(at: 0.25), 3)]
+        let fit = loneFit(segments)
+        let solution = try XCTUnwrap(fit.solution,
+                                     "400 ① 一横一竖必须解出来：\(String(describing: fit.failure))")
+        let deviations = loneDeviations(segments, solution)
+        let deformation = abs(solution.vertical) + abs(solution.horizontal)
+        print(String(format: "400 ① 1V1H: v %+.4f · h %+.4f · s %+.4f° · |v|+|h| %.2f · "
+                     + "两线偏差 %@ · %d 次迭代",
+                     solution.vertical, solution.horizontal, solution.straighten, deformation,
+                     deviations.map { String(format: "%+.2e", $0) }.joined(separator: " / "),
+                     solution.iterations))
+
+        XCTAssertLessThanOrEqual(abs(deviations[0]), 0.05, "400 ① 竖线必须归到 90°")
+        XCTAssertLessThanOrEqual(abs(deviations[1]), 0.05, "400 ① 横线必须归到 0°")
+        XCTAssertLessThanOrEqual(abs(solution.straighten), 3.5, "400 ① 摆正应当很小（改变最小）")
+        XCTAssertLessThanOrEqual(deformation, 130, "400 ① 变形量 |v|+|h| ≤ 130")
+        XCTAssertEqual(solution.axes, [.vertical, .horizontal], "400 ① 两个轴都进方程")
+    }
+
+    /// §5.6② — the answer is the **least-deforming** point of the one-dimensional set, not just any
+    /// point on it: three other turns solve just as exactly and all of them deform more.
+    func testOneVerticalPlusOneHorizontalPicksTheLeastDeformingPoint() throws {
+        let segments = [loneTurned(loneVertical(at: 0.2), -3), loneTurned(loneHorizontal(at: 0.25), 3)]
+        let lines = loneLines(segments)
+        let solution = try XCTUnwrap(loneFit(segments).solution, "400 ② 先解出最优解")
+        let best = abs(solution.vertical) + abs(solution.horizontal)
+
+        var others: [String] = []
+        for rotation in [-8.0, 0.0, 5.0] {
+            let point = try XCTUnwrap(GuideLinesSolve.lonePoint(lines: lines,
+                                                                current: PerspectiveMap(vertical: 0,
+                                                                                        horizontal: 0),
+                                                                source: loneSource, at: rotation),
+                                      "400 ② s = \(rotation)° 也应当有解（解集是一维的）")
+            let deformation = abs(point.vertical) + abs(point.horizontal)
+            others.append(String(format: "s %+.1f° → v %+.1f h %+.1f · |v|+|h| %.2f",
+                                 rotation, point.vertical, point.horizontal, deformation))
+            XCTAssertGreaterThan(deformation, best,
+                                 "400 ② s = \(rotation)° 的变形必须大于最优解")
+        }
+        print(String(format: "400 ② 最优 s %+.3f° |v|+|h| %.2f；解集上另三点:\n  %@",
+                     solution.straighten, best, others.joined(separator: "\n  ")))
+    }
+
+    /// §5.6③ — 两横一竖 is a square system (3 rows, 3 unknowns): the fit must recover the document's
+    /// **true** `(v, h, s)` from lines drawn to be exactly on their axes at that value.
+    func testTwoVerticalsPlusOneHorizontalSolvesAllThree() throws {
+        let truth = (vertical: -120.0, horizontal: 80.0, straighten: 3.5)
+        let segments = truthSegments(truth, axes: [.vertical, .vertical, .horizontal])
+        let fit = loneFit(segments)
+        let solution = try XCTUnwrap(fit.solution, "400 ③ 2V1H 必须解出来：\(String(describing: fit.failure))")
+        let deviations = loneDeviations(segments, solution)
+        print(String(format: "400 ③ 2V1H 真值 (%+.1f, %+.1f, %+.1f°) → 解 (%+.6f, %+.6f, %+.6f°) · "
+                     + "三条偏差 %@ · |v|+|h| %.1f",
+                     truth.vertical, truth.horizontal, truth.straighten,
+                     solution.vertical, solution.horizontal, solution.straighten,
+                     deviations.map { String(format: "%+.1e", $0) }.joined(separator: " / "),
+                     abs(solution.vertical) + abs(solution.horizontal)))
+
+        XCTAssertEqual(solution.vertical, truth.vertical, accuracy: 0.01, "400 ③ v 还原")
+        XCTAssertEqual(solution.horizontal, truth.horizontal, accuracy: 0.01, "400 ③ h 还原")
+        XCTAssertEqual(solution.straighten, truth.straighten, accuracy: 0.01, "400 ③ s 还原")
+        XCTAssertLessThanOrEqual(abs(deviations[0]), 0.05, "400 ③ 竖 1")
+        XCTAssertLessThanOrEqual(abs(deviations[1]), 0.05, "400 ③ 竖 2")
+        XCTAssertLessThanOrEqual(abs(deviations[2]), 0.05, "400 ③ 横")
+        XCTAssertLessThanOrEqual(abs(solution.vertical) + abs(solution.horizontal), 900,
+                                 "400 ③ 在合力预算内")
+        XCTAssertNotEqual(solution.horizontal, 0, accuracy: 1e-9, "400 ③ h 真的被解了（不是 348 的 0）")
+    }
+
+    /// §5.6④ — the mirror shape: 一竖两横, same square system, same exact recovery.
+    func testOneVerticalPlusTwoHorizontalsSolvesAllThree() throws {
+        let truth = (vertical: -120.0, horizontal: 80.0, straighten: 3.5)
+        let segments = truthSegments(truth, axes: [.vertical, .horizontal, .horizontal])
+        let fit = loneFit(segments)
+        let solution = try XCTUnwrap(fit.solution, "400 ④ 1V2H 必须解出来：\(String(describing: fit.failure))")
+        let deviations = loneDeviations(segments, solution)
+        print(String(format: "400 ④ 1V2H 真值 (%+.1f, %+.1f, %+.1f°) → 解 (%+.6f, %+.6f, %+.6f°) · "
+                     + "三条偏差 %@",
+                     truth.vertical, truth.horizontal, truth.straighten,
+                     solution.vertical, solution.horizontal, solution.straighten,
+                     deviations.map { String(format: "%+.1e", $0) }.joined(separator: " / ")))
+
+        XCTAssertEqual(solution.vertical, truth.vertical, accuracy: 0.01, "400 ④ v 还原")
+        XCTAssertEqual(solution.horizontal, truth.horizontal, accuracy: 0.01, "400 ④ h 还原")
+        XCTAssertEqual(solution.straighten, truth.straighten, accuracy: 0.01, "400 ④ s 还原")
+        XCTAssertLessThanOrEqual(max(abs(deviations[0]), abs(deviations[1]), abs(deviations[2])), 0.05,
+                                 "400 ④ 三条线都归轴")
+        XCTAssertNotEqual(solution.vertical, 0, accuracy: 1e-9, "400 ④ v 真的被解了（不是 348 的 0）")
+    }
+
+    /// §5.6⑤ — **2 横 2 竖 is untouched**: same input, the same `(v, h)` to the last bit, and `s` is
+    /// still 348's post-hoc 「上一值 − mean(各组平均偏角)」. This is the hard boundary: four rows over
+    /// three unknowns would let the turn eat the residual that 348 proves is zero.
+    func testTwoPlusTwoIsUnchangedBitForBit() throws {
+        let (v, h) = eightDegreeFixture()
+        let verticalSegs = warpPair(vertical: v, horizontal: h, axis: .vertical)
+        let horizontalSegs = warpPair(vertical: v, horizontal: h, axis: .horizontal)
+        let four = guideLines(verticalSegs) + guideLines(horizontalSegs)
+
+        let shipped = try XCTUnwrap(GuideLinesSolve.fit(lines: four,
+                                                        current: PerspectiveMap(vertical: 0, horizontal: 0),
+                                                        source: source, straightenDegrees: 0).solution,
+                                    "400 ⑤ 2 竖 + 2 横 照旧要解出来")
+        // Mode I's own entry, on the same input — the comparison the acceptance asks for.
+        let modeOne = try XCTUnwrap(GuideLinesSolve.fitPairwise(lines: four,
+                                                               current: PerspectiveMap(vertical: 0, horizontal: 0),
+                                                               source: source,
+                                                               straightenDegrees: 0).solution,
+                                    "400 ⑤ 模式 I 照旧要解出来")
+        // 348's rule, recomputed here: s = previous − mean over groups of the group's mean deviation.
+        let deviations = four.map {
+            GuideLinesSolve.deviation(of: $0, source: source, vertical: modeOne.vertical,
+                                      horizontal: modeOne.horizontal, straightenDegrees: 0)
+        }
+        let byAxis = GuideLinesSolve.groups(of: four)
+        var turns: [Double] = []
+        for group in byAxis {
+            turns.append(-group.indices.reduce(0.0) { $0 + deviations[$1] } / Double(group.indices.count))
+        }
+        let expectedTurn = turns.isEmpty ? 0 : turns.reduce(0, +) / Double(turns.count)
+
+        print(String(format: "400 ⑤ 2 竖 + 2 横: fit (v %.17g, h %.17g, s %.17g) · 模式 I (v %.17g, h %.17g) "
+                     + "· 348 的摆正公式 %+.17g",
+                     shipped.vertical, shipped.horizontal, shipped.straighten,
+                     modeOne.vertical, modeOne.horizontal, expectedTurn))
+
+        XCTAssertEqual(shipped.vertical, modeOne.vertical, accuracy: 1e-12, "400 ⑤ v 逐位不变")
+        XCTAssertEqual(shipped.horizontal, modeOne.horizontal, accuracy: 1e-12, "400 ⑤ h 逐位不变")
+        XCTAssertEqual(shipped.straighten, expectedTurn, accuracy: 1e-12,
+                       "400 ⑤ s 仍是 348 的公式（不进未知数）")
+        XCTAssertEqual(shipped.straighten, modeOne.straighten, accuracy: 1e-12, "400 ⑤ s 与模式 I 相同")
+    }
+
+    /// §5.6⑥ — 「不对旋转做要求」: two lines leaning the **same** +3° are cured by the turn alone.
+    /// The solver has to prefer `v = h = 0, s = −3°` because moving the turn does not raise `|v|+|h|`.
+    func testTheTurnIsPreferredOverPerspectiveWhenOneTurnSuffices() throws {
+        let segments = [loneTurned(loneVertical(at: 0.2), 3), loneTurned(loneHorizontal(at: 0.25), 3)]
+        let solution = try XCTUnwrap(loneFit(segments).solution, "400 ⑥ 同号同值应当解出来")
+        let deviations = loneDeviations(segments, solution)
+        print(String(format: "400 ⑥ 两线都 +3°: v %+.6f · h %+.6f · s %+.6f° · 偏差 %@ · %d 次迭代",
+                     solution.vertical, solution.horizontal, solution.straighten,
+                     deviations.map { String(format: "%+.1e", $0) }.joined(separator: " / "),
+                     solution.iterations))
+        XCTAssertLessThanOrEqual(abs(solution.vertical), 0.05, "400 ⑥ 旋转就够，v 不该动")
+        XCTAssertLessThanOrEqual(abs(solution.horizontal), 0.05, "400 ⑥ 旋转就够，h 不该动")
+        XCTAssertEqual(solution.straighten, -3, accuracy: 0.05, "400 ⑥ 一圈 −3° 就够")
+        XCTAssertLessThanOrEqual(max(abs(deviations[0]), abs(deviations[1])), 0.05,
+                                 "400 ⑥ 两条线都归轴")
+    }
+
+    /// §5.6「诚实的失败」+ §3⑤ — a horizontal drawn on the mid-line has almost no `h` lever
+    /// (measured: 0.0012°/unit, so 30° would need h ≈ 24933); with 30° of lean one turn cannot serve
+    /// both lines either. The fit must **not** claim success, and its reason has to be one of the two
+    /// refusals the card knows.
+    func testALoneLineTooCloseToTheCentreIsRefusedHonestly() throws {
+        let segments = [loneTurned(loneVertical(at: 0.2), -3), loneTurned(loneHorizontal(at: 0.48), 30)]
+        let fit = loneFit(segments)
+        let lines = loneLines(segments)
+
+        // The h the horizontal asks for, first order about (0, 0, 0) — printed, and the test's own
+        // 「物理够不到」 evidence: it is far outside the ±200 travel, let alone the pair's 900 budget.
+        let step = 0.5
+        func deviation(vertical: Double, horizontal: Double) -> Double {
+            GuideLinesSolve.deviation(of: lines[1], source: loneSource, vertical: vertical,
+                                      horizontal: horizontal, straightenDegrees: 0)
+        }
+        let slope = (deviation(vertical: 0, horizontal: step)
+                     - deviation(vertical: 0, horizontal: -step)) / (2 * step)
+        let needed = -deviation(vertical: 0, horizontal: 0) / slope
+        print(String(format: "400 ⑦ 横线在 y = 0.48H：残差 %+.4f° · ∂/∂h %+.6f°/单位 → 需要 h %+.1f "
+                     + "（行程 ±%.0f）· 结果 %@ · 实测 %.4f°",
+                     deviation(vertical: 0, horizontal: 0), slope, needed, PerspectiveMap.limit,
+                     fit.failure?.rawValue ?? "solved", fit.measuredWorstPairwise ?? .nan))
+
+        if let solution = fit.solution {
+            XCTAssertGreaterThan(fit.measuredWorstPairwise ?? 0, 0.05,
+                                 "400 ⑦ 不许谎报成功：解出来了就必须实测残差 > 0.05°")
+            _ = solution
+        } else {
+            XCTAssertTrue(fit.failure == .outOfRange || fit.failure == .inconsistent,
+                          "400 ⑦ 原因必须是行程/矛盾（实际 \(String(describing: fit.failure))）")
+            XCTAssertGreaterThanOrEqual(abs(needed), PerspectiveMap.limit,
+                                        "400 ⑦ 这一档确实是物理够不到（h 杠杆 ≈ 0.0012°/单位）")
+        }
+    }
+
+    /// The geometry §5.6③④ uses: `axes` lines that are **exactly** on their axes at `truth`, i.e. the
+    /// inverse images of the ideal frame segments under `P(truth) · R(truth)`.
+    private func truthSegments(_ truth: (vertical: Double, horizontal: Double, straighten: Double),
+                               axes: [GuideLineAxis]) -> [(CGPoint, CGPoint)] {
+        let w = Double(loneSource.width), h = Double(loneSource.height)
+        let ideal: [(CGPoint, CGPoint)]
+        switch axes {
+        case [.vertical, .vertical, .horizontal]:
+            ideal = [(CGPoint(x: 0.2 * w, y: 0), CGPoint(x: 0.2 * w, y: h)),
+                     (CGPoint(x: 0.8 * w, y: 0), CGPoint(x: 0.8 * w, y: h)),
+                     (CGPoint(x: 0, y: 0.25 * h), CGPoint(x: w, y: 0.25 * h))]
+        default:
+            ideal = [(CGPoint(x: 0.2 * w, y: 0), CGPoint(x: 0.2 * w, y: h)),
+                     (CGPoint(x: 0, y: 0.25 * h), CGPoint(x: w, y: 0.25 * h)),
+                     (CGPoint(x: 0, y: 0.8 * h), CGPoint(x: w, y: 0.8 * h))]
+        }
+        let map = PerspectiveMap(vertical: truth.vertical, horizontal: truth.horizontal)
+        let radians = truth.straighten * .pi / 180
+        let cx = w / 2, cy = h / 2
+        func sourcePoint(_ p: CGPoint) -> CGPoint {
+            // Undo the turn, then the keystone: the composition the fit measures through.
+            let x = Double(p.x) - cx, y = Double(p.y) - cy
+            let rx = x * cos(-radians) - y * sin(-radians) + cx
+            let ry = x * sin(-radians) + y * cos(-radians) + cy
+            let q = map.inverse(x: rx / w, y: ry / h)
+            return CGPoint(x: q.x * w, y: q.y * h)
+        }
+        return ideal.map { (sourcePoint($0.0), sourcePoint($0.1)) }
+    }
+
     // MARK: - the 337 fixture generators (same bisection, same numbers)
 
     private func unWarp(_ map: PerspectiveMap, _ p: CGPoint) -> CGPoint {
