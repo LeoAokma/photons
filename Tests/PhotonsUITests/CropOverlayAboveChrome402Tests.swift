@@ -359,6 +359,33 @@ final class CropOverlayAboveChrome402Tests: XCTestCase {
         hidden \(backdrop.isHidden) · canvas \(describe(host.frame))
         """)
 
+        // The overhang the user reported ("胶片条的背景上"): a crop frame whose bottom leaves the
+        // canvas' bottom edge, so it crosses the strip's rect. Both facts are required — the overhang
+        // really exists (the user accepts it: 「超出画布边界没问题」) **and** the plate is between it
+        // and the window (`plate > canvas`, asserted below).
+        XCTAssertTrue(CropUITestSupport.openCropTool(w.loupe, w.session))
+        CropUITestSupport.pump(0.05)
+        w.loupe.cropTool.clampsFrameToView = false
+        w.loupe.cropTool.draft.crop = CropRect(left: 0.12, top: 0.10, right: 0.80, bottom: 1.45)
+        w.loupe.refreshCropTool()
+        w.root.layoutSubtreeIfNeeded()
+        CropUITestSupport.pump(0.05)
+
+        let overlay = w.loupe.cropOverlayViewForAudit
+        let layout = try XCTUnwrap(w.loupe.cropOverlayLayoutForTesting, "no frame drawn")
+        let drawnInRoot = overlay.convert(drawnRect(layout), to: w.root)
+        let stripOverlap = drawnInRoot.intersection(plateFrame)
+        print("""
+        402 ② · 越界到胶片条 · draft bottom 1.45 · drawn(in root) \(describe(drawnInRoot)) · \
+        plate \(describe(plateFrame)) · 交集 \(describe(stripOverlap)) (null=\(stripOverlap.isNull)) · \
+        overlay 越出画布下沿 \(String(format: "%.1f", drawnInRoot.maxY - host.frame.maxY)) pt
+        """)
+        XCTAssertGreaterThan(drawnInRoot.maxY, host.frame.maxY,
+                             "② 前提：框必须越出画布下边界，实际 \(describe(drawnInRoot)) vs 画布下沿 \(host.frame.maxY)")
+        XCTAssertFalse(stripOverlap.isNull, "② 前提：越界部分必须真的压在胶片条矩形上")
+        XCTAssertGreaterThan(stripOverlap.width, 1, "② 越界的那一块太窄，说明不了遮挡")
+        XCTAssertGreaterThan(stripOverlap.height, 1, "② 越界的那一块太窄，说明不了遮挡")
+
         XCTAssertGreaterThan(plate, canvas,
                              "② 底板在画布之下（filmstripBackdrop[\(plate)] ≤ canvasHost[\(canvas)]），"
                              + "越界的 overlay 仍会画到胶片条那块")
