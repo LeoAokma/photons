@@ -2,6 +2,8 @@ import Foundation
 import CoreGraphics
 import CoreImage
 import ImageIO
+import UniformTypeIdentifiers
+import PhotonsExtensions
 
 public struct PanoramaFailure: LocalizedError {
     public let message: String
@@ -62,6 +64,7 @@ public struct PanoramaSource {
     public let orientation: Int
     public let temperature: Float?
     public let tint: Float?
+    public let isRAW:Bool
     private let fileSize: Int?
     private let modified: Date?
     public init(url: URL) throws {
@@ -72,11 +75,12 @@ public struct PanoramaSource {
             throw PanoramaFailure("无法读取图片：\(url.lastPathComponent)")
         }
         self.url = url
+        isRAW=CGImageSourceGetType(src).flatMap {UTType($0 as String)}?.conforms(to:.rawImage) == true
         orientation = (props[kCGImagePropertyOrientation as String] as? NSNumber)?.intValue ?? 1
         let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
         camera = tiff[kCGImagePropertyTIFFModel as String] as? String ?? "未知机身"
         var identified = SensorSize.identify(properties: props)
-        if let f = CIRAWFilter(imageURL: url) {
+        if isRAW, let f = CIRAWFilter(imageURL: url) {
             f.isLensCorrectionEnabled = false
             guard let image = f.outputImage else { throw PanoramaFailure("RAW 解码失败：\(url.lastPathComponent)") }
             size = image.extent.size
@@ -161,7 +165,8 @@ public struct PanoramaPlan {
     public var lccState: PanoramaLCCState?
     public var originalPreviewImages: [CIImage]?
     public var lccLinearPreviewImages: [CIImage]?
-    public var lccWhiteBalance=LCCWhiteBalanceTransform()
+    public var lccRawPreviews:[CameraMosaic?]?
+    public var lccFlatPreviews:[CameraMosaic?]?
     public var outputSize: CGSize { lccState?.cropRect?.size ?? size }
 
     public var megapixels: Double { size.width * size.height / 1_000_000 }

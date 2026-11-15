@@ -36,7 +36,7 @@ public enum LCCPositionSolver {
                 progress("读取已配对白板 \(flats+1)…")
                 let source=try PanoramaSource(url:pair.flat)
                 guard LCCInspector.incompatibility(scene:plan.sources[i],flat:source)==nil else {continue}
-                image=try LCCProfileBuilder.linearImage(source:source,scale:256/source.size.width);flats += 1
+                image=field.isCameraSpace ? LCCCameraPipeline.cameraImage(try LCCCameraPipeline.read(source,maxDimension:512)):try LCCProfileBuilder.linearImage(source:source,scale:256/source.size.width);flats += 1
             } else {
                 guard let images=plan.lccLinearPreviewImages else {throw PanoramaFailure("请先准备 LCC 预览。")}
                 image=images[i]
@@ -53,7 +53,7 @@ public enum LCCPositionSolver {
         progress(useFlats ? "用配对白板的红移、暗角匹配镜头 Profile…":"从场景红移、暗角估计中心（低置信度）…")
         let result=try search(observations:observations,xRange:x0...x1,yRange:y0...y1,flat:useFlats,cancellation:cancellation)
         var explanation=useFlats
-            ? String(format:"依据 %d 张已配对白板解算；匹配残差 %.1f%%。仍请预览核对。白板仅用于定位，像素校正仍来自镜头 Profile。",flats,result.error*100)
+            ? String(format:"依据 %d 张已配对白板解算；匹配残差 %.1f%%。仍请预览核对。白板用于定位与校正后的白平衡测量，空间增益来自镜头 Profile。",flats,result.error*100)
             : "仅依据场景红移与暗角估计，可信度较低：天空、建筑颜色与照明可能干扰，请预览核对，已知机身读数优先。"
         if min(result.point.x-x0,x1-result.point.x,result.point.y-y0,y1-result.point.y)<0.2 {
             explanation += " 候选接近机身行程边界，请以实际读数核对。"

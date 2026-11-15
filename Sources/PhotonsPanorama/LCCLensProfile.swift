@@ -48,7 +48,7 @@ public struct LCCMeasurementGrid: Codable, Equatable {
               zip(x,x.dropFirst()).allSatisfy({ $0 < $1 }),
               zip(y,y.dropFirst()).allSatisfy({ $0 > $1 }),
               floats.allSatisfy(\.isFinite),
-              ["camera-cfa-black-subtracted-v1","apple-linear-srgb-6500K-v1"].contains(space) else {
+              ["camera-cfa-black-subtracted-v1","camera-cfa-normalized-v2","apple-linear-srgb-6500K-v1"].contains(space) else {
             throw PanoramaFailure("镜头 profile 的测量网格无效或版本不受支持。")
         }
         if let standardError, !Self.unpack(standardError).allSatisfy({ $0.isFinite && $0 >= 0 }) {

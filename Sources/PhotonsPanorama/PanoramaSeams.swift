@@ -55,7 +55,7 @@ enum PanoramaSeams {
         plan.gains = plan.options.matchExposure ? gains : [Double](repeating:1,count:n)
         for i in 0..<n { for p in 0..<count { colors[i][p] *= plan.gains[i] } }
         plan.photometricGains=[]
-        if plan.options.matchExposure {
+        if plan.options.matchExposure && plan.lccState == nil {
             func local(_ i:Int,_ p:Int)->CGPoint {
                 CGPoint(x:((Double(p%w)+0.5)/sx-plan.origins[i].x)/plan.sources[i].size.width-0.5,
                         y:((Double(p/w)+0.5)/sy-plan.origins[i].y)/plan.sources[i].size.height-0.5)

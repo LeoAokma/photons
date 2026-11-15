@@ -1,5 +1,6 @@
 import Foundation
 import CoreImage
+import PhotonsExtensions
 
 /// Exact union coverage, including holes. A bounding box alone is not evidence of calibration.
 public struct LCCCoverageRegion {
@@ -60,10 +61,10 @@ private struct LCCSampler {
     let grid:LCCMeasurementGrid
     let values:[Float]
     init?(_ capture:LCCProfileCapture) {
-        guard let g=capture.renderGrid ?? (capture.grid.space=="apple-linear-srgb-6500K-v1" ? capture.grid:nil) else {return nil}
+        let g=capture.grid
         self.capture=capture;grid=g;values=g.floats
     }
-    func rgb(_ p:CGPoint)->SIMD3<Double>? {
+    func rgb(_ p:CGPoint)->SIMD4<Double>? {
         guard capture.fieldRect.contains(p) else {return nil}
         let x=p.x-capture.shiftX,y=p.y-capture.shiftY
         func bracket(_ values:[Double],_ p:Double,descending:Bool)->(Int,Double) {
@@ -73,8 +74,12 @@ private struct LCCSampler {
             let f=(p-values[lo])/(values[hi]-values[lo]);return (lo,min(1,max(0,f)))
         }
         let (ix,fx)=bracket(grid.x,x,descending:false),(iy,fy)=bracket(grid.y,y,descending:true)
-        func at(_ x:Int,_ y:Int)->SIMD3<Double> {
-            let i=(y*grid.width+x)*3;return SIMD3(Double(values[i]),Double(values[i+1]),Double(values[i+2]))
+        func at(_ x:Int,_ y:Int)->SIMD4<Double> {
+            let n=grid.channels.count,i=(y*grid.width+x)*n
+            // v1 built-in measurements subtracted LibRaw's 4094 DN; the file's black tag is
+            // 4096. Match the native reader, including low-signal corners, without a tint offset.
+            let black=grid.space=="camera-cfa-black-subtracted-v1" ? 2.0:0
+            return SIMD4(Double(values[i])-black,Double(values[i+1])-black,Double(values[i+2])-black,Double(values[i+(n==4 ? 3:1)])-black)
         }
         return (at(ix,iy)*(1-fx)+at(ix+1,iy)*fx)*(1-fy)+(at(ix,iy+1)*(1-fx)+at(ix+1,iy+1)*fx)*fy
     }
@@ -90,15 +95,16 @@ private struct LCCSampler {
 
 public final class LCCCorrectionField {
     public let orientation:LCCCaptureOrientation
+    public let isCameraSpace:Bool
     public let region:LCCCoverageRegion
     public let bounds:CGRect
     private let samplers:[LCCSampler]
     private let width:Int,height:Int
-    private var values:[SIMD3<Double>]=[]
-    private var reference=SIMD3<Double>(repeating:1)
+    private var values:[SIMD4<Double>]=[]
+    private var reference=SIMD4<Double>(repeating:1)
     public init(profile:LCCLensProfile,orientation:LCCCaptureOrientation,cancellation:PanoramaCancellation = .init()) throws {
-        self.orientation=orientation;samplers=profile.captures(for:orientation).compactMap(LCCSampler.init)
-        guard !samplers.isEmpty else {throw PanoramaFailure("\(orientation.title) 尚无可用于校正的线性 RGB 标定。")}
+        self.orientation=orientation;isCameraSpace=profile.captures(for:orientation).allSatisfy {$0.grid.space.hasPrefix("camera-cfa-")};samplers=profile.captures(for:orientation).compactMap(LCCSampler.init)
+        guard !samplers.isEmpty else {throw PanoramaFailure("\(orientation.title) 尚无可用于校正的原始通道标定。")}
         region=LCCCoverageRegion(samplers.map {$0.capture.fieldRect});bounds=region.rectangles.reduce(.null) {$0.union($1)}
         width=max(2,min(512,Int(ceil(bounds.width/0.5))));height=max(2,min(512,Int(ceil(bounds.height/0.5))))
         for y in 0..<height {
@@ -106,7 +112,7 @@ public final class LCCCorrectionField {
             for x in 0..<width {
                 let p=CGPoint(x:bounds.minX+(Double(x)+0.5)/Double(width)*bounds.width,
                               y:bounds.maxY-(Double(y)+0.5)/Double(height)*bounds.height)
-                values.append(exact(p) ?? SIMD3(repeating:.nan))
+                values.append(exact(p) ?? SIMD4(repeating:.nan))
             }
         }
         // Smooth the measured log field, not the photograph. No brightness threshold is
@@ -116,54 +122,54 @@ public final class LCCCorrectionField {
         for y in 0..<height {
             try cancellation.check()
             for x in 0..<width where original[y*width+x].x.isFinite {
-                var sum=SIMD3<Double>.zero,total=0.0
+                var sum=SIMD4<Double>.zero,total=0.0
                 for dy in -radius...radius {for dx in -radius...radius {
                     let xx=x+dx,yy=y+dy
                     guard xx>=0,xx<width,yy>=0,yy<height else {continue}
                     let c=original[yy*width+xx]
-                    guard c.x>0,c.y>0,c.z>0 else {continue}
+                    guard c.x>0,c.y>0,c.z>0,c.w>0 else {continue}
                     let weight=exp(-Double(dx*dx+dy*dy)/(2*sigma*sigma))
-                    sum += SIMD3(log(c.x),log(c.y),log(c.z))*weight;total += weight
+                    sum += SIMD4(log(c.x),log(c.y),log(c.z),log(c.w))*weight;total += weight
                 }}
-                if total>0 {let v=sum/total;values[y*width+x]=SIMD3(exp(v.x),exp(v.y),exp(v.z))}
+                if total>0 {let v=sum/total;values[y*width+x]=SIMD4(exp(v.x),exp(v.y),exp(v.z),exp(v.w))}
             }
         }
-        if let central=sample(.zero),central.x>0,central.y>0,central.z>0 {reference=central}
+        if let central=sample(.zero),central.x>0,central.y>0,central.z>0,central.w>0 {reference=central}
         else {
             // A partial profile need not include the optical axis. Normalize at its brightest
             // measured green cell without pretending the missing center was measured.
-            guard let best=values.filter({$0.x>0 && $0.y>0 && $0.z>0}).max(by:{$0.y<$1.y}) else {
+            guard let best=values.filter({$0.x>0 && $0.y>0 && $0.z>0 && $0.w>0}).max(by:{$0.y<$1.y}) else {
                 throw PanoramaFailure("白板没有可用于校正的正信号。")
             };reference=best
         }
     }
-    private func exact(_ p:CGPoint)->SIMD3<Double>? {
-        var sum=SIMD3<Double>.zero,total=0.0
+    private func exact(_ p:CGPoint)->SIMD4<Double>? {
+        var sum=SIMD4<Double>.zero,total=0.0
         for sampler in samplers {
-            guard let c=sampler.rgb(p),c.x>0,c.y>0,c.z>0 else {continue}
-            let w=sampler.weight(p);sum += SIMD3(log(c.x),log(c.y),log(c.z))*w;total += w
+            guard let c=sampler.rgb(p),c.x>0,c.y>0,c.z>0,c.w>0 else {continue}
+            let w=sampler.weight(p);sum += SIMD4(log(c.x),log(c.y),log(c.z),log(c.w))*w;total += w
         }
         guard total>0 else {return nil};let v=sum/total
-        return SIMD3(exp(v.x),exp(v.y),exp(v.z))
+        return SIMD4(exp(v.x),exp(v.y),exp(v.z),exp(v.w))
     }
-    private func sample(_ p:CGPoint)->SIMD3<Double>? {
+    private func sample(_ p:CGPoint)->SIMD4<Double>? {
         guard region.contains(p) else {return nil}
         let xx=min(Double(width-1),max(0,(p.x-bounds.minX)/bounds.width*Double(width)-0.5))
         let yy=min(Double(height-1),max(0,(bounds.maxY-p.y)/bounds.height*Double(height)-0.5))
         let x=min(width-2,Int(xx)),y=min(height-2,Int(yy)),fx=xx-Double(x),fy=yy-Double(y)
         let a=values[y*width+x],b=values[y*width+x+1],c=values[(y+1)*width+x],d=values[(y+1)*width+x+1]
         var rgb=(a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy
-        if !rgb.x.isFinite || !rgb.y.isFinite || !rgb.z.isFinite {guard let v=exact(p) else {return nil};rgb=v}
-        guard rgb.x>0,rgb.y>0,rgb.z>0 else {return nil}
+        if !rgb.x.isFinite || !rgb.y.isFinite || !rgb.z.isFinite || !rgb.w.isFinite {guard let v=exact(p) else {return nil};rgb=v}
+        guard rgb.x>0,rgb.y>0,rgb.z>0,rgb.w>0 else {return nil}
         return rgb
     }
-    public func gain(at p:CGPoint,falloffAmount:Double=1)->SIMD3<Double>? {
+    public func cameraGain(at p:CGPoint)->SIMD4<Double>? {
         guard let rgb=sample(p) else {return nil}
-        // Keep dim corners; only prevent numerical overflow beyond 10 stops of compensation.
-        let full=SIMD3(min(1024,reference.x/rgb.x),min(1024,reference.y/rgb.y),min(1024,reference.z/rgb.z))
-        // Green anchors relative falloff. Changing its strength never changes R/G or B/G
-        // correction, so reducing brightness compensation does not reintroduce color cast.
-        return full*pow(full.y,min(1,max(0,falloffAmount))-1)
+        return reference/rgb
+    }
+    public func gain(at p:CGPoint)->SIMD3<Double>? {
+        guard let v=cameraGain(at:p) else {return nil}
+        return SIMD3(v.x,(v.y+v.w)/2,v.z)
     }
 }
 
@@ -180,7 +186,12 @@ public struct PanoramaLCCState {
     public var cropRect:CGRect?
     public var footprintRects:[CGRect]
     public var sensor:SensorSize
-    public var falloffAmount:Double
+    public var exposureEV:Double
+    public var cameraGains:[LCCCameraGainMap?] = []
+    public var whiteBalance:(Float,Float)? = nil
+    public var whiteBalanceSource:String = ""
+    public var whiteBalanceWasManual=false
+    public var highlightNeutral:SIMD3<Double>? = nil
     public var protectHighlights:Bool
     public var highlightEV:Double = 0
     public var warning:String? {
@@ -193,26 +204,24 @@ extension PanoramaEngine {
         var plan=original
         if plan.originalPreviewImages==nil {plan.originalPreviewImages=plan.previewImages}
         if plan.lccLinearPreviewImages==nil {
-            var images:[CIImage]=[]
+            var images:[CIImage]=[],raws:[CameraMosaic?]=[],flats:[CameraMosaic?]=[]
+            let records=LCCPairingStore().records()
             for (i,source) in plan.sources.enumerated() {
-                try cancellation.check();progress("准备 LCC 实时预览 \(i+1)/\(plan.sources.count)")
-                images.append(try materialize(LCCProfileBuilder.linearImage(source:source,scale:plan.previewScale)))
-            }
-            plan.lccLinearPreviewImages=images
-            if plan.whiteBalance != nil,let originals=plan.originalPreviewImages {
-                var samples:[(SIMD3<Double>,SIMD3<Double>)]=[]
-                for i in images.indices {
-                    let a=PanoramaRaster(image:images[i],context:context,width:96,height:72)
-                    let b=PanoramaRaster(image:originals[i],context:context,width:96,height:72)
-                    for y in stride(from:2,to:70,by:2) {for x in stride(from:2,to:94,by:2) {
-                        guard let ca=a.rgb(Double(x),Double(y)),let cb=b.rgb(Double(x),Double(y)),
-                              min(ca.x,ca.y,ca.z,cb.x,cb.y,cb.z)>0.002,
-                              max(ca.x,ca.y,ca.z,cb.x,cb.y,cb.z)<1.5 else {continue}
-                        samples.append((ca,cb))
-                    }}
+                try cancellation.check();progress("读取原始 LCC 通道 \(i+1)/\(plan.sources.count)")
+                if ["3fr","dng"].contains(source.url.pathExtension.lowercased()) {
+                    let raw=try LCCCameraPipeline.read(source,maxDimension:2048)
+                    raws.append(raw);images.append(LCCCameraPipeline.cameraImage(raw))
+                    if let pair=records.first(where:{$0.scene==source.url.standardizedFileURL}) {
+                        let flat=try PanoramaSource(url:pair.flat)
+                        guard LCCInspector.incompatibility(scene:source,flat:flat)==nil else {throw PanoramaFailure("配对白板与照片不匹配")}
+                        flats.append(try LCCCameraPipeline.read(flat,maxDimension:512))
+                    } else {flats.append(nil)}
+                } else {
+                    raws.append(nil);flats.append(nil)
+                    images.append(try materialize(LCCProfileBuilder.linearImage(source:source,scale:plan.previewScale)))
                 }
-                plan.lccWhiteBalance=LCCWhiteBalanceTransform.fit(samples)
             }
+            plan.lccLinearPreviewImages=images;plan.lccRawPreviews=raws;plan.lccFlatPreviews=flats
         }
         return plan
     }
@@ -222,9 +231,12 @@ extension PanoramaEngine {
     }
     public func applyingLCC(_ original:PanoramaPlan,profile:LCCLensProfile,fields:[LCCCaptureOrientation:LCCCorrectionField],
                            offsetMM:CGPoint,sensor:SensorSize,crop:Bool,cancellation:PanoramaCancellation = .init(),
-                           rebuildSeams:Bool=true,falloffAmount:Double=1,protectHighlights:Bool=true) throws -> PanoramaPlan {
+                           rebuildSeams:Bool=true,exposureEV:Double=0,protectHighlights:Bool=true,whiteBalanceOverride:(Float,Float)?=nil) throws -> PanoramaPlan {
         guard offsetMM.x.isFinite,offsetMM.y.isFinite,sensor.width>0,sensor.height>0 else {throw PanoramaFailure("LCC 对齐参数无效。")}
-        guard falloffAmount.isFinite,(0...1).contains(falloffAmount) else {throw PanoramaFailure("暗角补偿幅度无效。")}
+        guard exposureEV.isFinite,(-8...8).contains(exposureEV) else {throw PanoramaFailure("整体曝光无效。")}
+        if let wb=whiteBalanceOverride {
+            guard wb.0.isFinite,wb.1.isFinite,(2000...50000).contains(wb.0),(-150...150).contains(wb.1) else {throw PanoramaFailure("请输入 2000–50000 K、色调 −150 至 150 的白平衡。")}
+        }
         var plan=original
         let summary=LCCProfileSummary(profile),sw=plan.sources[0].size.width,sh=plan.sources[0].size.height
         let mx=sensor.width/sw,my=sensor.height/sh
@@ -243,7 +255,7 @@ extension PanoramaEngine {
                     if y%16==0 {try cancellation.check()}
                     for x in 0..<w {
                         let p=CGPoint(x:plan.origins[i].x+(Double(x)+0.5)/Double(w)*sw,y:plan.origins[i].y+(Double(y)+0.5)/Double(h)*sh)
-                        if let gain=field.gain(at:fieldPoint(p),falloffAmount:falloffAmount) {
+                        if let gain=field.gain(at:fieldPoint(p)) {
                             let j=(y*w+x)*4;pixels[j]=Float(gain.x);pixels[j+1]=Float(gain.y);pixels[j+2]=Float(gain.z)
                         }
                     }
@@ -291,12 +303,41 @@ extension PanoramaEngine {
         plan.lccState=PanoramaLCCState(profileID:profile.id,profileName:profile.name,offsetMM:offsetMM,gainImages:gainImages,
             usesFixedDecode:matches.map {$0 != nil},complete:covered==used && used>0,coveredFraction:used>0 ? Double(covered)/Double(used):0,
             suggestedCropRect:candidate,cropRect:crop ? candidate:nil,footprintRects:footprints,sensor:sensor,
-            falloffAmount:falloffAmount,protectHighlights:protectHighlights)
+            exposureEV:exposureEV,protectHighlights:protectHighlights)
         let base=plan.lccLinearPreviewImages ?? plan.previewImages
-        plan.previewImages=plan.sources.indices.map { i in
-            guard matches[i] != nil else {return (plan.originalPreviewImages ?? plan.previewImages)[i]}
-            return plan.lccWhiteBalance.applying(to:applyGain(base[i],gain:gainImages[i],scale:plan.previewScale))
+        var cameraGains=[LCCCameraGainMap?](repeating:nil,count:plan.sources.count)
+        var readings:[LCCWhiteBalanceReading]=[],flatReadings:[LCCWhiteBalanceReading]=[]
+        for i in plan.sources.indices {
+            guard let field=matches[i],field.isCameraSpace else {continue}
+            guard let raw=plan.lccRawPreviews?[i] else {throw PanoramaFailure("\(plan.sources[i].url.lastPathComponent)：此格式尚不支持原始通道 LCC；不能用 RGB 校正替代。")}
+            let map=LCCCameraGainMap(field:field,source:plan.sources[i],origin:plan.origins[i],panoramaSize:plan.size,sensor:sensor,offset:offsetMM)
+            cameraGains[i]=map
+            if let flat=plan.lccFlatPreviews?[i] {
+                flatReadings.append(try LCCCameraPipeline.whiteBalance(flat,gain:map,whitePlate:true))
+            }
+            if flatReadings.isEmpty {readings.append(try LCCCameraPipeline.whiteBalance(raw,gain:map,whitePlate:false))}
         }
+        let wbReadings=flatReadings.isEmpty ? readings:flatReadings
+        let wb:(Float,Float)?=whiteBalanceOverride ?? (wbReadings.isEmpty ? nil:(wbReadings.reduce(0){$0+$1.temperature}/Float(wbReadings.count),wbReadings.reduce(0){$0+$1.tint}/Float(wbReadings.count)))
+        let neutral:SIMD3<Double>?=wbReadings.isEmpty ? nil:wbReadings.reduce(SIMD3<Double>.zero){$0+$1.neutral}/Double(wbReadings.count)
+        for i in cameraGains.indices {
+            if let map=cameraGains[i],let raw=plan.lccRawPreviews?[i] {cameraGains[i]=map.preparingHighlights(raw,neutral:neutral)}
+        }
+        plan.lccState?.cameraGains=cameraGains;plan.lccState?.whiteBalance=wb;plan.lccState?.highlightNeutral=neutral
+        plan.lccState?.whiteBalanceWasManual=whiteBalanceOverride != nil
+        plan.lccState?.whiteBalanceSource=whiteBalanceOverride != nil ? "手动白平衡":(flatReadings.isEmpty ? "校正后场景估计":"校正后配对白板平均")
+        plan.previewImages=try plan.sources.indices.map {i in
+            guard let field=matches[i] else {return (plan.originalPreviewImages ?? plan.previewImages)[i]}
+            if let map=cameraGains[i],let raw=plan.lccRawPreviews?[i] {
+                return try materialize(LCCCameraPipeline.develop(raw,gain:map,whiteBalance:wb,highlightNeutral:neutral,size:plan.sources[i].size,scale:plan.previewScale))
+            }
+            guard !field.isCameraSpace else {throw PanoramaFailure("缺少 RAW 校正缓存")}
+            // Legacy RGB profiles remain usable for rendered inputs only. Recreate from RAW
+            // to obtain physically ordered LCC; never silently use them on a RAW photograph.
+            if plan.sources[i].isRAW {throw PanoramaFailure("旧版 RGB profile 不能提供原始通道 LCC，请从白板 RAW 重新创建。")}
+            return applyGain(base[i],gain:gainImages[i],scale:plan.previewScale)
+        }
+        plan.photometricGains=[]
         if rebuildSeams {return try update(plan,options:plan.options,cancellation:cancellation)}
         renderPreview(&plan)
         return plan

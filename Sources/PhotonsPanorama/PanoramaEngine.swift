@@ -115,7 +115,8 @@ public final class PanoramaEngine {
         let scale=min(1,1800/max(plan.size.width,plan.size.height))
         plan.lccState?.highlightEV=0
         if plan.lccState?.protectHighlights == true {
-            let scene=composite(plan,images:plan.previewImages,imageScale:plan.previewScale,outputScale:plan.previewScale)
+            var measuring=plan;measuring.lccState?.exposureEV=0
+            let scene=composite(measuring,images:plan.previewImages,imageScale:plan.previewScale,outputScale:plan.previewScale)
             let raster=PanoramaRaster(image:scene,context:context,width:900,height:max(2,Int(900*scene.extent.height/scene.extent.width)))
             let peaks=stride(from:0,to:raster.rgba.count,by:4).compactMap {i->Float? in
                 let v=max(raster.rgba[i],raster.rgba[i+1],raster.rgba[i+2])
@@ -168,8 +169,8 @@ public final class PanoramaEngine {
             // repeated source-over would darken every interpolated seam (0.5 + 0.5*0.5 != 1).
             result = weighted.applyingFilter("CIAdditionCompositing",parameters:["inputBackgroundImage":result]).cropped(to:bounds)
         }
-        if let lcc=plan.lccState,lcc.highlightEV != 0 {
-            result=result.applyingFilter("CIExposureAdjust",parameters:["inputEV":lcc.highlightEV])
+        if let lcc=plan.lccState,lcc.highlightEV+lcc.exposureEV != 0 {
+            result=result.applyingFilter("CIExposureAdjust",parameters:["inputEV":lcc.highlightEV+lcc.exposureEV])
         }
         if let crop=plan.lccState?.cropRect {
             let rect=CGRect(x:crop.minX*outputScale,y:(plan.size.height-crop.maxY)*outputScale,width:crop.width*outputScale,height:crop.height*outputScale)
@@ -195,8 +196,13 @@ public final class PanoramaEngine {
         for (i,source) in plan.sources.enumerated() {
             try cancellation.check(); progress("全分辨率解码 \(i+1)/\(plan.sources.count)")
             if let lcc=plan.lccState,lcc.usesFixedDecode[i] {
-                let image=try LCCProfileBuilder.linearImage(source:source,scale:1)
-                images.append(materialize(plan.lccWhiteBalance.applying(to:applyGain(image,gain:lcc.gainImages[i],scale:1))))
+                if lcc.cameraGains.indices.contains(i),let map=lcc.cameraGains[i] {
+                    let raw=try LCCCameraPipeline.read(source)
+                    images.append(try materialize(LCCCameraPipeline.develop(raw,gain:map,whiteBalance:lcc.whiteBalance,highlightNeutral:lcc.highlightNeutral,size:source.size,scale:1,cancellation:cancellation)))
+                } else {
+                    let image=try LCCProfileBuilder.linearImage(source:source,scale:1)
+                    images.append(materialize(applyGain(image,gain:lcc.gainImages[i],scale:1)))
+                }
             } else {images.append(try materialize(decoded(source,scale:1,whiteBalance:plan.whiteBalance)))}
         }
         try cancellation.check()

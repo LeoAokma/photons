@@ -107,7 +107,7 @@ private struct LCCPairingView: View {
             HStack {
                 VStack(alignment:.leading,spacing:5) {
                     Text("逐张 LCC 对应").font(.title.bold())
-                    Text("逐张配对白板可供自动定位，尚不逐张应用增益；拼接中的“LCC校正”使用镜头 Profile。可切换到“镜头 Profiles”创建标定。").foregroundStyle(.secondary)
+                    Text("逐张配对白板用于自动定位，以及 LCC 校正后的白平衡测量；空间校正增益使用镜头 Profile。可切换到“镜头 Profiles”创建标定。").foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("选择场景照片…") { model.choose(scenes:true) }

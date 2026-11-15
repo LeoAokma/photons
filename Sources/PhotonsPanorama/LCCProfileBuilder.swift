@@ -65,43 +65,54 @@ public enum LCCProfileBuilder {
                 throw PanoramaFailure("传感器尺寸与 \(frame.source.url.lastPathComponent) 的 RAW 信息不一致。")
             }
         }
-        let context=CIContext(options:[.workingColorSpace:PanoramaEngine.linearSpace,.cacheIntermediates:false])
         var captures:[LCCProfileCapture]=[]
         for (index,frame) in frames.enumerated() {
             try cancellation.check();try frame.source.checkUnchanged()
             progress("分析 LCC \(index+1)/\(frames.count)：\(frame.source.url.lastPathComponent)")
             let source=frame.source
-            let decoded=try linearImage(source:source,scale:min(1,768/max(source.size.width,source.size.height)))
-            let inverse=source.orientation==8 ? 6 : (source.orientation==6 ? 8:source.orientation)
-            let oriented=decoded.oriented(forExifOrientation:Int32(inverse))
-                .oriented(forExifOrientation:Int32(frame.orientation.rawValue))
-            let image=oriented.transformed(by:CGAffineTransform(translationX:-oriented.extent.minX,y:-oriented.extent.minY))
+            let raw=try LCCCameraPipeline.read(source)
             let portrait=frame.orientation.isPortrait
             let sw=portrait ? sensorShortEdge:sensorLongEdge,sh=portrait ? sensorLongEdge:sensorShortEdge
-            let gw=portrait ? 144:192,gh=portrait ? 192:144
-            let raster=PanoramaRaster(image:image,context:context,width:gw*4,height:gh*4)
-            var values=[Float](),errors=[Float]();values.reserveCapacity(gw*gh*3);errors.reserveCapacity(gw*gh*3)
-            for y in 0..<gh {
-                if y%16==0 { try cancellation.check() }
-                for x in 0..<gw { for c in 0..<3 {
-                    var sum=0.0,sq=0.0
-                    for dy in 0..<4 { for dx in 0..<4 {
-                        let v=Double(raster.rgba[((y*4+dy)*raster.width+x*4+dx)*4+c]);sum+=v;sq+=v*v
-                    }}
-                    let mean=sum/16
-                    values.append(Float(mean));errors.append(Float(sqrt(max(0,sq/16-mean*mean)/16)))
-                }}
+            let rw=min(192,raw.width/2),rh=min(144,raw.height/2)
+            var means=[SIMD4<Float>](repeating:.zero,count:rw*rh),sems=means
+            for y in 0..<rh {
+                try cancellation.check()
+                for x in 0..<rw {
+                    var sum=SIMD4<Double>.zero,sq=sum,count=0.0
+                    for by in (y*(raw.height/2)/rh)..<((y+1)*(raw.height/2)/rh) {
+                        for bx in (x*(raw.width/2)/rw)..<((x+1)*(raw.width/2)/rw) {
+                            var c=SIMD4<Double>.zero
+                            for site in 0..<4 {c[raw.pattern[site]]=Double(raw.samples[(by*2+site/2)*raw.width+bx*2+site%2])}
+                            sum += c;sq += c*c;count += 1
+                        }
+                    }
+                    let mean=sum/max(1,count),variance=(sq/max(1,count)-mean*mean)/max(1,count)
+                    means[y*rw+x]=SIMD4<Float>(mean)
+                    sems[y*rw+x]=SIMD4(Float(sqrt(max(0,variance.x))),Float(sqrt(max(0,variance.y))),Float(sqrt(max(0,variance.z))),Float(sqrt(max(0,variance.w))))
+                }
             }
+            let gw=portrait ? rh:rw,gh=portrait ? rw:rh
+            var values:[Float]=[],errors:[Float]=[]
+            for y in 0..<gh {for x in 0..<gw {
+                let xx:Int,yy:Int
+                switch frame.orientation {
+                case .portraitLeft:xx=rw-1-y;yy=x
+                case .portraitRight:xx=y;yy=rh-1-x
+                case .inverted:xx=rw-1-x;yy=rh-1-y
+                case .landscape:xx=x;yy=y
+                }
+                let v=means[yy*rw+xx],e=sems[yy*rw+xx]
+                for c in 0..<4 {values.append(v[c]);errors.append(e[c])}
+            }}
             let grid=LCCMeasurementGrid(x:(0..<gw).map { (Double($0)+0.5)/Double(gw)*sw-sw/2 },
-                y:(0..<gh).map { sh/2-(Double($0)+0.5)/Double(gh)*sh },channels:["R","G","B"],
-                values:LCCMeasurementGrid.pack(values),standardError:LCCMeasurementGrid.pack(errors),space:"apple-linear-srgb-6500K-v1")
+                y:(0..<gh).map { sh/2-(Double($0)+0.5)/Double(gh)*sh },channels:["R","G1","B","G2"],
+                values:LCCMeasurementGrid.pack(values),standardError:LCCMeasurementGrid.pack(errors),space:"camera-cfa-normalized-v2")
             let fullLong=Int(max(source.size.width,source.size.height)),fullShort=Int(min(source.size.width,source.size.height))
             captures.append(LCCProfileCapture(id:frame.id,filename:source.url.lastPathComponent,orientation:frame.orientation,
                 shiftX:frame.shiftX,shiftY:frame.shiftY,sensorWidth:sw,sensorHeight:sh,
                 pixelWidth:portrait ? fullShort:fullLong,pixelHeight:portrait ? fullLong:fullShort,
                 iso:frame.iso,exposureSeconds:frame.exposureSeconds,capturedAt:frame.capturedAt,grid:grid,thumbnail:frame.jpeg))
             try source.checkUnchanged()
-            context.clearCaches()
         }
         let profile=LCCLensProfile(id:UUID(),name:name.trimmingCharacters(in:.whitespacesAndNewlines),camera:frames[0].source.camera,
                                    aperture:aperture,notes:notes,createdAt:Date(),captures:captures)
@@ -110,10 +121,10 @@ public enum LCCProfileBuilder {
     static func linearImage(source:PanoramaSource,scale:Double,whiteBalance:(Float,Float)?=nil) throws -> CIImage {
         try source.checkUnchanged()
         let output:CIImage
-        if let raw=CIRAWFilter(imageURL:source.url) {
+        if source.isRAW,let raw=CIRAWFilter(imageURL:source.url) {
             raw.isLensCorrectionEnabled=false;raw.isGamutMappingEnabled=false
             raw.boostAmount=0;raw.boostShadowAmount=0;raw.localToneMapAmount=0
-            raw.exposure=0;raw.baselineExposure=0;raw.sharpnessAmount=0
+            raw.exposure=0;raw.baselineExposure=0;raw.shadowBias=0;raw.sharpnessAmount=0
             raw.luminanceNoiseReductionAmount=0;raw.colorNoiseReductionAmount=0
             raw.neutralTemperature=whiteBalance?.0 ?? 6500;raw.neutralTint=whiteBalance?.1 ?? 0;raw.scaleFactor=Float(scale)
             guard let image=raw.outputImage else {throw PanoramaFailure("无法解码 \(source.url.lastPathComponent)")};output=image

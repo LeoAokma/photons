@@ -48,7 +48,10 @@ private final class PanoramaWindowModel: ObservableObject {
     @Published var lccEnabled=false
     @Published var cropToLCC=false
     @Published var lccOffset=CGPoint.zero
-    @Published var falloffAmount=0.5
+    @Published var exposureEV=0.0
+    @Published var automaticLCCWB=true
+    @Published var lccTemperature=5500.0
+    @Published var lccTint=0.0
     @Published var protectHighlights=true
     private var lccSession:LCCEditingSession?
     private var alignmentWindow:LCCAlignmentWindowController?
@@ -80,7 +83,8 @@ private final class PanoramaWindowModel: ObservableObject {
             run {engine,token,_ in try engine.removingLCC(current,cancellation:token)};return
         }
         guard let id=UUID(uuidString:selectedLensProfileID),let sensor else {error="请先选择镜头 profile 并确定传感器尺寸。";lccEnabled=false;return}
-        let cached=lccSession,offset=lccOffset,crop=cropToLCC,falloff=falloffAmount,protect=protectHighlights
+        let cached=lccSession,offset=lccOffset,crop=cropToLCC,exposure=exposureEV,protect=protectHighlights
+        let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
         run { [weak self] engine,token,progress in
             let session:LCCEditingSession
             if let cached,cached.profile.id==id,cached.sensor==sensor {session=cached}
@@ -91,9 +95,10 @@ private final class PanoramaWindowModel: ObservableObject {
             var prepared=current
             prepared.originalPreviewImages=session.preparedPlan.originalPreviewImages
             prepared.lccLinearPreviewImages=session.preparedPlan.lccLinearPreviewImages
-            prepared.lccWhiteBalance=session.preparedPlan.lccWhiteBalance
+            prepared.lccRawPreviews=session.preparedPlan.lccRawPreviews
+            prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
             return try engine.applyingLCC(prepared,profile:session.profile,fields:session.fields,offsetMM:offset,sensor:sensor,crop:crop,cancellation:token,
-                falloffAmount:falloff,protectHighlights:protect)
+                exposureEV:exposure,protectHighlights:protect,whiteBalanceOverride:wb)
         }
     }
     func alignLCC(initialOffset:CGPoint?=nil,explanation:String?=nil,proposal:PanoramaPlan?=nil) {
@@ -114,17 +119,19 @@ private final class PanoramaWindowModel: ObservableObject {
         guard let current=plan,let session=lccSession,lccEnabled,!busy,positionReference==nil else {return}
         cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
         busy=true;error=nil;status="正在自动解算位置…"
-        let amount=falloffAmount,protect=protectHighlights
+        let amount=exposureEV,protect=protectHighlights
+        let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
         queue.async { [weak self] in
             do {
                 var prepared=current
                 prepared.lccLinearPreviewImages=session.preparedPlan.lccLinearPreviewImages
-                prepared.lccWhiteBalance=session.preparedPlan.lccWhiteBalance
+                prepared.lccRawPreviews=session.preparedPlan.lccRawPreviews
+                prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
                 let solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:session.sensor,cancellation:token) {message in
                     DispatchQueue.main.async {self?.status=message}
                 }
                 let proposal=try PanoramaEngine().applyingLCC(prepared,profile:session.profile,fields:session.fields,offsetMM:solution.offsetMM,
-                    sensor:session.sensor,crop:false,cancellation:token,falloffAmount:amount,protectHighlights:protect)
+                    sensor:session.sensor,crop:false,cancellation:token,exposureEV:amount,protectHighlights:protect,whiteBalanceOverride:wb)
                 try token.check()
                 DispatchQueue.main.async {
                     guard let self,(try? token.check()) != nil else {return}
@@ -215,7 +222,8 @@ private final class PanoramaWindowModel: ObservableObject {
         guard !busy,!alignmentNeedsUpdate,let plan,plan.isRegistered else {return false}
         if !lccEnabled {return plan.lccState==nil}
         guard let lcc=plan.lccState else {return false}
-        return lcc.profileID.uuidString==selectedLensProfileID && lcc.offsetMM==lccOffset && (lcc.cropRect != nil)==cropToLCC && lcc.sensor==sensor && lcc.falloffAmount==falloffAmount && lcc.protectHighlights==protectHighlights
+        if !automaticLCCWB {guard let wb=lcc.whiteBalance,wb.0==Float(lccTemperature),wb.1==Float(lccTint) else {return false}}
+        return lcc.profileID.uuidString==selectedLensProfileID && lcc.offsetMM==lccOffset && (lcc.cropRect != nil)==cropToLCC && lcc.sensor==sensor && lcc.exposureEV==exposureEV && lcc.protectHighlights==protectHighlights
     }
     func stitch() {
         guard let plan, let window, canStitch else { return }
@@ -388,18 +396,30 @@ private struct PanoramaWorkspace: View {
                 }
                 Button("手动对齐lcc") {model.alignLCC()}.disabled(model.positionReference != nil)
                 Button("自动解算位置") {model.solvePosition()}.disabled(model.positionReference != nil)
-                HStack {Text("暗角补偿");Spacer();Text("\(Int((model.falloffAmount*100).rounded()))%").monospacedDigit()}
-                Slider(value:$model.falloffAmount,in:0...1,step:0.01,onEditingChanged:{editing in if !editing {model.changeLCC()}})
-                Text("0% 仅校正色偏，100% 应用完整暗角补偿。").font(.caption).foregroundStyle(.secondary)
-                if let wb=model.plan?.whiteBalance {
-                    Text("整组平均白平衡：\(Int(wb.0.rounded())) K · 色调 \(wb.1,specifier:"%.1f")；校正前后共用。").font(.caption).foregroundStyle(.secondary)
+                Text("暗角与颜色偏移：完整校正").font(.caption)
+                HStack {Text("整体曝光");Spacer();Text(String(format:"%+.2f EV",model.exposureEV)).monospacedDigit()}
+                Slider(value:$model.exposureEV,in:-4...4,step:0.05,onEditingChanged:{editing in if !editing {model.changeLCC()}})
+                Toggle("校正后自动白平衡",isOn:$model.automaticLCCWB).toggleStyle(.checkbox)
+                    .onChange(of:model.automaticLCCWB) {_,value in
+                        if !value,let wb=model.plan?.lccState?.whiteBalance {model.lccTemperature=Double(wb.0);model.lccTint=Double(wb.1)}
+                        model.changeLCC()
+                    }
+                if let wb=model.plan?.lccState?.whiteBalance {
+                    Text("\(model.plan?.lccState?.whiteBalanceSource ?? "")：\(Int(wb.0.rounded())) K · 色调 \(wb.1,specifier:"%.1f")").font(.caption).foregroundStyle(.secondary)
+                }
+                if !model.automaticLCCWB {
+                    HStack {
+                        Text("色温");TextField("K",value:$model.lccTemperature,format:.number.precision(.fractionLength(0))).onSubmit {model.changeLCC()}
+                        Text("色调");TextField("Tint",value:$model.lccTint,format:.number.precision(.fractionLength(1))).onSubmit {model.changeLCC()}
+                    }.textFieldStyle(.roundedBorder)
+                    Button("应用白平衡") {model.changeLCC()}
                 }
                 Toggle("保护高光",isOn:$model.protectHighlights).toggleStyle(.checkbox)
                     .onChange(of:model.protectHighlights) {_,_ in model.changeLCC()}
                 if model.protectHighlights,let ev=model.plan?.lccState?.highlightEV {
-                    Text("整图曝光 \(ev,specifier:"%.2f") EV；高光平滑过渡，DNG 保留线性余量。").font(.caption).foregroundStyle(.secondary)
+                    Text("高光保护自动曝光 \(ev,specifier:"%.2f") EV；高光平滑过渡，DNG 保留线性余量。").font(.caption).foregroundStyle(.secondary)
                 }
-                Text(model.positionReference == nil ? "未设基准时 profile 原点默认位于拼接中心，可手动对齐。校正使用固定白平衡，预览与输出共用位置和增益。" : "LCC 已跟随位置基准锁定。清除基准后可手动对齐。").font(.caption).foregroundStyle(.secondary)
+                Text(model.positionReference == nil ? "未设基准时 profile 原点默认位于拼接中心，可手动对齐。先校正 RAW 通道，再应用白平衡；预览与输出共用位置和增益。" : "LCC 已跟随位置基准锁定。清除基准后可手动对齐。").font(.caption).foregroundStyle(.secondary)
             }
             Divider()
             Text("重叠处理").font(.headline)
@@ -414,12 +434,12 @@ private struct PanoramaWorkspace: View {
             Text("接缝可绕开冲突区域。仅有两张且背景被遮住时，自动判断可能有误，可改选优先照片。").font(.caption).foregroundStyle(.secondary)
             Divider()
             Button("管理逐张 LCC…") { model.manageLCC() }
-            Text("已记录 \(model.lccCount)/\(model.urls.count) 组逐张配对，白板可用于自动定位，尚不逐张应用增益。“LCC校正”只应用所选镜头 Profile，不叠加白板校正。").font(.caption).foregroundStyle(.secondary)
+            Text("已记录 \(model.lccCount)/\(model.urls.count) 组逐张配对，白板用于自动定位与校正后的白平衡测量。“LCC校正”只应用所选镜头 Profile，不叠加白板校正。").font(.caption).foregroundStyle(.secondary)
             Picker("输出",selection:$model.format) {
                 Text("16 位无损压缩 DNG").tag(PanoramaEngine.OutputFormat.dng)
                 Text("16 位 TIFF").tag(PanoramaEngine.OutputFormat.tiff)
             }
-            Text("DNG 为已去马赛克的线性 RGB，保留高光余量。未覆盖区域输出为黑色，可随后裁剪。").font(.caption).foregroundStyle(.secondary)
+            Text("DNG 为已应用白平衡的线性 RGB，保留高光余量。未覆盖区域输出为黑色，可随后裁剪。").font(.caption).foregroundStyle(.secondary)
         }.disabled(model.busy)
         .onChange(of:model.sensorChoice) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
         .onChange(of:model.sensorWidth) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}

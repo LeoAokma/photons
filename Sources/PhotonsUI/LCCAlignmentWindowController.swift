@@ -73,7 +73,7 @@ private final class LCCAlignmentModel:ObservableObject {
             do {
                 let result=try PanoramaEngine().applyingLCC(base,profile:session.profile,fields:session.fields,offsetMM:offset,
                     sensor:session.sensor,crop:commit && crop,cancellation:token,rebuildSeams:false,
-                    falloffAmount:base.lccState?.falloffAmount ?? 0.5,protectHighlights:base.lccState?.protectHighlights ?? true)
+                    exposureEV:base.lccState?.exposureEV ?? 0,protectHighlights:base.lccState?.protectHighlights ?? true,whiteBalanceOverride:commit && base.lccState?.whiteBalanceWasManual != true ? nil:base.lccState?.whiteBalance)
                 try token.check()
                 DispatchQueue.main.async {
                     guard let self,!self.closed,(try? token.check()) != nil else {return}
