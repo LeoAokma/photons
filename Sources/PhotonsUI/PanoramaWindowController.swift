@@ -183,7 +183,7 @@ private struct PanoramaWorkspace: View {
             if let plan = model.plan {
                 PanoramaPositionOverview(plan:plan,sensor:model.sensor,calibrated:model.calibrated,firstX:model.firstX,firstY:model.firstY)
                     .frame(height:200).background(Color(nsColor:.underPageBackgroundColor),in:RoundedRectangle(cornerRadius:8))
-                Text(model.calibrated ? "已按第一张的机身读数校准；橙框表示超出行程。" : "矩形为图像覆盖范围；当前为相对位置。")
+                Text(model.calibrated ? "已按第一张的机身读数校准；橙框表示超出行程。" : "Δ 以拼接图中心为 (0, 0)，右／上为正。矩形表示各张图像的覆盖范围。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Picker("传感器",selection:$model.sensorChoice) {
@@ -261,14 +261,30 @@ private struct PanoramaPositionOverview: View {
                 let label = Text(plan.sources[i].url.lastPathComponent).font(.system(size:10,weight:.medium)).foregroundColor(.primary)
                 context.draw(label,at:CGPoint(x:rect.midX,y:rect.midY))
                 if let sensor {
-                    let dxMM = (plan.origins[i].x-plan.origins[0].x)/plan.sources[0].size.width*sensor.width
-                    let dyMM = -(plan.origins[i].y-plan.origins[0].y)/plan.sources[0].size.height*sensor.height
+                    // Uncalibrated offsets compare each frame's center with the panorama center.
+                    // Calibration continues to use the first frame's measured camera position.
+                    let referenceOrigin = calibrated ? plan.origins[0] : CGPoint(
+                        x:(plan.size.width-source.width)/2,
+                        y:(plan.size.height-source.height)/2)
+                    let dxMM = (source.minX-referenceOrigin.x)/plan.sources[0].size.width*sensor.width
+                    let dyMM = -(source.minY-referenceOrigin.y)/plan.sources[0].size.height*sensor.height
                     let coordinates = calibrated
                         ? String(format:"X %+.1f · Y %+.1f mm",firstX-dxMM,firstY-dyMM)
                         : String(format:"Δ %+.1f, %+.1f mm",dxMM,dyMM)
                     context.draw(Text(coordinates).font(.system(size:8)).foregroundColor(.secondary),
                                  at:CGPoint(x:rect.midX,y:rect.midY+13))
                 }
+            }
+            if !calibrated {
+                let center = CGPoint(x:canvas.width/2,y:canvas.height/2)
+                var crosshair = Path()
+                crosshair.move(to:CGPoint(x:center.x-5,y:center.y))
+                crosshair.addLine(to:CGPoint(x:center.x+5,y:center.y))
+                crosshair.move(to:CGPoint(x:center.x,y:center.y-5))
+                crosshair.addLine(to:CGPoint(x:center.x,y:center.y+5))
+                context.stroke(crosshair,with:.color(.primary.opacity(0.7)),lineWidth:1)
+                context.draw(Text("0, 0").font(.system(size:8)).foregroundColor(.secondary),
+                             at:CGPoint(x:center.x+15,y:center.y-10))
             }
         }
     }
