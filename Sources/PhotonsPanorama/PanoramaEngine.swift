@@ -10,28 +10,7 @@ public final class PanoramaEngine {
     public typealias Progress = (String) -> Void
 
     func decoded(_ source: PanoramaSource, scale: Double, whiteBalance: (Float,Float)?) throws -> CIImage {
-        try source.checkUnchanged()
-        let output: CIImage
-        if let raw = CIRAWFilter(imageURL: source.url) {
-            raw.isLensCorrectionEnabled = false
-            raw.boostAmount = 0; raw.isGamutMappingEnabled = false
-            raw.scaleFactor = Float(scale); raw.exposure = 0
-            raw.sharpnessAmount = 0; raw.luminanceNoiseReductionAmount = 0
-            if let wb = whiteBalance { raw.neutralTemperature = wb.0; raw.neutralTint = wb.1 }
-            guard let image = raw.outputImage else { throw PanoramaFailure("RAW 解码失败：\(source.url.lastPathComponent)") }
-            output = image
-        } else {
-            guard let image = CIImage(contentsOf: source.url, options: [.applyOrientationProperty:true]) else {
-                throw PanoramaFailure("读取失败：\(source.url.lastPathComponent)")
-            }
-            output = image.transformed(by:CGAffineTransform(scaleX:scale,y:scale))
-        }
-        // Decoder scales may round differently. Normalize to one exact affine source coordinate
-        // system before creating a proxy. This is also the coordinate system used at scale == 1.
-        let normalized = output.transformed(by:CGAffineTransform(translationX:-output.extent.minX,y:-output.extent.minY))
-        let desired = CGSize(width:source.size.width*scale,height:source.size.height*scale)
-        return normalized.transformed(by:CGAffineTransform(scaleX:desired.width/output.extent.width,
-                                                           y:desired.height/output.extent.height))
+        try LCCProfileBuilder.linearImage(source:source,scale:scale,whiteBalance:whiteBalance)
     }
 
     func materialize(_ image: CIImage) -> CIImage {
@@ -44,7 +23,7 @@ public final class PanoramaEngine {
         return CIImage(bitmapData:data,bytesPerRow:w*8,size:CGSize(width:w,height:h),format:.RGBAh,colorSpace:Self.linearSpace)
     }
 
-    public func analyze(urls: [URL], options: PanoramaOptions = .init(),
+    public func analyze(urls: [URL], options: PanoramaOptions = .init(),knownPositions:[Int:CGPoint]=[:],sensorOverride:SensorSize?=nil,
                         cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws -> PanoramaPlan {
         guard urls.count >= 2 else { throw PanoramaFailure(urls.isEmpty ? "请先选中需要拼接的图片" : "请至少选中两张需要拼接的图片") }
         guard urls.count <= 16 else { throw PanoramaFailure("第一版一次最多支持 16 张图片，请分组拼接。") }
@@ -54,7 +33,11 @@ public final class PanoramaEngine {
         guard sources.allSatisfy({ abs($0.size.width-first.size.width)<2 && abs($0.size.height-first.size.height)<2 && $0.orientation == first.orientation }) else {
             throw PanoramaFailure("移轴接片要求各张照片尺寸和方向一致；请使用同一后背、同一朝向的原始图片。")
         }
-        let wb: (Float,Float)? = first.temperature.flatMap { t in first.tint.map { (t,$0) } }
+        let readings=sources.compactMap {s->(Float,Float)? in
+            guard let temperature=s.temperature,let tint=s.tint,temperature.isFinite,tint.isFinite else {return nil}
+            return (temperature,tint)
+        }
+        let wb:(Float,Float)?=readings.isEmpty ? nil:(readings.reduce(0) {$0+$1.0}/Float(readings.count),readings.reduce(0) {$0+$1.1}/Float(readings.count))
         let scale = min(1,2048/max(first.size.width,first.size.height))
         var images: [CIImage] = [], grays: [GrayRaster] = [], coarse: [GrayRaster] = []
         for (i,source) in sources.enumerated() {
@@ -67,7 +50,14 @@ public final class PanoramaEngine {
         var edges: [Edge] = []
         for a in 0..<sources.count-1 { for b in a+1..<sources.count {
             try cancellation.check(); progress("匹配重叠区域 \(a+1) ↔ \(b+1)")
-            if let match = try TranslationRegistration.align(coarse[a],coarse[b],cancellation:cancellation) {
+            let match:TranslationRegistration.Match?
+            if let pa=knownPositions[a],let pb=knownPositions[b],let sensor=sensorOverride ?? first.sensor {
+                progress("依据移轴读数搜索 \(a+1) ↔ \(b+1)")
+                let expected=CGPoint(x:(pb.x-pa.x)/sensor.width*Double(coarse[a].width),y:-(pb.y-pa.y)/sensor.height*Double(coarse[a].height))
+                match=try TranslationRegistration.align(coarse[a],coarse[b],near:expected,
+                    radius:max(Double(coarse[a].width)/sensor.width,Double(coarse[a].height)/sensor.height)*1.5,cancellation:cancellation)
+            } else {match=try TranslationRegistration.align(coarse[a],coarse[b],cancellation:cancellation)}
+            if let match {
                 let initial = CGPoint(x:match.offset.x*Double(grays[a].width)/Double(coarse[a].width),
                                       y:match.offset.y*Double(grays[a].height)/Double(coarse[a].height))
                 let refined = TranslationRegistration.refine(grays[a],grays[b],offset:initial,radius:2)
@@ -83,7 +73,7 @@ public final class PanoramaEngine {
             let choices = edges.filter { (positions[$0.a] == nil) != (positions[$0.b] == nil) }
             guard let edge = choices.max(by: { $0.score < $1.score }) else {
                 let missing = sources.indices.filter { positions[$0] == nil }.map { sources[$0].url.lastPathComponent }.joined(separator:"、")
-                throw PanoramaFailure("未找到可靠的平移重叠：\(missing)。请检查照片是否来自同一组移轴拍摄、重叠是否足够；旋转机位的照片需使用普通接片。")
+                throw PanoramaFailure("未找到可靠的平移重叠：\(missing)。可点击示意图，输入这些照片和一张基准照片的移轴量，再点击“按移轴信息重新匹配”。")
             }
             if let a = positions[edge.a] {
                 positions[edge.b] = CGPoint(x:a.x+edge.offset.x,y:a.y+edge.offset.y); scores[edge.b] = edge.score
@@ -112,14 +102,49 @@ public final class PanoramaEngine {
 
     public func update(_ original: PanoramaPlan, options: PanoramaOptions,
                        cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws -> PanoramaPlan {
+        guard original.isRegistered else {throw PanoramaFailure("请先完成照片配准。")}
         var plan = original; plan.options = options
         progress("分析暗角、红移和重叠冲突")
         try PanoramaSeams.prepare(&plan,context:context,cancellation:cancellation)
         try cancellation.check(); progress("生成拼接预览")
-        let scale = min(1,1800/max(plan.size.width,plan.size.height))
-        let scene = composite(plan,images:plan.previewImages,imageScale:plan.previewScale,outputScale:scale)
-        plan.preview = context.createCGImage(scene,from:scene.extent,format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!)
+        renderPreview(&plan)
         return plan
+    }
+
+    func renderPreview(_ plan:inout PanoramaPlan) {
+        let scale=min(1,1800/max(plan.size.width,plan.size.height))
+        plan.lccState?.highlightEV=0
+        if plan.lccState?.protectHighlights == true {
+            let scene=composite(plan,images:plan.previewImages,imageScale:plan.previewScale,outputScale:plan.previewScale)
+            let raster=PanoramaRaster(image:scene,context:context,width:900,height:max(2,Int(900*scene.extent.height/scene.extent.width)))
+            let peaks=stride(from:0,to:raster.rgba.count,by:4).compactMap {i->Float? in
+                let v=max(raster.rgba[i],raster.rgba[i+1],raster.rgba[i+2])
+                return v.isFinite && raster.rgba[i+3]>0.5 ? v:nil
+            }.sorted()
+            // A hot pixel or specular glint must not underexpose the entire panorama.
+            // The same shoulder handles the remaining brightest 0.5% without clipping.
+            let peak=peaks.isEmpty ? 0:Double(peaks[Int(Double(peaks.count-1)*0.995)])
+            if peak.isFinite,peak>0.9 {plan.lccState?.highlightEV=log2(0.9/peak)}
+        }
+        var scene=composite(plan,images:plan.previewImages,imageScale:plan.previewScale,outputScale:scale)
+        if plan.lccState?.protectHighlights == true {scene=Self.protectedDisplay(scene)}
+        plan.preview=context.createCGImage(scene,from:scene.extent,format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!)
+    }
+
+    // One continuous, hue-preserving shoulder for SDR preview/TIFF. The global exposure
+    // normally keeps samples below the knee; this catches fine highlights absent at proxy
+    // resolution. Linear DNG keeps the original floating-point headroom instead.
+    private static let highlightKernel=CIColorKernel(source:"""
+        kernel vec4 protectHighlights(__sample s) {
+            float peak=max(s.r,max(s.g,s.b));
+            float excess=max(0.0,peak-0.9);
+            float mapped=0.9+0.1*excess/(excess+0.1);
+            float scale=peak>0.9 ? mapped/peak : 1.0;
+            return vec4(s.rgb*scale,s.a);
+        }
+        """)!
+    static func protectedDisplay(_ image:CIImage)->CIImage {
+        highlightKernel.apply(extent:image.extent,arguments:[image])!
     }
 
     func composite(_ plan: PanoramaPlan, images: [CIImage], imageScale: Double, outputScale: Double) -> CIImage {
@@ -132,7 +157,8 @@ public final class PanoramaEngine {
                                size:CGSize(width:plan.maskWidth,height:plan.maskHeight),format:hasWeights ? .Lf:.L8,colorSpace:nil)
                 .transformed(by:CGAffineTransform(scaleX:plan.size.width*outputScale/Double(plan.maskWidth),
                                                   y:plan.size.height*outputScale/Double(plan.maskHeight)))
-            let image = images[i].transformed(by:CGAffineTransform(scaleX:outputScale/imageScale,y:outputScale/imageScale))
+            let source=plan.photometricGains.indices.contains(i) ? applyGain(images[i],gain:plan.photometricGains[i],scale:imageScale):images[i]
+            let image = source.transformed(by:CGAffineTransform(scaleX:outputScale/imageScale,y:outputScale/imageScale))
                 .transformed(by:CGAffineTransform(translationX:plan.origins[i].x*outputScale,
                                                   y:(plan.size.height-plan.origins[i].y-plan.sources[i].size.height)*outputScale))
                 .applyingFilter("CIExposureAdjust",parameters:["inputEV":log2(plan.gains[i])])
@@ -142,12 +168,20 @@ public final class PanoramaEngine {
             // repeated source-over would darken every interpolated seam (0.5 + 0.5*0.5 != 1).
             result = weighted.applyingFilter("CIAdditionCompositing",parameters:["inputBackgroundImage":result]).cropped(to:bounds)
         }
+        if let lcc=plan.lccState,lcc.highlightEV != 0 {
+            result=result.applyingFilter("CIExposureAdjust",parameters:["inputEV":lcc.highlightEV])
+        }
+        if let crop=plan.lccState?.cropRect {
+            let rect=CGRect(x:crop.minX*outputScale,y:(plan.size.height-crop.maxY)*outputScale,width:crop.width*outputScale,height:crop.height*outputScale)
+            return result.cropped(to:rect).transformed(by:CGAffineTransform(translationX:-rect.minX,y:-rect.minY))
+        }
         return result
     }
 
     public enum OutputFormat: String, CaseIterable { case dng, tiff }
     public func export(_ plan: PanoramaPlan, to destination: URL, format: OutputFormat,
                        cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws {
+        guard plan.isRegistered else {throw PanoramaFailure("尚未完成配准，不能导出。")}
         guard !plan.sources.contains(where: { $0.url.standardizedFileURL == destination.standardizedFileURL }) else {
             throw PanoramaFailure("不能覆盖输入图片。")
         }
@@ -160,7 +194,10 @@ public final class PanoramaEngine {
         var images: [CIImage] = []
         for (i,source) in plan.sources.enumerated() {
             try cancellation.check(); progress("全分辨率解码 \(i+1)/\(plan.sources.count)")
-            images.append(try materialize(decoded(source,scale:1,whiteBalance:plan.whiteBalance)))
+            if let lcc=plan.lccState,lcc.usesFixedDecode[i] {
+                let image=try LCCProfileBuilder.linearImage(source:source,scale:1)
+                images.append(materialize(plan.lccWhiteBalance.applying(to:applyGain(image,gain:lcc.gainImages[i],scale:1))))
+            } else {images.append(try materialize(decoded(source,scale:1,whiteBalance:plan.whiteBalance)))}
         }
         try cancellation.check()
         let scene = composite(plan,images:images,imageScale:1,outputScale:1)
@@ -170,7 +207,8 @@ public final class PanoramaEngine {
             try LinearDNGWriter.write(image:scene,context:context,to:temp,cancellation:cancellation,progress:progress)
         } else {
             progress("写入 16 位 TIFF（LZW）")
-            guard let cg = context.createCGImage(scene,from:scene.extent,format:.RGBA16,
+            let display=plan.lccState?.protectHighlights == true ? Self.protectedDisplay(scene):scene
+            guard let cg = context.createCGImage(display,from:display.extent,format:.RGBA16,
                                                  colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!),
                   let destination = CGImageDestinationCreateWithURL(temp as CFURL,"public.tiff" as CFString,1,nil) else {
                 throw PanoramaFailure("无法创建 16 位 TIFF")

@@ -54,6 +54,34 @@ enum PanoramaSeams {
         }
         plan.gains = plan.options.matchExposure ? gains : [Double](repeating:1,count:n)
         for i in 0..<n { for p in 0..<count { colors[i][p] *= plan.gains[i] } }
+        plan.photometricGains=[]
+        if plan.options.matchExposure {
+            func local(_ i:Int,_ p:Int)->CGPoint {
+                CGPoint(x:((Double(p%w)+0.5)/sx-plan.origins[i].x)/plan.sources[i].size.width-0.5,
+                        y:((Double(p/w)+0.5)/sy-plan.origins[i].y)/plan.sources[i].size.height-0.5)
+            }
+            var samples:[PanoramaPhotometry.Sample]=[]
+            for a in 0..<n {for b in a+1..<n {
+                try cancellation.check()
+                for y in stride(from:0,to:h,by:5) {for x in stride(from:0,to:w,by:5) {
+                    let p=y*w+x
+                    guard valid[a][p],valid[b][p] else {continue}
+                    let pa=local(a,p),pb=local(b,p),ca=colors[a][p],cb=colors[b][p]
+                    guard max(abs(pa.x),abs(pa.y),abs(pb.x),abs(pb.y))<0.45,
+                          min(ca.x,ca.y,ca.z,cb.x,cb.y,cb.z)>0.004,
+                          max(ca.x,ca.y,ca.z,cb.x,cb.y,cb.z)<4 else {continue}
+                    samples.append(.init(a:a,b:b,ax:pa.x,ay:pa.y,bx:pb.x,by:pb.y,
+                        difference:SIMD3(log(cb.x/ca.x),log(cb.y/ca.y),log(cb.z/ca.z))))
+                }}
+            }}
+            let planes=PanoramaPhotometry.fit(samples,count:n)
+            for i in 0..<n {
+                plan.photometricGains.append(PanoramaPhotometry.image(planes[i],size:plan.sources[i].size))
+                for p in 0..<count where valid[i][p] {
+                    let q=local(i,p);colors[i][p] *= planes[i].gain(q.x,q.y)
+                }
+            }
+        }
         var unary = edgeCost
         var disagreement = [Double](repeating:0,count:count)
         for p in 0..<count {
@@ -123,7 +151,12 @@ enum PanoramaSeams {
             var soft = radius > 0 ? boxBlur(hard,width:w,height:h,radius:radius) : hard
             for p in 0..<count {
                 if !valid[i][p] || labels[p] < 0 { soft[p] = 0 }
-                else if plan.options.avoidMotion && unsafe[p] > 0.001 { soft[p] = hard[p] }
+                else if plan.options.avoidMotion {
+                    // Continuous transition to ownership near disagreement. A binary switch
+                    // from feathered to hard masks itself creates a visible brightness step.
+                    let protect=min(1,unsafe[p]*8)
+                    soft[p]=soft[p]*(1-protect)+hard[p]*protect
+                }
             }
             weights.append(soft)
         }

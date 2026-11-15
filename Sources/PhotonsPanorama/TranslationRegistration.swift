@@ -72,6 +72,27 @@ enum TranslationRegistration {
         return Match(offset:refined.offset,score:refined.score,inliers:cluster.count)
     }
 
+    /// Bounded image search around measured shift differences. A measurement supplies a
+    /// search window, never a successful match by itself. The final coordinates remain
+    /// subpixel image matches, including when the entered reading is slightly imprecise.
+    static func align(_ a:GrayRaster,_ b:GrayRaster,near expected:CGPoint,radius:Double,
+                      cancellation:PanoramaCancellation) throws -> Match? {
+        guard expected.x.isFinite,expected.y.isFinite,radius.isFinite,radius>0 else {return nil}
+        let scale=min(1,256/Double(a.width))
+        func small(_ image:GrayRaster)->GrayRaster {
+            let w=max(2,Int(Double(image.width)*scale)),h=max(2,Int(Double(image.height)*scale))
+            var values=[Double]();values.reserveCapacity(w*h)
+            for y in 0..<h {for x in 0..<w {values.append(image.sample(Double(x)/scale,Double(y)/scale))}}
+            return GrayRaster(width:w,height:h,values:values)
+        }
+        try cancellation.check()
+        let low=refine(small(a),small(b),offset:CGPoint(x:expected.x*scale,y:expected.y*scale),radius:min(24,max(2,Int(ceil(radius*scale)))))
+        try cancellation.check()
+        let match=refine(a,b,offset:CGPoint(x:low.offset.x/scale,y:low.offset.y/scale),radius:3)
+        guard match.score>0.72,hypot(match.offset.x-expected.x,match.offset.y-expected.y)<=radius+1 else {return nil}
+        return match
+    }
+
     /// NCC of gradients suppresses exposure differences and low-frequency lens shading. The
     /// overlap is sampled on a fixed grid to avoid a changing objective during subpixel fitting.
     static func correlation(_ a: GrayRaster, _ b: GrayRaster, offset: CGPoint) -> Double {

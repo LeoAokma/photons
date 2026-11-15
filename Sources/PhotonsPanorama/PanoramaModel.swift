@@ -107,6 +107,25 @@ public struct PanoramaOptions: Equatable {
     public init() {}
 }
 
+/// One measured frame fixes the optical origin. Replacing this value replaces the sole
+/// constraint; there is no collection of potentially contradictory camera readings.
+public struct PanoramaPositionReference:Equatable {
+    public let sourceIndex:Int
+    /// Same image-circle axes as LCC capture positions: right/up positive.
+    public let positionMM:CGPoint
+    public init(sourceIndex:Int,positionMM:CGPoint) {self.sourceIndex=sourceIndex;self.positionMM=positionMM}
+    public func position(of index:Int,in plan:PanoramaPlan,sensor:SensorSize)->CGPoint {
+        let a=plan.sourceRect(sourceIndex),b=plan.sourceRect(index)
+        return CGPoint(x:positionMM.x+(b.midX-a.midX)*sensor.width/a.width,
+                       y:positionMM.y-(b.midY-a.midY)*sensor.height/a.height)
+    }
+    public func profileOffset(in plan:PanoramaPlan,sensor:SensorSize)->CGPoint {
+        let r=plan.sourceRect(sourceIndex)
+        return CGPoint(x:(r.midX-plan.size.width/2)*sensor.width/r.width-positionMM.x,
+                       y:(plan.size.height/2-r.midY)*sensor.height/r.height-positionMM.y)
+    }
+}
+
 public struct OpticalEstimate {
     /// In panorama pixels, upper-left origin. Nil means the fit is underdetermined.
     public var center: CGPoint?
@@ -119,6 +138,7 @@ public struct OpticalEstimate {
 /// renderers. Export cannot call registration. Stored coordinates use an upper-left origin;
 /// only the Core Image compositor converts them to lower-left coordinates.
 public struct PanoramaPlan {
+    public var isRegistered = true
     public let sources: [PanoramaSource]
     public let origins: [CGPoint]
     public let size: CGSize
@@ -127,6 +147,8 @@ public struct PanoramaPlan {
     public var gains: [Double]
     public var ownership: [Int16]
     public var blendMasks: [Data] = []
+    /// Smooth residual overlap photometry, in full-resolution source coordinates.
+    public var photometricGains: [CIImage] = []
     public var maskWidth: Int
     public var maskHeight: Int
     public var optical: OpticalEstimate
@@ -134,6 +156,13 @@ public struct PanoramaPlan {
     public var previewScale: Double
     public var previewImages: [CIImage]
     public var preview: CGImage?
+    /// Per-source orientation selection. This is calibration selection, not an implicit correction.
+    public var lensProfileSelections: [LCCProfileBinding?] = []
+    public var lccState: PanoramaLCCState?
+    public var originalPreviewImages: [CIImage]?
+    public var lccLinearPreviewImages: [CIImage]?
+    public var lccWhiteBalance=LCCWhiteBalanceTransform()
+    public var outputSize: CGSize { lccState?.cropRect?.size ?? size }
 
     public var megapixels: Double { size.width * size.height / 1_000_000 }
     public func sourceRect(_ index: Int, scale: Double = 1) -> CGRect {

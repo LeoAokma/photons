@@ -191,3 +191,23 @@ final class PanoramaTests: XCTestCase {
         }
     }
 }
+
+final class PanoramaHintTests:XCTestCase {
+    func testMeasuredShiftSearchRefinesLowContrastTextureAndRejectsBlank() throws {
+        let w=256,h=220
+        func image(_ ox:Int,_ oy:Int)->GrayRaster {
+            var values:[Double]=[]
+            for y in 0..<h {for x in 0..<w {
+                let xx=x+ox,yy=y+oy,hash=(xx &* 73856093) ^ (yy &* 19349663)
+                values.append(0.3+Double(hash & 1023)/1023*0.001)
+            }}
+            return GrayRaster(width:w,height:h,values:values)
+        }
+        let a=image(30,60),b=image(104,36)
+        XCTAssertNil(try TranslationRegistration.align(a,b,cancellation:.init()),"This fixture deliberately lacks strong descriptor corners")
+        let match=try XCTUnwrap(TranslationRegistration.align(a,b,near:CGPoint(x:78,y:-21),radius:10,cancellation:.init()))
+        XCTAssertEqual(match.offset.x,74,accuracy:0.2);XCTAssertEqual(match.offset.y,-24,accuracy:0.2)
+        let blank=GrayRaster(width:w,height:h,values:[Double](repeating:0.3,count:w*h))
+        XCTAssertNil(try TranslationRegistration.align(blank,blank,near:.zero,radius:10,cancellation:.init()))
+    }
+}

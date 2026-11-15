@@ -32,7 +32,7 @@ let package = Package(
         .target(name: "PhotonsCore", resources: [.copy("Kernels")]),
         .target(name: "PhotonsExport", dependencies: ["PhotonsCore"]),
         .target(name: "PhotonsExtensions"),
-        .target(name: "PhotonsPanorama", dependencies: ["PhotonsExtensions"]),
+        .target(name: "PhotonsPanorama", dependencies: ["PhotonsExtensions"], resources: [.copy("Profiles")]),
         .target(name: "PhotonsCatalog", dependencies: [
             "PhotonsCore",
             .product(name: "GRDB", package: "GRDB.swift"),

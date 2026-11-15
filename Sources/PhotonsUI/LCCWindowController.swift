@@ -6,12 +6,12 @@ import PhotonsPanorama
 public final class LCCWindowController: NSWindowController, NSWindowDelegate {
     private let model: LCCWindowModel
     public var onClose: (() -> Void)?
-    public init(urls: [URL]) {
+    public init(urls: [URL], showProfiles: Bool = false) {
         model = LCCWindowModel(urls:urls)
         let window = NSWindow(contentRect:NSRect(x:0,y:0,width:980,height:730),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
-        window.title = "LCC 矫正 · 逐张对应"; window.minSize = NSSize(width:800,height:560); window.isReleasedWhenClosed = false
+        window.title = "LCC 矫正"; window.minSize = NSSize(width:800,height:560); window.isReleasedWhenClosed = false
         super.init(window:window); window.delegate = self; model.window = window
-        window.contentView = NSHostingView(rootView:LCCPairingView(model:model)); window.center(); model.load()
+        window.contentView = NSHostingView(rootView:LCCWorkspaceView(model:model,showProfiles:showProfiles || urls.isEmpty)); window.center(); model.load()
     }
     public required init?(coder:NSCoder) { fatalError("no nib") }
     public func windowWillClose(_ notification:Notification) { model.closed = true; onClose?() }
@@ -107,7 +107,7 @@ private struct LCCPairingView: View {
             HStack {
                 VStack(alignment:.leading,spacing:5) {
                     Text("逐张 LCC 对应").font(.title.bold())
-                    Text("先确认每张场景照片使用哪张平场照片，再开发校正处理。").foregroundStyle(.secondary)
+                    Text("逐张配对白板可供自动定位，尚不逐张应用增益；拼接中的“LCC校正”使用镜头 Profile。可切换到“镜头 Profiles”创建标定。").foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("选择场景照片…") { model.choose(scenes:true) }
@@ -159,5 +159,20 @@ private struct LCCPairingView: View {
             }
         }.padding(24).disabled(model.busy)
             .alert("LCC 对应",isPresented:Binding(get:{ model.error != nil },set:{ if !$0 { model.error = nil } })) { Button("好") { model.error = nil } } message: { Text(model.error ?? "") }
+    }
+}
+
+private struct LCCWorkspaceView: View {
+    @ObservedObject var model:LCCWindowModel
+    @State private var selection:Int
+    @StateObject private var libraryModel=LCCProfileLibraryModel()
+    init(model:LCCWindowModel,showProfiles:Bool) {self.model=model;_selection=State(initialValue:showProfiles ? 1:0)}
+    var body:some View {
+        VStack(spacing:0) {
+            Picker("LCC 功能",selection:$selection) {
+                Text("逐张对应").tag(0);Text("镜头 Profiles").tag(1)
+            }.pickerStyle(.segmented).frame(width:340).padding(.top,16)
+            if selection==0 {LCCPairingView(model:model)} else {LCCProfileLibraryView(model:libraryModel)}
+        }
     }
 }
