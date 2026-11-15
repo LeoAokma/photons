@@ -4,7 +4,9 @@ import PhotonsCore
 
 // MARK: - the histogram card
 //
-// Four series (R, G, B, luma) drawn from the bins `RenderGraph.measureHistogram` measured, the three
+// **Three** series (R, G, B) drawn additively from the bins `RenderGraph.measureHistogram` measured —
+// each at full strength inside a transparency layer, so overlapping curves read as light: red + green
+// is yellow, all three are white (403: the luma outline is gone, its measurement is not) — the three
 // clipping numbers under them (过白 / 削顶 / 削底), **one** readout row, and one click target: 过白
 // toggles the highlight warning on the canvas.
 //
@@ -105,7 +107,8 @@ public final class HistogramCardView: NSView {
 
     // MARK: what the smoke reads back
 
-    /// Channels whose path was actually built in the last `draw` (4 when there is a histogram).
+    /// Channels whose path was actually built in the last `draw` (**3** when there is a histogram: 403
+    /// dropped the painted luma outline, the measurement and its readouts stay).
     public private(set) var lastDrawnSeries = 0
     /// Bins the last path was built from, **both segments** (256 + 256 = 512 today).
     public private(set) var lastDrawnBins = 0
@@ -428,7 +431,7 @@ public final class HistogramCardView: NSView {
     private func updateAccessibilityHelp() {
         let bins = histogram?.binCount ?? 256
         let tail = histogram?.hdrBinCount ?? Histogram.hdrBinCount
-        setAccessibilityHelp("直方图：R/G/B/亮度四组曲线；横轴 \(bins) 档 SDR 码值 + \(tail) 档高光尾。下面一行随鼠标变化：鼠标在画面上时是鼠标处像素的 R/G/B 三通道值（画面本身的光，不是屏幕渲染后的值：SDR 区为 0–255 码值，超白通道为 +x.x 档并画成削顶品红），鼠标在直方图上时是那一箱的 R/G/B 样本数，其他位置为空但行高不变。")
+        setAccessibilityHelp("直方图：R/G/B 三组曲线，重叠处按光叠加（R+G 为黄，三路齐为白）；亮度仍测量并用于过白/削顶/削底读数，但不再画线。横轴 \(bins) 档 SDR 码值 + \(tail) 档高光尾。下面一行随鼠标变化：鼠标在画面上时是鼠标处像素的 R/G/B 三通道值（画面本身的光，不是屏幕渲染后的值：SDR 区为 0–255 码值，超白通道为 +x.x 档并画成削顶品红），鼠标在直方图上时是那一箱的 R/G/B 样本数，其他位置为空但行高不变。")
     }
 
     public required init?(coder: NSCoder) { fatalError("no nibs in this app") }
@@ -845,48 +848,56 @@ public final class HistogramCardView: NSView {
         lastCeilingStops = 0
         drawAxis(axis)
 
-        // The 4-series plot. RGB are filled, luma is the outline over them: the additive stack is
-        // how a histogram reads as "where are my colours", and the luma line is the one number a
-        // levels adjustment is actually aiming at. Both segments are drawn as **one** path per
-        // series, so the curve crosses the SDR/tail boundary without a seam.
+        // **Three series, added like light** (403). The owner's rule: 「直方图取消白色线，只绘制 RGB，RGB
+        // 重叠部分的颜色按光叠加展示——即都有的话白色，R+G 就是黄色」. So the luma outline is gone from the
+        // *paint* (its bins, its clipping numbers and the pointer readout are all untouched) and the three
+        // colour curves are filled with `plusLighter`, each at full strength: red + green = yellow, and all
+        // three = white. Coefficients below 1.0 would add up to grey instead, which is not what was asked.
+        //
+        // The **transparency layer is load-bearing, not an optimisation**: `plusLighter` on the card would
+        // mix the curves with the bed, so the sum would depend on the appearance (and a single channel would
+        // wash out on a light bed). Inside a layer the sums start from transparent black — the overlap
+        // colour is a function of the data only — and the finished layer is composited over the bed once.
+        // Nothing opaque goes in the layer: the bed, the grid and the ticks are painted *before* it and the
+        // axis chrome *after* it.
+        //
+        // Both segments are still **one** path per series, so the curve crosses the SDR/tail boundary
+        // without a seam.
         lastDrawnSeries = 0
         lastDrawnBins = 0
         lastDrawnHDRBins = 0
         if let histogram {
             let bins = histogram.binCount
             let series: [(channel: Histogram.Channel, color: NSColor)] = [
-                (.red, NSColor(srgbRed: 0.95, green: 0.20, blue: 0.24, alpha: 0.55)),
-                (.green, NSColor(srgbRed: 0.24, green: 0.80, blue: 0.36, alpha: 0.55)),
-                (.blue, NSColor(srgbRed: 0.28, green: 0.45, blue: 1.00, alpha: 0.55)),
+                (.red, NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)),
+                (.green, NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)),
+                (.blue, NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)),
             ]
-            for (channel, color) in series {
-                let c = histogram[channel]
-                let points = HistogramCardFormat.points(c, binCount: bins, axis: axis,
-                                                        peak: HistogramCardFormat.scalePeak(c))
-                guard points.count > 2 else { continue }
-                let path = NSBezierPath()
-                path.move(to: points[0])
-                for p in points.dropFirst() { path.line(to: p) }
-                path.close()
-                color.setFill()
-                path.fill()
-                lastDrawnSeries += 1
-                lastDrawnBins = max(lastDrawnBins, points.count - 2)
-                lastDrawnHDRBins = max(lastDrawnHDRBins, c.hdrBins.count)
-            }
-            let luma = histogram.luma
-            let lumaPoints = HistogramCardFormat.points(luma, binCount: bins, axis: axis,
-                                                       peak: HistogramCardFormat.scalePeak(luma))
-            if lumaPoints.count > 2 {
-                let outline = NSBezierPath()
-                outline.move(to: lumaPoints[0])
-                for p in lumaPoints.dropFirst() { outline.line(to: p) }
-                outline.lineWidth = 1.2
-                NSColor.labelColor.withAlphaComponent(0.85).setStroke()
-                outline.stroke()
-                lastDrawnSeries += 1
-                lastDrawnBins = max(lastDrawnBins, lumaPoints.count - 2)
-                lastDrawnHDRBins = max(lastDrawnHDRBins, luma.hdrBins.count)
+            if let context = NSGraphicsContext.current {
+                let cg = context.cgContext
+                cg.saveGState()
+                cg.beginTransparencyLayer(auxiliaryInfo: nil)
+                context.compositingOperation = .plusLighter
+                for (channel, color) in series {
+                    let c = histogram[channel]
+                    let points = HistogramCardFormat.points(c, binCount: bins, axis: axis,
+                                                            peak: HistogramCardFormat.scalePeak(c))
+                    guard points.count > 2 else { continue }
+                    let path = NSBezierPath()
+                    path.move(to: points[0])
+                    for p in points.dropFirst() { path.line(to: p) }
+                    path.close()
+                    color.setFill()
+                    path.fill()
+                    lastDrawnSeries += 1
+                    lastDrawnBins = max(lastDrawnBins, points.count - 2)
+                    lastDrawnHDRBins = max(lastDrawnHDRBins, c.hdrBins.count)
+                }
+                // Back to sourceOver *before* the layer is flattened: the layer as a whole goes onto the
+                // bed normally, so only the curves inside it were added to each other.
+                context.compositingOperation = .sourceOver
+                cg.endTransparencyLayer()
+                cg.restoreGState()
             }
             // The 0.999 / 0.001 thresholds as tick marks: they are what the numbers below mean.
             drawThresholdTicks(in: axis)
@@ -897,7 +908,7 @@ public final class HistogramCardView: NSView {
         } else {
             drawStopLabels(axis)
             drawText("还没有可测的帧", at: CGPoint(x: plot.minX + 6, y: plot.midY - 6),
-                     font: .systemFont(ofSize: 9), color: .tertiaryLabelColor)
+                     font: .systemFont(ofSize: 9), color: Self.plotLabelColor)
         }
 
         drawClipRows(below: plot, histogram: histogram, in: bounds)
@@ -927,9 +938,17 @@ public final class HistogramCardView: NSView {
 
     /// The two-segment surface: a flat SDR bed, a tinted tail, the quarter-tone guides inside the
     /// SDR part only, and the display-white boundary between them.
+    ///
+    /// **The bed is a fixed dark surface in both appearances** (403): an additive RGB stack needs a dark
+    /// ground, otherwise a single channel saturates against a light bed and reads white. The three colour
+    /// curves are added in a transparency layer over this bed (see `draw`), so red+green is yellow and
+    /// red+green+blue is white *on either appearance* — the sum cannot be poisoned by a light backdrop.
+    /// Its consequence: every piece of chrome that used to be a `labelColor` tint (grid, stop lines,
+    /// split, numbers, the ceiling chip) is now a fixed light ink, because a black 8 % line on a 0.09 bed
+    /// is invisible in aqua.
     private func drawAxis(_ axis: HistogramAxis) {
         let plot = axis.plot
-        NSColor.labelColor.withAlphaComponent(0.06).setFill()
+        Self.plotBedColor.setFill()
         NSBezierPath(roundedRect: plot, xRadius: 4, yRadius: 4).fill()
 
         // The tail is a different kind of axis (exponential, and mostly outside the panel), so it is
@@ -937,13 +956,13 @@ public final class HistogramCardView: NSView {
         // square corners over the bed.
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(roundedRect: plot, xRadius: 4, yRadius: 4).addClip()
-        NSColor.systemOrange.withAlphaComponent(0.055).setFill()
+        Self.plotTailTintColor.setFill()
         NSRect(x: axis.sdrMaxX, y: plot.minY, width: axis.hdrWidth, height: plot.height).fill()
         NSGraphicsContext.restoreGraphicsState()
 
         // Quarter-tone guides, as in every raw editor — inside the code segment, where they mean
         // "a quarter of the way from black to white".
-        NSColor.labelColor.withAlphaComponent(0.08).setStroke()
+        Self.plotGridColor.setStroke()
         for i in 1..<4 {
             let x = plot.minX + axis.sdrWidth * CGFloat(i) / 4
             let line = NSBezierPath()
@@ -954,7 +973,7 @@ public final class HistogramCardView: NSView {
         }
 
         // Display white: the boundary the two scales meet at.
-        NSColor.labelColor.withAlphaComponent(0.30).setStroke()
+        Self.plotSplitColor.setStroke()
         let split = NSBezierPath()
         split.move(to: CGPoint(x: axis.sdrMaxX, y: plot.minY))
         split.line(to: CGPoint(x: axis.sdrMaxX, y: plot.maxY))
@@ -962,7 +981,7 @@ public final class HistogramCardView: NSView {
         split.stroke()
 
         // One line per stop of the tail.
-        NSColor.labelColor.withAlphaComponent(0.07).setStroke()
+        Self.plotStopLineColor.setStroke()
         for stop in 1..<axis.stops {
             let x = axis.x(stopsAboveWhite: Double(stop))
             let line = NSBezierPath()
@@ -973,13 +992,25 @@ public final class HistogramCardView: NSView {
         }
     }
 
+    /// 403's plot surface, as named constants so a test can name the colour it expects instead of
+    /// re-typing the literals. They are **fixed** — identical in aqua and darkAqua — because the plot
+    /// is a dark ground by design now, and the chrome on it is light ink.
+    static let plotBedColor = NSColor(srgbRed: 0.09, green: 0.09, blue: 0.10, alpha: 1)
+    static let plotTailTintColor = NSColor(srgbRed: 1.00, green: 0.58, blue: 0.00, alpha: 0.10)
+    static let plotGridColor = NSColor.white.withAlphaComponent(0.10)
+    static let plotSplitColor = NSColor.white.withAlphaComponent(0.28)
+    static let plotStopLineColor = NSColor.white.withAlphaComponent(0.09)
+    /// The `+1 … +4` stop numbers and the ceiling chip: fixed light ink, never a `labelColor` tint.
+    static let plotLabelColor = NSColor.white.withAlphaComponent(0.55)
+    static let plotChipColor = NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.35)
+
     /// `+1 … +4` along the top of the tail: what the 30 pt steps mean. Skipped when the card is too
     /// narrow for the numbers to be legible (they would collide with each other).
     private func drawStopLabels(_ axis: HistogramAxis) {
         guard axis.stopWidth >= 16 else { return }
         let font = NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .semibold)
         let attributes: [NSAttributedString.Key: Any] = [.font: font,
-                                                         .foregroundColor: NSColor.secondaryLabelColor]
+                                                         .foregroundColor: Self.plotLabelColor]
         for stop in 1...axis.stops {
             let text = "+\(stop)"
             let size = (text as NSString).size(withAttributes: attributes)
@@ -1025,8 +1056,10 @@ public final class HistogramCardView: NSView {
         if labelX < axis.plot.minX + 1 { labelX = axis.plot.minX + 1 }
         let labelY = axis.plot.maxY - size.height - 1
         // A chip behind the number: the tick is drawn over the distribution, and an orange 8 pt label
-        // on top of a filled curve is unreadable exactly where it matters (a spiky highlight).
-        NSColor.labelColor.withAlphaComponent(0.14).setFill()
+        // on top of a filled curve is unreadable exactly where it matters (a spiky highlight). It is a
+        // fixed dark chip (403): the plot bed is dark in both appearances, so a `labelColor` tint would
+        // turn into a light box in aqua and a hole in darkAqua.
+        Self.plotChipColor.setFill()
         NSBezierPath(roundedRect: NSRect(x: labelX - 1.5, y: labelY - 0.5,
                                         width: size.width + 3, height: size.height + 1),
                      xRadius: 2, yRadius: 2).fill()
@@ -1209,9 +1242,10 @@ public final class HistogramCardView: NSView {
     /// legend: `R` is red in both rows because it is red in the curves.
     static let channelLetters = HistogramCardFormat.channelLetters
 
-    /// The three letters' colours: the same three the R/G/B curves are tinted with (`series` in `draw`),
-    /// so a red `R` next to a red curve. Public because the tests compare the colour that was *painted*
-    /// against this constant rather than re-typing the literals.
+    /// The three letters' colours: the row's own ink, chosen to stay legible on the card's *text*
+    /// backdrop (the letters are not on the plot, so they are not the plot's additive primaries — see
+    /// `series` in `draw` for the curves' fixed 1.0 red/green/blue). Public because the tests compare
+    /// the colour that was *painted* against this constant rather than re-typing the literals.
     public static let channelNameColors: [NSColor] = [
         NSColor(srgbRed: 0.95, green: 0.25, blue: 0.28, alpha: 1),
         NSColor(srgbRed: 0.22, green: 0.72, blue: 0.34, alpha: 1),

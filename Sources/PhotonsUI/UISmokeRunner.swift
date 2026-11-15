@@ -2111,9 +2111,9 @@ public final class UISmokeRunner {
     /// The histogram card, asserted on the **shipped measurement** — the picture, measured before S4
     /// (005, 2026-10-26), not the frame on screen:
     ///
-    ///   1. the card is a real view in the inspector's SwiftUI tree and it drew 4 series over **both**
-    ///      segments — 256 code bins plus the 256-bin exponential tail (`Histogram.maxStops` ×
-    ///      `hdrBinsPerStop` = 4 × 64);
+    ///   1. the card is a real view in the inspector's SwiftUI tree and it drew **3** series (RGB,
+    ///      added — 403 dropped the painted luma outline) over **both** segments — 256 code bins plus
+    ///      the 256-bin exponential tail (`Histogram.maxStops` × `hdrBinsPerStop` = 4 × 64);
     ///   2. every channel's bins sum to the sample count (the measurement's own invariant), and the
     ///      axis is the laid-out one: 30 pt per stop, 4 stops, SDR + tail = the card's width;
     ///   3. the display-ceiling tick sits at `log2(headroom)` stops into the tail — the measurement's
@@ -2158,8 +2158,8 @@ public final class UISmokeRunner {
 
         log("histogram picture       \(histogram.sampleCount) px sampled on \(histogram.sampleSize.width)×\(histogram.sampleSize.height) · canvas \(histogram.canvas.width)×\(histogram.canvas.height) · \(histogram.binCount)+\(histogram.hdrBinCount) bins · headroom \(String(format: "%.3f", histogram.headroom))× · publishes \(loupe.histogramPublishCount) · \(String(format: "%.1f", loupe.lastHistogramMilliseconds)) ms")
         let axis = card.lastAxis
-        check("直方图卡片在检查器里，并画出 4 组 × \(histogram.binCount)+\(histogram.hdrBinCount) bin（实测 series \(card.lastDrawnSeries) / bins \(card.lastDrawnBins) / 尾段 \(card.lastDrawnHDRBins)）",
-              card.lastDrawnSeries == 4
+        check("直方图卡片在检查器里，并画出 3 组（RGB 加色，无 luma 线）× \(histogram.binCount)+\(histogram.hdrBinCount) bin（实测 series \(card.lastDrawnSeries) / bins \(card.lastDrawnBins) / 尾段 \(card.lastDrawnHDRBins)）",
+              card.lastDrawnSeries == 3
               && card.lastDrawnBins == histogram.binCount + histogram.hdrBinCount
               && card.lastDrawnHDRBins == histogram.hdrBinCount
               && card.histogram != nil)
