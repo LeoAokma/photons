@@ -153,7 +153,7 @@ final class NativeTrafficLightsTests: XCTestCase {
             print("\n=== \(Int(size.width))×\(Int(size.height)) ===")
             print("top bar band (root, flipped) \(NSStringFromRect(band))")
 
-            // ① 材质：.headerView / .behindWindow / followsWindowActiveState，且在最底层。
+            // ① 材质：.headerView / .behindWindow / followsWindowActiveState，且压在画布之上、顶栏之下。
             guard let glass = headerGlass(in: root) else {
                 let inventory = root.subviews.map { "\(type(of: $0)) \(NSStringFromRect($0.frame))" }
                 return XCTFail("顶栏没有 .headerView 材质：\(inventory)")
@@ -164,7 +164,13 @@ final class NativeTrafficLightsTests: XCTestCase {
             XCTAssertEqual(glass.material, .headerView)
             XCTAssertEqual(glass.blendingMode, .behindWindow)
             XCTAssertEqual(glass.state, .followsWindowActiveState)
-            XCTAssertTrue(root.subviews.first === glass, "玻璃不是最底层子视图")
+            // 402 — 玻璃**不再是最底层**：它必须排在 `canvasHost` 之后（画布 overlay 的越界部分
+            // 以前连着画布的黑底一起盖住了顶栏与红绿灯），但仍排在 `topBar` 之前（它是按钮的衬托）。
+            let glassIndex = root.subviews.firstIndex { $0 === glass } ?? -1
+            let canvasIndex = root.subviews.firstIndex { $0 === root.loupeController.view.superview } ?? -1
+            let barIndex = root.subviews.firstIndex { $0 === root.topBar } ?? -1
+            XCTAssertGreaterThan(glassIndex, canvasIndex, "玻璃在画布之下：越界 overlay 会盖住红绿灯")
+            XCTAssertLessThan(glassIndex, barIndex, "玻璃必须仍在顶栏控件之下")
             XCTAssertEqual(glass.frame.minX, band.minX, accuracy: 0.001)
             XCTAssertEqual(glass.frame.minY, band.minY, accuracy: 0.001)
             XCTAssertEqual(glass.frame.width, band.width, accuracy: 0.001)
