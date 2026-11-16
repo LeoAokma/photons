@@ -545,31 +545,40 @@ public enum DisplayResample {
         guard tw != image.width || th != image.height else { return image }
 
         let w = image.width, h = image.height
-        let src = image.rgba
-        var out = [Float16](repeating: 0, count: tw * th * 4)
-        for y in 0..<th {
-            let y0 = Int(Double(y) * Double(h) / Double(th))
-            let y1 = min(h, max(y0 + 1, Int((Double(y + 1) * Double(h) / Double(th)).rounded(.up))))
-            for x in 0..<tw {
-                let x0 = Int(Double(x) * Double(w) / Double(tw))
-                let x1 = min(w, max(x0 + 1, Int((Double(x + 1) * Double(w) / Double(tw)).rounded(.up))))
-                var r = 0.0, g = 0.0, b = 0.0, a = 0.0
-                for sy in y0..<y1 {
-                    var i = (sy * w + x0) * 4
-                    for _ in x0..<x1 {
-                        r += Double(src[i]); g += Double(src[i + 1])
-                        b += Double(src[i + 2]); a += Double(src[i + 3])
-                        i += 4
+        func resample(_ src: [Float16], extended: Bool) -> [Float16] {
+            var out = [Float16](repeating: 0, count: tw * th * 4)
+            for y in 0..<th {
+                let y0 = Int(Double(y) * Double(h) / Double(th))
+                let y1 = min(h, max(y0 + 1, Int((Double(y + 1) * Double(h) / Double(th)).rounded(.up))))
+                for x in 0..<tw {
+                    let x0 = Int(Double(x) * Double(w) / Double(tw))
+                    let x1 = min(w, max(x0 + 1, Int((Double(x + 1) * Double(w) / Double(tw)).rounded(.up))))
+                    var r = 0.0, g = 0.0, b = 0.0, a = 0.0
+                    for sy in y0..<y1 {
+                        var i = (sy * w + x0) * 4
+                        for _ in x0..<x1 {
+                            r += Double(src[i]); g += Double(src[i + 1])
+                            b += Double(src[i + 2]); a += Double(src[i + 3])
+                            i += 4
+                        }
                     }
+                    let n = Double((y1 - y0) * (x1 - x0))
+                    let o = (y * tw + x) * 4
+                    out[o] = extended ? Float16(r / n) : clip(r / n)
+                    out[o + 1] = extended ? Float16(g / n) : clip(g / n)
+                    out[o + 2] = extended ? Float16(b / n) : clip(b / n)
+                    out[o + 3] = clip(a / n)
                 }
-                let n = Double((y1 - y0) * (x1 - x0))
-                let o = (y * tw + x) * 4
-                out[o] = clip(r / n); out[o + 1] = clip(g / n)
-                out[o + 2] = clip(b / n); out[o + 3] = clip(a / n)
             }
+            return out
         }
-        return DisplayImage(width: tw, height: th, rgba: out,
-                            primaries: image.primaries, bitDepth: image.bitDepth)
+        // Both halves must have identical geometry. Dropping this companion silently
+        // turns gain-map exports into SDR and makes PQ/HLG encoding fail after a resize.
+        let linear = image.linear.map {
+            LinearPixels(width: tw, height: th, rgba: resample($0.rgba, extended: true), primaries: $0.primaries)
+        }
+        return DisplayImage(width: tw, height: th, rgba: resample(image.rgba, extended: false),
+                            primaries: image.primaries, bitDepth: image.bitDepth, linear: linear)
     }
 
     private static func clip(_ v: Double) -> Float16 {

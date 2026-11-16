@@ -31,7 +31,7 @@ private final class PanoramaWindowModel: ObservableObject {
     @Published var error: String?
     @Published var plan: PanoramaPlan?
     @Published var options = PanoramaOptions()
-    @Published var format = PanoramaEngine.OutputFormat.dng
+    @Published var exportKind = PanoramaExportKind.standard
     @Published var cameraBody:PanoramaCameraBody = .alpa12Max
     @Published var bodyOrientation:PanoramaBodyOrientation = .degrees0
     @Published var sensorChoice = 0
@@ -58,10 +58,11 @@ private final class PanoramaWindowModel: ObservableObject {
     private var lccSession:LCCEditingSession?
     private var alignmentWindow:LCCAlignmentWindowController?
     private var lccWindow: LCCWindowController?
+    private var exportWindow: PanoramaExportController?
     private var cancellation = PanoramaCancellation()
     private let queue = DispatchQueue(label:"Photons.panorama",qos:.userInitiated)
     init(urls: [URL]) { self.urls = urls; refreshLCC() }
-    func cancel() { cancellation.cancel() }
+    func cancel() { cancellation.cancel(); exportWindow?.dismiss() }
     func setBody(_ body:PanoramaCameraBody) {
         cameraBody=body;bodyOrientation=body.canonicalOrientation(bodyOrientation);bodyPlacementChanged()
     }
@@ -282,16 +283,22 @@ private final class PanoramaWindowModel: ObservableObject {
     }
     func stitch() {
         guard let plan, let window, canStitch else { return }
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "全景.\(format.rawValue)"
-        panel.allowedContentTypes = [UTType(filenameExtension:format.rawValue) ?? .data]
+        if exportKind == .standard {
+            let controller = PanoramaExportController(plan: plan)
+            exportWindow = controller
+            controller.present(in: window)
+            return
+        }
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "全景.dng"
+        panel.allowedContentTypes = [UTType(filenameExtension:"dng") ?? .data]
         panel.canCreateDirectories = true
         panel.beginSheetModal(for:window) { [weak self] result in
             guard result == .OK, let destination = panel.url, let self else { return }
             self.busy = true; self.error = nil; self.cancellation = PanoramaCancellation()
-            let token = self.cancellation, format = self.format
+            let token = self.cancellation
             self.queue.async {
                 do {
-                    try PanoramaEngine().export(plan,to:destination,format:format,cancellation:token) { message in
+                    try PanoramaEngine().export(plan,to:destination,format:.dng,cancellation:token) { message in
                         DispatchQueue.main.async { self.status = message }
                     }
                     DispatchQueue.main.async {
@@ -332,12 +339,12 @@ private struct PanoramaWorkspace: View {
             Text("选择拼接模式").font(.largeTitle.bold())
             Text("已选择 \(model.urls.count) 张照片").foregroundStyle(.secondary)
             VStack(alignment:.leading,spacing:12) {
-                Label("移轴接片",systemImage:"rectangle.on.rectangle").font(.title2.bold())
+                Label { Text("移轴接片") } icon: { PanoramaModeIcon() }.font(.title2.bold())
                 Text("镜头保持固定，后背平移。只移动图片位置，保留原始透视。")
                 Button("开始移轴接片") { model.prepare() }.buttonStyle(.borderedProminent).controlSize(.large)
             }.padding(24).frame(maxWidth:.infinity,alignment:.leading).background(.quaternary,in:RoundedRectangle(cornerRadius:14))
             VStack(alignment:.leading,spacing:8) {
-                Label("普通接片",systemImage:"panorama").font(.title2)
+                Label { Text("透视接片") } icon: { PanoramaModeIcon(perspective:true) }.font(.title2)
                 Text("适用于转动相机的拍摄方式，后续版本提供。").foregroundStyle(.secondary)
             }.padding(24).frame(maxWidth:.infinity,alignment:.leading).background(.quinary,in:RoundedRectangle(cornerRadius:14))
             Text("使用原始图像统一解码，不应用图库内的裁剪和调色。预览完成后，点击“拼接”才生成全分辨率文件。")
@@ -350,7 +357,7 @@ private struct PanoramaWorkspace: View {
                 ZStack {
                     Color(nsColor:.underPageBackgroundColor)
                     if let cg = model.plan?.preview {
-                        Image(decorative:cg,scale:1).resizable().aspectRatio(contentMode:.fit).padding(18)
+                        PanoramaHDRPreview(image:cg).padding(18)
                     } else {
                         VStack(spacing:14) {
                             Image(systemName:"panorama").font(.system(size:52)).foregroundStyle(.secondary)
@@ -475,7 +482,7 @@ private struct PanoramaWorkspace: View {
                 Toggle("保护高光",isOn:$model.protectHighlights).toggleStyle(.checkbox)
                     .onChange(of:model.protectHighlights) {_,_ in model.changeLCC()}
                 if model.protectHighlights,let ev=model.plan?.lccState?.highlightEV {
-                    Text("高光保护自动曝光 \(ev,specifier:"%.2f") EV；高光平滑过渡，DNG 保留线性余量。").font(.caption).foregroundStyle(.secondary)
+                    Text("高光保护自动曝光 \(ev,specifier:"%.2f") EV；HDR 预览与输出保留高光余量。").font(.caption).foregroundStyle(.secondary)
                 }
                 Text(model.positionReference == nil ? "开启 LCC 时自动解算并应用位置，也可手动对齐或重新解算。先校正 RAW 通道，再应用白平衡；预览与输出共用位置和增益。" : "LCC 已跟随位置基准锁定。清除基准后可手动对齐。").font(.caption).foregroundStyle(.secondary)
             }
@@ -493,11 +500,14 @@ private struct PanoramaWorkspace: View {
             Divider()
             Button("管理逐张 LCC…") { model.manageLCC() }
             Text("已记录 \(model.lccCount)/\(model.urls.count) 组逐张配对，白板用于自动定位与校正后的白平衡测量。“LCC校正”只应用所选镜头 Profile，不叠加白板校正。").font(.caption).foregroundStyle(.secondary)
-            Picker("输出",selection:$model.format) {
-                Text("16 位无损压缩 DNG").tag(PanoramaEngine.OutputFormat.dng)
-                Text("16 位 TIFF").tag(PanoramaEngine.OutputFormat.tiff)
+            Picker("输出",selection:$model.exportKind) {
+                Text("标准导出（与主体一致）").tag(PanoramaExportKind.standard)
+                Text("16 位无损压缩 DNG").tag(PanoramaExportKind.losslessDNG)
             }
-            Text("DNG 为已应用白平衡的线性 RGB，保留高光余量。未覆盖区域输出为黑色，可随后裁剪。").font(.caption).foregroundStyle(.secondary)
+            Text(model.exportKind == .standard
+                 ? "点击“拼接”打开主体导出设置，使用相同的格式、色彩空间、位深与 HDR 选项。"
+                 : "DNG 为已应用白平衡的 16 位线性 RGB，使用无损压缩并保留高光余量。")
+                .font(.caption).foregroundStyle(.secondary)
         }.disabled(model.busy)
         .onChange(of:model.sensorChoice) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
         .onChange(of:model.sensorWidth) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}

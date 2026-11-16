@@ -106,16 +106,13 @@ private struct LCCAlignmentView:View {
                 let width=model.base.size.width*scale,height=model.base.size.height*scale
                 ZStack {
                     Color(nsColor:.underPageBackgroundColor)
-                    if let cg=model.preview.preview {Image(decorative:cg,scale:1).resizable().aspectRatio(contentMode:.fit).frame(width:width,height:height)}
+                    if let cg=model.preview.preview {PanoramaHDRPreview(image:cg).frame(width:width,height:height)}
                     if model.showOutline {
                         Canvas { context,size in
                             let mx=model.session.sensor.width/model.base.sources[0].size.width,my=model.session.sensor.height/model.base.sources[0].size.height
-                            for field in model.session.fields.values where model.base.sources.contains(where:{$0.orientation==field.orientation.rawValue}) {
-                                for r in field.region.rectangles {
-                                    let q=CGRect(x:(model.base.size.width/2+(r.minX+model.x)/mx)*scale,
-                                        y:(model.base.size.height/2-(r.maxY+model.y)/my)*scale,width:r.width/mx*scale,height:r.height/my*scale)
-                                    context.stroke(Path(q),with:.color(.cyan.opacity(0.25)),lineWidth:0.7)
-                                }
+                            for r in model.preview.lccState?.footprintRects ?? [] {
+                                let q=r.applying(CGAffineTransform(scaleX:scale,y:scale))
+                                context.stroke(Path(q),with:.color(.cyan.opacity(0.25)),lineWidth:0.7)
                             }
                             if let r=model.preview.lccState?.suggestedCropRect {
                                 context.stroke(Path(r.applying(CGAffineTransform(scaleX:scale,y:scale))),with:.color(.orange),style:StrokeStyle(lineWidth:1.5,dash:[6,4]))

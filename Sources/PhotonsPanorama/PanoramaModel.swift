@@ -15,11 +15,12 @@ public struct PanoramaFailure: LocalizedError {
 public final class PanoramaCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
-    public init() {}
+    private let externalCancellation: () -> Bool
+    public init(isCancelled: @escaping () -> Bool = { false }) { externalCancellation = isCancelled }
     public func cancel() { lock.lock(); cancelled = true; lock.unlock() }
     public func check() throws {
         lock.lock(); let value = cancelled; lock.unlock()
-        if value { throw CancellationError() }
+        if value || externalCancellation() { throw CancellationError() }
     }
 }
 

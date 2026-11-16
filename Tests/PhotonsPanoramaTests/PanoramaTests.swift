@@ -57,6 +57,17 @@ final class PanoramaTests: XCTestCase {
         let plan = PanoramaPlan(sources:sources,origins:[.zero,CGPoint(x:40,y:60)],size:CGSize(width:140,height:140),
             registrationScores:[1,1],whiteBalance:nil,gains:[1,1],ownership:labels,maskWidth:14,maskHeight:14,
             optical:OpticalEstimate(center:nil,confidence:0,explanation:"",occludedEdges:[]),options:.init(),previewScale:1,previewImages:images,preview:nil)
+        var hdrPlan = plan
+        hdrPlan.previewImages = images.map { $0.applyingFilter("CIExposureAdjust", parameters:["inputEV":3]) }
+        engine.renderPreview(&hdrPlan)
+        let hdrPreview = try XCTUnwrap(hdrPlan.preview)
+        XCTAssertEqual(hdrPreview.bitsPerComponent,16)
+        XCTAssertTrue(hdrPreview.bitmapInfo.contains(.floatComponents))
+        XCTAssertEqual(hdrPreview.colorSpace?.name,CGColorSpace.extendedLinearDisplayP3)
+        let hdrPixels = PanoramaRaster(image:CIImage(cgImage:hdrPreview),context:engine.context,width:140,height:140)
+        XCTAssertGreaterThan(try XCTUnwrap(hdrPixels.rgb(20,20)).x,3.9)
+        XCTAssertGreaterThan(try XCTUnwrap(hdrPixels.rgb(100,120)).y,3.9)
+        XCTAssertEqual(hdrPlan.origins,plan.origins)
         for scale in [1.0,0.5] {
             let image = engine.composite(plan,images:images,imageScale:1,outputScale:scale)
             let pixels = PanoramaRaster(image:image,context:engine.context,width:140,height:140)
@@ -101,6 +112,7 @@ final class PanoramaTests: XCTestCase {
     func testCancelledWorkStopsBeforeReadingInputs() {
         let token = PanoramaCancellation(); token.cancel()
         XCTAssertThrowsError(try PanoramaEngine().analyze(urls:[URL(fileURLWithPath:"/missing/a"),URL(fileURLWithPath:"/missing/b")],cancellation:token)) { XCTAssertTrue($0 is CancellationError) }
+        XCTAssertThrowsError(try PanoramaCancellation(isCancelled:{true}).check()) { XCTAssertTrue($0 is CancellationError) }
     }
     func testCompressedLinearDNGRoundTrip() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

@@ -123,16 +123,18 @@ public final class PanoramaEngine {
                 return v.isFinite && raster.rgba[i+3]>0.5 ? v:nil
             }.sorted()
             // A hot pixel or specular glint must not underexpose the entire panorama.
-            // The same shoulder handles the remaining brightest 0.5% without clipping.
+            // The remaining brightest 0.5% retain their floating-point HDR headroom.
             let peak=peaks.isEmpty ? 0:Double(peaks[Int(Double(peaks.count-1)*0.995)])
             if peak.isFinite,peak>0.9 {plan.lccState?.highlightEV=log2(0.9/peak)}
         }
-        var scene=composite(plan,images:plan.previewImages,imageScale:plan.previewScale,outputScale:scale)
-        if plan.lccState?.protectHighlights == true {scene=Self.protectedDisplay(scene)}
-        plan.preview=context.createCGImage(scene,from:scene.extent,format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!)
+        let scene=composite(plan,images:plan.previewImages,imageScale:plan.previewScale,outputScale:scale)
+        // Match the application's EDR surfaces: half-float, extended linear Display P3.
+        // SDR projection belongs to the chosen export format, never to the working preview.
+        plan.preview=context.createCGImage(scene,from:scene.extent,format:.RGBAh,
+            colorSpace:CGColorSpace(name:CGColorSpace.extendedLinearDisplayP3)!)
     }
 
-    // One continuous, hue-preserving shoulder for SDR preview/TIFF. The global exposure
+    // One continuous, hue-preserving shoulder for the legacy SDR TIFF writer. The global exposure
     // normally keeps samples below the knee; this catches fine highlights absent at proxy
     // resolution. Linear DNG keeps the original floating-point headroom instead.
     private static let highlightKernel=CIColorKernel(source:"""
@@ -179,13 +181,11 @@ public final class PanoramaEngine {
         return result
     }
 
-    public enum OutputFormat: String, CaseIterable { case dng, tiff }
-    public func export(_ plan: PanoramaPlan, to destination: URL, format: OutputFormat,
-                       cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws {
+    /// Frozen registration, masks, LCC and exposure shared by native HDR export and DNG.
+    /// The UI adapts these linear pixels to PhotonsExport; this module has no Core/UI dependency.
+    public func renderComposite(_ plan: PanoramaPlan, cancellation: PanoramaCancellation = .init(),
+                                progress: Progress = { _ in }) throws -> CIImage {
         guard plan.isRegistered else {throw PanoramaFailure("尚未完成配准，不能导出。")}
-        guard !plan.sources.contains(where: { $0.url.standardizedFileURL == destination.standardizedFileURL }) else {
-            throw PanoramaFailure("不能覆盖输入图片。")
-        }
         // Materialize one decode per source, rather than re-decoding a 100 MP RAW for every tile.
         // Half-float storage is 8 bytes/pixel; enforce a memory bound before starting the job.
         let bytes = plan.sources.reduce(0.0) { $0+$1.size.width*$1.size.height*8 }
@@ -206,9 +206,19 @@ public final class PanoramaEngine {
             } else {images.append(try materialize(decoded(source,scale:1,whiteBalance:plan.whiteBalance)))}
         }
         try cancellation.check()
-        let scene = composite(plan,images:images,imageScale:1,outputScale:1)
+        return composite(plan,images:images,imageScale:1,outputScale:1)
+    }
+
+    public enum OutputFormat: String, CaseIterable { case dng, tiff }
+    public func export(_ plan: PanoramaPlan, to destination: URL, format: OutputFormat,
+                       cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws {
+        guard !plan.sources.contains(where: { $0.url.standardizedFileURL == destination.standardizedFileURL }) else {
+            throw PanoramaFailure("不能覆盖输入图片。")
+        }
+        defer { context.clearCaches() }
+        let scene = try renderComposite(plan,cancellation:cancellation,progress:progress)
         let temp = destination.deletingLastPathComponent().appendingPathComponent(".photons-\(UUID().uuidString).\(format.rawValue)")
-        defer { try? FileManager.default.removeItem(at:temp); context.clearCaches() }
+        defer { try? FileManager.default.removeItem(at:temp) }
         if format == .dng {
             try LinearDNGWriter.write(image:scene,context:context,to:temp,cancellation:cancellation,progress:progress)
         } else {

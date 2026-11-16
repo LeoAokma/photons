@@ -810,7 +810,8 @@ public final class ExportSheetModel {
     ///
     /// - Parameter natives: asset id → the asset's own pixel size, when the catalog knows it. Items
     ///   without an entry are probed. This is what keeps the UI out of the decoder for sizes.
-    public func run(items: [ExportItem], natives: [String: ImageSize] = [:]) {
+    public func run(items: [ExportItem], natives: [String: ImageSize] = [:],
+                    renderer: ((ExportItem, ExportPreset, CancellationToken) throws -> DisplayImage)? = nil) {
         guard phase != .running else { return }
         guard !items.isEmpty else {
             errorText = "没有选中的照片"
@@ -842,8 +843,8 @@ public final class ExportSheetModel {
         // the user changes after the report appears cannot leak into "last used".
         pendingRunDraft = ExportDraftPersistence.Draft(preset: preset, outputDirectory: directory)
         let render: (ExportItem, ExportPreset) throws -> DisplayImage = { item, preset in
-            let image = try UIExportRenderer.render(item: item, preset: preset,
-                                                    native: natives[item.id])
+            let image = try renderer?(item, preset, token)
+                ?? UIExportRenderer.render(item: item, preset: preset, native: natives[item.id])
             // Called on a `BatchExporter` worker: the counter belongs to the main actor.
             DispatchQueue.main.async { [weak self] in self?.markRendered(item.id) }
             return image
