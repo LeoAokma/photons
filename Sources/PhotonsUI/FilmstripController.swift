@@ -294,6 +294,7 @@ public final class FilmstripController: NSViewController, NSCollectionViewDataSo
         // Same two verbs as the grid, on the same kind of menu.
         contextMenu.onRemove = { [weak self] ids in self?.removeAssets(ids) }
         contextMenu.onRemoveAndDelete = { [weak self] ids in self?.removeAndDeleteAssets(ids) }
+        contextMenu.onReveal = { [weak self] ids in self?.session?.revealAssetsInFinder(ids) }
         contextMenu.onFindLost = { [weak self] ids in self?.findAndRelinkMissingAssets(ids) }
         contextMenu.albumsProvider = { [weak self] ids in
             AlbumMenuSupport.items(session: self?.session, ids: ids)

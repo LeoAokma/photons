@@ -401,6 +401,7 @@ public final class ThumbnailService: @unchecked Sendable {
     private var sequence: Int64 = 0
     private var subscriptionID: Int64 = 0
     private var activeCount = 0
+    private var concurrencyLimit: Int
     private var currentGeneration = 0
     private var paused = false
     private var summaries: [Int64: ThumbResult] = [:]
@@ -409,6 +410,7 @@ public final class ThumbnailService: @unchecked Sendable {
                 producer: ThumbnailProducer? = nil) {
         self.cache = cache
         self.config = config
+        self.concurrencyLimit = config.maxConcurrency
         self.producer = producer
         lock.lock()
         counters.maxConcurrency = config.maxConcurrency
@@ -416,6 +418,16 @@ public final class ThumbnailService: @unchecked Sendable {
     }
 
     // MARK: knobs
+
+    /// Existing jobs finish normally; only admission changes. Raising the limit immediately
+    /// drains pending work. All scheduler state shares the same lock.
+    public func setConcurrencyLimit(_ value: Int) {
+        lock.lock()
+        concurrencyLimit = max(1, value)
+        counters.maxConcurrency = concurrencyLimit
+        lock.unlock()
+        pump()
+    }
 
     /// §4: no thumbnail job is posted while the user is dragging or zooming.
     ///
@@ -762,7 +774,7 @@ public final class ThumbnailService: @unchecked Sendable {
     private func pump() {
         var batch: [Job] = []
         lock.lock()
-        while activeCount < config.maxConcurrency, let job = takeNextLocked() {
+        while activeCount < concurrencyLimit, let job = takeNextLocked() {
             job.started = true
             activeCount += 1
             counters.active = activeCount
@@ -1019,7 +1031,7 @@ public final class ThumbnailService: @unchecked Sendable {
     public func resetStats() {
         lock.lock()
         counters = Stats()
-        counters.maxConcurrency = config.maxConcurrency
+        counters.maxConcurrency = concurrencyLimit
         counters.active = activeCount
         counters.queued = pending.count
         lock.unlock()

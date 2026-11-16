@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 
 // MARK: - Render groups (D10)
@@ -599,7 +600,7 @@ public struct EditHistory: Sendable, Equatable, Codable {
         }
 
         return appendSnapshot(reverted,
-                              label: "撤销 \(row.label)",
+                              label: L10n.tr("e70df6c3828f" , String(describing: (row.label))),
                               before: base,
                               now: Date(),
                               allowsMerge: false)
@@ -812,7 +813,7 @@ private extension EditHistory {
             if let v = optionalNumber(change.from) { doc.detailSettings.moire = v }
 
         case "decoderVersion":
-            if let v = text(change.from) { doc.decoderVersion = v == "默认" ? nil : v }
+            if let v = text(change.from) { doc.decoderVersion = v == L10n.tr("844b8cc8dff7") ? nil : v }
 
         case "effects.vignetteAmount":
             if let v = number(change.from) { doc.effects.vignetteAmount = v }
