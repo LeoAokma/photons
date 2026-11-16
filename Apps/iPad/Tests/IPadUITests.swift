@@ -30,6 +30,13 @@ final class IPadUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["panorama-preview"].exists)
         app.buttons["choose-panorama-shift"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["panorama-preview"].waitForExistence(timeout: 90), app.debugDescription)
+        for angle in [90,180,270,0] {
+            let orientation = app.buttons["panorama.body.orientation.\(angle)"]
+            XCTAssertTrue(orientation.exists)
+            orientation.tap()
+            XCTAssertEqual(orientation.value as? String,"Selected")
+        }
+        let angles = XCTAttachment(screenshot: app.screenshot()); angles.name = "Body orientation diagrams"; angles.lifetime = .keepAlways; add(angles)
         let frame = app.descendants(matching: .any)["shift-frame-0"]
         XCTAssertTrue(frame.exists, app.debugDescription)
         let value = frame.value as? String
@@ -44,6 +51,15 @@ final class IPadUITests: XCTestCase {
         app.buttons["align-panorama"].tap()
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["panorama-export"])
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 90), .completed)
+        let crop = app.switches["panorama-crop-lcc"]
+        if !crop.isHittable { controls.swipeUp() }
+        XCTAssertTrue(crop.exists)
+        crop.tap()
+        XCTAssertEqual(crop.value as? String,"1")
+        XCTAssertFalse(app.buttons["panorama-export"].isEnabled, "A requested LCC crop must be applied before exporting")
+        crop.tap()
+        XCTAssertEqual(crop.value as? String,"0")
+        XCTAssertTrue(app.buttons["panorama-export"].isEnabled)
         let workspace = XCTAttachment(screenshot: app.screenshot()); workspace.name = "Large panorama workspace"; workspace.lifetime = .keepAlways; add(workspace)
         app.buttons["panorama-export"].tap()
         app.buttons["confirm-export"].tap()

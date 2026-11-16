@@ -225,7 +225,7 @@ actor MobileEngine {
             body: body, orientation: orientation, cancellation: cancellation, progress: { progress($0, nil) }).plan, nil)
     }
     func correctPanorama(_ plan: PanoramaPlan, profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody,
-                         orientation: PanoramaBodyOrientation, cancellation: PanoramaCancellation,
+                         orientation: PanoramaBodyOrientation, cropToCoverage: Bool = false, cancellation: PanoramaCancellation,
                          progress: @Sendable @escaping (String, Double?) -> Void) throws -> PanoramaPlan {
         guard plan.registrationMode != .perspective else { throw MobileError.message(PanoramaRegistrationMode.perspectiveLCCNotice) }
         guard let sensor = plan.sources.first?.sensor else { throw MobileError.message("Sensor dimensions are required for LCC.") }
@@ -235,7 +235,18 @@ actor MobileEngine {
         let origin = try offset ?? LCCPositionSolver.solve(plan: prepared, fields: fields, sensor: sensor,
             cameraBody: body, bodyOrientation: orientation, cancellation: cancellation, progress: { progress($0, nil) }).offsetMM
         return try engine.applyingLCC(prepared, profile: profile, fields: fields, offsetMM: origin,
-            sensor: sensor, crop: false, cancellation: cancellation, cameraBody: body, bodyOrientation: orientation)
+            sensor: sensor, crop: cropToCoverage, cancellation: cancellation, cameraBody: body, bodyOrientation: orientation)
+    }
+    /// Reuse the measured coverage and corrected preview pixels; changing the crop does not decode RAWs or solve LCC again.
+    func setLCCCrop(_ original: PanoramaPlan, enabled: Bool, cancellation: PanoramaCancellation) throws -> PanoramaPlan {
+        guard var state = original.lccState else { throw MobileError.message("Apply LCC before cropping to its corrected area.") }
+        if enabled && state.suggestedCropRect == nil {
+            throw MobileError.message("The lens profile does not cover a rectangular area that can be safely cropped.")
+        }
+        var plan = original
+        state.cropRect = enabled ? state.suggestedCropRect : nil
+        plan.lccState = state
+        return try PanoramaEngine().update(plan, options: plan.options, cancellation: cancellation)
     }
     func createProfile(name: String, frames: [LCCCreationFrame], sensor: SensorSize,
                        cancellation: PanoramaCancellation, progress: @Sendable @escaping (String, Double?) -> Void) throws {

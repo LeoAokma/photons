@@ -17,6 +17,7 @@ struct MobileLCCSheet: View {
     @State private var refine = true
     @State private var bodyType = PanoramaCameraBody.alpa12Max
     @State private var orientation = PanoramaBodyOrientation.degrees0
+    @State private var cropToLCC = false
     private var panorama: PanoramaPlan? { model.plan.flatMap { $0.sources.count > 1 ? $0 : nil } }
     var body: some View {
         Form {
@@ -34,7 +35,10 @@ struct MobileLCCSheet: View {
                         ForEach(model.profiles) { Text($0.name).tag(Optional($0.id)) }
                     }
                     Picker("Camera body", selection: $bodyType) { ForEach(PanoramaCameraBody.allCases) { Text($0.name).tag($0) } }
-                    Picker("Body orientation", selection: $orientation) { ForEach(PanoramaBodyOrientation.allCases) { Text("\($0.rawValue)°").tag($0) } }
+                    MobileBodyOrientationPicker(cameraBody: bodyType, selection: $orientation)
+                    if panorama != nil {
+                        Toggle("Crop to corrected area", isOn: $cropToLCC).toggleStyle(MobileCheckboxStyle()).accessibilityIdentifier("lcc-crop-coverage")
+                    }
                     Toggle("Specify approximate position", isOn: $manual)
                     if manual {
                         if let plan = panorama {
@@ -59,7 +63,7 @@ struct MobileLCCSheet: View {
                                 offset = PanoramaPositionReference(sourceIndex: reference, positionMM: position).profileOffset(in: plan, sensor: sensor)
                             } else { offset = CGPoint(x: -position.x, y: -position.y) }
                         }
-                        model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation)
+                        model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation, cropToCoverage: cropToLCC)
                     } else {
                         model.correct(flat: traditional ? flat : nil, profileID: profileID,
                             position: manual ? position : nil, refine: refine, body: bodyType, orientation: orientation)
@@ -70,7 +74,7 @@ struct MobileLCCSheet: View {
                 Text("Reimported panoramas use their embedded source geometry. Rendered HEIC/TIFF correction can differ from RAW correction; applying LCC before stitching gives the closest match.")
             }
         }.navigationTitle("LCC correction")
-            .onAppear { profileID = model.profiles.first?.id }
+            .onAppear { profileID = model.profiles.first?.id; cropToLCC = panorama?.lccState?.cropRect != nil }
             .fileImporter(isPresented: $flatPicker, allowedContentTypes: [.rawImage]) { result in
                 do { flat = try result.get() } catch { model.error = error.localizedDescription }
             }

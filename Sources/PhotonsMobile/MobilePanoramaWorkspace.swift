@@ -65,6 +65,8 @@ struct MobilePanoramaWorkspace: View {
     @State private var aligning = false
     @State private var export = false
     @State private var profileID: UUID?
+    @State private var cropToLCC = false
+    private var cropNeedsUpdate: Bool { cropToLCC != (model.plan?.lccState?.cropRect != nil) }
     private var sensor: SensorSize { .init(width: sensorWidth, height: sensorHeight, source: manualSensor ? "Manual" : "Source metadata") }
     private var validSensor: Bool { sensorWidth.isFinite && sensorHeight.isFinite && sensorWidth > 0 && sensorHeight > 0 && sensorWidth < 200 && sensorHeight < 200 }
 
@@ -90,7 +92,7 @@ struct MobilePanoramaWorkspace: View {
                         if let plan = model.plan { Text("\(Int(plan.outputSize.width)) × \(Int(plan.outputSize.height)) · \(photos.count) photographs").font(.caption) }
                         Spacer()
                         Button("Stitch / Export") { export = true }
-                            .buttonStyle(.borderedProminent).disabled(model.plan == nil || dirty || model.busy)
+                            .buttonStyle(.borderedProminent).disabled(model.plan == nil || dirty || model.busy || cropNeedsUpdate)
                             .accessibilityIdentifier("panorama-export")
                     }.padding(14)
                 }.background(Color(white: 0.075))
@@ -155,8 +157,8 @@ struct MobilePanoramaWorkspace: View {
                 Text("SHIFT PANORAMA").font(.headline)
                 Picker("Camera body", selection: $bodyType) { ForEach(PanoramaCameraBody.allCases) { Text($0.name).tag($0) } }
                     .onChange(of: bodyType) { _,_ in dirty = true }
-                Picker("Body orientation", selection: $orientation) { ForEach(PanoramaBodyOrientation.allCases) { Text("\($0.rawValue)°").tag($0) } }
-                    .pickerStyle(.segmented).onChange(of: orientation) { _,_ in dirty = true }
+                MobileBodyOrientationPicker(cameraBody: bodyType, selection: $orientation)
+                    .onChange(of: orientation) { _,_ in dirty = true }
                 Text(bodyType.travel(at: orientation).summary).font(.caption).foregroundStyle(.secondary)
                 if validSensor {
                     MobileDraggablePositions(names: photos.map(\.name), sensor: sensor, travel: bodyType.travel(at: orientation),
@@ -213,10 +215,17 @@ struct MobilePanoramaWorkspace: View {
                     Text("Choose a profile").tag(UUID?.none)
                     ForEach(model.profiles) { Text($0.name).tag(Optional($0.id)) }
                 }
+                Toggle("Crop to corrected area", isOn: $cropToLCC).toggleStyle(MobileCheckboxStyle())
+                    .accessibilityIdentifier("panorama-crop-lcc")
+                    .disabled(model.plan?.lccState.map { $0.suggestedCropRect == nil && !cropToLCC } ?? false)
+                    .onChange(of: cropToLCC) { _,enabled in
+                        if model.plan?.lccState != nil && !dirty { model.setLCCCrop(enabled) }
+                    }
+                Text("Keeps the largest rectangle fully covered by the lens calibration.").font(.caption).foregroundStyle(.secondary)
                 Button("Apply lens profile") {
                     guard let profileID, let plan = model.plan else { return }
                     let offset = guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: positions[selectedFrame] ?? .zero).profileOffset(in: plan, sensor: sensor) : nil
-                    model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation)
+                    model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation, cropToCoverage: cropToLCC)
                 }.disabled(model.busy || dirty || model.plan == nil || profileID == nil).accessibilityIdentifier("panorama-lcc")
                 if let lcc = model.plan?.lccState { Label(lcc.profileName, systemImage: "checkmark.seal"); Text(String(format: "Coverage %.1f%%", lcc.coveredFraction * 100)).font(.caption) }
                 if let note = model.lccPositionNote { Text(note).font(.caption).foregroundStyle(.orange) }

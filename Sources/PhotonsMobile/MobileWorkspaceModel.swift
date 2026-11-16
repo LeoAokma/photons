@@ -207,14 +207,22 @@ final class MobileWorkspaceModel: ObservableObject {
             self.plan = result.0; self.manifest = result.1; self.frame = try await self.engine.frame(result.0, hdr: self.hdr); self.showGrid = false
         }
     }
-    func correctPanorama(profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody, orientation: PanoramaBodyOrientation) {
+    func correctPanorama(profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody, orientation: PanoramaBodyOrientation, cropToCoverage: Bool = false) {
         guard let plan else { return }
         run("Correcting panorama") {
             self.plan = try await self.engine.correctPanorama(plan, profileID: profileID, offset: offset, body: body,
-                orientation: orientation, cancellation: self.cancellation, progress: self.report)
+                orientation: orientation, cropToCoverage: cropToCoverage, cancellation: self.cancellation, progress: self.report)
             self.manifest = nil
             self.lccPositionNote = offset == nil ? "Scene-based LCC placement is an estimate. Check the source positions and, if necessary, specify a measured reference before exporting." : nil
             if let updated = self.plan { self.frame = try await self.engine.frame(updated, hdr: self.hdr) }
+        }
+    }
+    func setLCCCrop(_ enabled: Bool) {
+        guard let plan else { return }
+        run("Updating corrected-area crop") {
+            let updated = try await self.engine.setLCCCrop(plan, enabled: enabled, cancellation: self.cancellation)
+            self.plan = updated; self.manifest = nil
+            self.frame = try await self.engine.frame(updated, hdr: self.hdr)
         }
     }
     func createProfile(name: String, frames: [LCCCreationFrame], sensor: SensorSize) {

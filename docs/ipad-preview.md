@@ -24,8 +24,8 @@ The preview starts in English. Shared parameter labels use Photons localization;
 | Editing | Shared Metal graph; exposure, tone, white balance, HSL, grading, calibration, detail/effects, numeric crop, rotation and flip |
 | History | Shared snapshot model, undo/redo, history navigation, imported-state reset, configurable history length |
 | Preview | HDR/SDR mapping, zoom/pan, cached thumbnails and histograms, progress during import/preview preparation |
-| Panorama | Large preview workspace, existing registration/seam engine, draggable sensor rectangles in body travel limits, optional measured shift guidance, cancellable foreground tasks |
-| LCC | Strict matching flat, lens-profile single-image correction, panorama profile correction, recorded-manifest post-export correction |
+| Panorama | Large preview workspace, existing registration/seam engine, four body-orientation diagrams, draggable sensor rectangles in body travel limits, optional measured shift guidance, cancellable foreground tasks |
+| LCC | Strict matching flat, lens-profile single-image correction, panorama profile correction with optional coverage crop, recorded-manifest post-export correction |
 | Profiles | Bundled developer sample, profile import/share, creation from selected calibration frames and confirmed positions |
 | Output | Separate HDR/SDR choices, JPEG/HEIC/TIFF/PNG and 16-bit lossless linear DNG, embedded panorama geometry, output auto-import and system Save/Share |
 
@@ -36,6 +36,8 @@ Original photos are copied into `Documents/iPad Preview.photonslibrary`; the Mac
 Panorama opens full-screen and first requires **Shift panorama** or **Perspective panorama**. Shift starts with translation matching and retains the existing small-perspective fallback; Perspective estimates projective transforms for every candidate pair instead of accepting a translation-only graph. Alignment starts only after a mode is selected. Dragging sensor rectangles changes approximate millimetre positions, marks the displayed preview as stale and disables export until **Update alignment** succeeds. In Shift mode, camera body rotation changes the allowed travel; selecting a source row brings its overlapping rectangle to the front. The shared engine still verifies overlap rather than blindly accepting the drawing. HDR/SDR, LCC profile correction and export remain inside this workspace. Starting export closes it and returns progress to the main toolbar.
 
 Perspective uses a planar projection and is an early implementation for modest camera rotation, not a spherical/360° stitcher. Its capture mode is embedded in exports. Apply LCC to individual inputs before perspective stitching: the shared post-LCC engine rejects the shift-based physical-position model for these exports instead of treating a rotated camera as a shifted sensor. Legacy manifests without a mode retain their previous behaviour.
+
+The four body-orientation buttons use the same travel-outline and shift-zero diagrams as the Mac. Under panorama LCC, **Crop to corrected area** uses the shared Mac coverage calculation to keep the largest rectangle fully covered by the calibration. It defaults off. After applying the lens profile, changing this checkbox refreshes the preview and output dimensions using the existing correction, without decoding the RAWs or solving their LCC positions again. Turning it off restores the full panorama; the exported metadata records the crop when enabled.
 
 ## Local Boston sample build
 

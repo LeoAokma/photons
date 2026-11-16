@@ -17,7 +17,14 @@ This revision adds an iPadOS 18+ development preview using the existing Swift/Me
 
 Commands use `xcodebuild -project Apps/iPad/PhotonsIPad.xcodeproj -scheme "Photons iPad Preview"`, selecting the simulator or `generic/platform=iOS`, and `CODE_SIGNING_ALLOWED=NO`. The final routine simulator run skips `testOptionalRealRAWWorkflow`, which was already exercised with the private fixtures. Run `python3 scripts/ipad-preview.py test` to include it when local RAW samples are bundled.
 
-## Limits
+## Body-orientation diagrams and LCC crop follow-up
+
+- Replaced numeric orientation segments with four Mac-style travel-outline/shift-zero diagrams in the panorama workspace and profile-LCC controls. Added a default-off **Crop to corrected area** checkbox for panorama LCC, backed by the shared coverage calculation. Changing the crop after correction reuses corrected preview pixels and coverage instead of decoding RAWs and solving again.
+- The generated-calibration integration test `testLCCCoverageCropUpdatesPreviewExportAndCanBeRemoved` passed (`ipad-lcc-crop-test-1.xcresult`): partial profile coverage produces a real crop; preview/output dimensions agree; toggling off restores the full canvas; toggling on restores the same crop; exported lossless DNG dimensions and normalized embedded crop metadata agree.
+- The expanded UI workflow passed (`ipad-lcc-crop-test-2.xcresult`), including all four orientation selections, checkbox state, export gating before the requested correction is applied, and the existing drag/re-alignment/export/settings/Perspective path. The first UI attempt only failed a test assertion expecting text instead of iOS's native switch value; the assertion now checks the native `1/0` values.
+- Optimized simulator Release and unsigned generic iOS-device SDK builds passed. This follow-up does not repeat the earlier real-RAW run or establish physical-device performance.
+
+## Remaining limits
 
 Physical iPad memory, thermals, HDR display headroom, background behaviour and large full-resolution exports remain unverified. The preview visibly offers 2048/4096/6000 px exports. RAW LCC still reads full mosaics and is expensive in Debug; the interactive local preview uses an optimized Release build. Perspective currently uses planar homographies for modest changes in view, not spherical/360° projection. Correct individual sources before perspective stitching when LCC is needed.
 

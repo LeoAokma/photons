@@ -115,6 +115,43 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertLessThan(abs(sample[1] - sample[4 * 4 + 1]), 0.08, "LCC should flatten the generated falloff")
     }
 
+    func testLCCCoverageCropUpdatesPreviewExportAndCanBeRemoved() async throws {
+        let flat = try makeFlat(name: "crop-flat.dng", exposure: 1)
+        let scene = try makeFlat(name: "crop-scene.dng", exposure: 0.5)
+        let sensor = SensorSize(width: 36,height: 24,source: "Generated fixture")
+        let source = try PanoramaSource(url: scene,sensorOverride: sensor)
+        var calibration = try LCCCreationFrame(url: flat); calibration.shiftConfirmed = true
+        let profile = try LCCProfileBuilder.create(name: "Coverage crop test", aperture: nil, notes: "Generated test fixture", frames: [calibration],
+            sensorLongEdge: 36,sensorShortEdge: 24)
+        let profileURL = try LCCProfileStore().save(profile)
+        defer { try? FileManager.default.removeItem(at: profileURL) }
+        let engine = engine(), base = try PanoramaEngine().singlePhoto(source)
+        // Move the photo beyond the calibration's measured footprint to require a real crop.
+        let cropped = try await engine.correctPanorama(base,profileID: profile.id,offset: CGPoint(x: 8,y: 0),
+            body: .alpa12Max,orientation: .degrees0,cropToCoverage: true,cancellation: .init(),progress: { _,_ in })
+        let state = try XCTUnwrap(cropped.lccState), rect = try XCTUnwrap(state.cropRect)
+        XCTAssertFalse(state.complete)
+        XCTAssertEqual(rect,state.suggestedCropRect)
+        XCTAssertGreaterThan(rect.width,0); XCTAssertLessThan(rect.width,base.size.width)
+        XCTAssertEqual(cropped.outputSize,rect.size)
+        XCTAssertEqual(try XCTUnwrap(cropped.preview).width,Int(rect.width))
+        let uncropped = try await engine.setLCCCrop(cropped,enabled: false,cancellation: .init())
+        XCTAssertNil(uncropped.lccState?.cropRect)
+        XCTAssertEqual(uncropped.outputSize,base.size)
+        XCTAssertEqual(uncropped.lccState?.offsetMM,state.offsetMM)
+        XCTAssertEqual(uncropped.lccState?.profileID,state.profileID)
+        let restored = try await engine.setLCCCrop(uncropped,enabled: true,cancellation: .init())
+        XCTAssertEqual(restored.lccState?.cropRect,rect)
+        var settings = MobileExportSettings(); settings.format = "dng"; settings.longEdge = 2048
+        let output = try await engine.export(photo: nil,edit: .neutral,plan: restored,manifest: nil,settings: settings,
+            cancellation: .init(),progress: { _,_ in })
+        XCTAssertEqual(try PanoramaSource(url: output).size,rect.size)
+        let manifest = try XCTUnwrap(PanoramaManifest.read(from: output))
+        XCTAssertTrue(manifest.correctionApplied)
+        XCTAssertEqual(manifest.crop.minX,rect.minX/base.size.width,accuracy: 1e-8)
+        XCTAssertEqual(manifest.crop.width,rect.width/base.size.width,accuracy: 1e-8)
+    }
+
     func testOptionalRealRAWWorkflow() async throws {
         let inputs = FileManager.default.urls(for: .documentDirectory,in: .userDomainMask)[0].appendingPathComponent("ValidationInputs")
         let bundled = MobileSamples.boston
