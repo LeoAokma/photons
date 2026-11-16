@@ -20,6 +20,10 @@ public enum MainMenu {
         let appMenu = NSMenu()
         appItem.submenu = appMenu
         appMenu.addItem(withTitle: "关于 \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let settings = appMenu.addItem(withTitle: "设置…",
+            action: #selector(SettingsWindowController.openSettings(_:)), keyEquivalent: ",")
+        settings.keyEquivalentModifierMask = [.command]
+        settings.target = SettingsWindowController.shared
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "隐藏 \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "隐藏其他", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")

@@ -1399,6 +1399,12 @@ public final class LoupeController: NSViewController, HeadroomSource {
         self.cropTool = CropToolController(session: session)
         super.init(nibName: nil, bundle: nil)
 
+        screenTokens.append(NotificationCenter.default.addObserver(
+            forName: .photonsPreferencesDidChange, object: nil, queue: .main) { [weak self] note in
+                guard note.userInfo?["key"] as? String == "photons.hdrPreviewEnabled" else { return }
+                self?.refreshDisplay()
+            })
+
         // P5a: the 原图 / 对比 state machine has no frame path of its own. Every change comes back
         // here, where the generation moves and one (coalesced) frame is asked for.
         compare.onChange = { [weak self] in self?.frameModeDidChange() }
@@ -1789,7 +1795,8 @@ public final class LoupeController: NSViewController, HeadroomSource {
     public func refreshDisplay() {
         let screen = view.window?.screen ?? NSScreen.main
         let layerAcceptsEDR = (presenter?.storage ?? .linear16) == .linear16
-        let next = DisplayHeadroom.current(for: screen, layerAcceptsEDR: layerAcceptsEDR)
+        let next = DisplayHeadroom.current(for: screen,
+            layerAcceptsEDR: layerAcceptsEDR && ProcessingPreferences.hdrPreview)
         if next == displayHeadroom { return }
         setDisplayHeadroom(next)
     }

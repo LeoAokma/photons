@@ -37,7 +37,7 @@ public final class ToolButton: NSButton {
         self.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
         imagePosition = .imageLeading
         imageHugsTitle = true
-        font = .systemFont(ofSize: 10.5, weight: .semibold)
+        font = .systemFont(ofSize: 11, weight: .medium)
         isBordered = false
         bezelStyle = .regularSquare
         focusRingType = .none
@@ -58,7 +58,9 @@ public final class ToolButton: NSButton {
 
     public override func draw(_ dirtyRect: NSRect) {
         let color: NSColor
-        if isActive {
+        if isHighlighted {
+            color = NSColor.labelColor.withAlphaComponent(0.16)
+        } else if isActive {
             color = NSColor.controlAccentColor.withAlphaComponent(0.14)
         } else if hovering {
             color = NSColor.labelColor.withAlphaComponent(0.07)
@@ -110,6 +112,8 @@ public final class TopBarView: NSView {
     public var onToggleSort: (() -> Void)?
 
     private let openButton = ToolButton(title: "打开", symbol: "folder")
+    private let importButton = ToolButton(title: "导入", symbol: "square.and.arrow.down")
+    private let exportButton = ToolButton(title: "导出", symbol: "square.and.arrow.up")
     private let modeControl = NSSegmentedControl(labels: ["网格", "单图"],
                                                  trackingMode: .selectOne, target: nil, action: nil)
     private let stripButton = ToolButton(title: "胶片条", symbol: "rectangle.split.1x2")
@@ -143,6 +147,15 @@ public final class TopBarView: NSView {
 
         openButton.target = self
         openButton.action = #selector(openTapped)
+        openButton.toolTip = "打开照片库 · ⌘O"
+        importButton.target = nil
+        importButton.action = #selector(EditorWindowController.importAction(_:))
+        importButton.toolTip = "导入照片 · ⇧⌘I"
+        importButton.setAccessibilityIdentifier("toolbar.import")
+        exportButton.target = nil
+        exportButton.action = #selector(EditorWindowController.exportAction(_:))
+        exportButton.toolTip = "导出所选照片 · ⇧⌘E"
+        exportButton.setAccessibilityIdentifier("toolbar.export")
         stripButton.target = self
         stripButton.action = #selector(stripTapped)
         sortButton.target = self
@@ -156,7 +169,7 @@ public final class TopBarView: NSView {
         modeControl.controlSize = .small
         modeControl.selectedSegment = 0
 
-        for v: NSView in [openButton, modeControl, stripButton, sortButton, statusCluster] {
+        for v: NSView in [openButton, importButton, exportButton, modeControl, stripButton, sortButton, statusCluster] {
             addSubview(v)
         }
         addSeparator()
@@ -193,6 +206,8 @@ public final class TopBarView: NSView {
                        libraryName: String?, filmstrip: Bool) {
         modeControl.selectedSegment = mode == .grid ? 0 : 1
         stripButton.isActive = filmstrip
+        importButton.isEnabled = libraryName != nil
+        exportButton.isEnabled = libraryName != nil && selectionCount > 0
         // 047: the corner carries the **build** revision, so a glance answers "is this the build with
         // my merge?" without going back to a commit list. Since 2026-10-27 the four facts are one
         // block of one type (`TopBarStatusCluster`), left to right:
@@ -231,6 +246,10 @@ public final class TopBarView: NSView {
         }
 
         place(openButton, width: openButton.intrinsicContentSize.width)
+        x += 4
+        place(importButton, width: importButton.intrinsicContentSize.width)
+        x += 4
+        place(exportButton, width: exportButton.intrinsicContentSize.width)
         x += 10
         separators[0].frame = NSRect(x: x, y: (h - WorkspaceLayout.toolSeparatorHeight) / 2,
                                      width: 1, height: WorkspaceLayout.toolSeparatorHeight)
@@ -361,7 +380,7 @@ public final class WorkspaceRootView: NSView {
     private let canvasHost = NSView()
     private let browserDivider = WorkspaceDivider()
     private let inspectorDivider = WorkspaceDivider()
-    private let inspectorBackdrop = NSVisualEffectView()
+    private let inspectorBackdrop = StudioPanelView()
     /// 顶栏那条（含红绿灯所在的标题栏区域）背后的系统材质。见 `HeaderGlassView`。
     public let headerGlass = HeaderGlassView()
     private let bridge = ObservationBridge()
@@ -423,9 +442,6 @@ public final class WorkspaceRootView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
-        inspectorBackdrop.material = .underWindowBackground
-        inspectorBackdrop.blendingMode = .behindWindow
-        inspectorBackdrop.state = .followsWindowActiveState
 
         canvasHost.wantsLayer = true
         canvasHost.layer?.backgroundColor = NSColor.black.cgColor

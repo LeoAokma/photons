@@ -167,9 +167,9 @@ public struct InspectorView: View {
             switch self {
             case .histogram: return "直方图"
             case .whiteBalance: return "白平衡"
-            case .light: return "Light"
+            case .light: return "明暗"
             case .blackLevel: return "黑电平"
-            case .color: return "Color"
+            case .color: return "色彩"
             case .blackAndWhite: return "黑白"
             case .hsl: return "HSL"
             case .pointColor: return "点颜色"
@@ -192,7 +192,7 @@ public struct InspectorView: View {
         }
     }
 
-    /// `["直方图", "白平衡", "Light", …]` — the order the cards appear in, from the one list above.
+    /// `["直方图", "白平衡", "明暗", …]` — the order the cards appear in, from the one list above.
     public static var sectionTitles: [String] { Section.allCases.map(\.title) }
 
     /// The cards that live **inside** the scroll view: everything except the pinned histogram.
@@ -301,7 +301,7 @@ public struct InspectorView: View {
             pinnedColumn
             workspaceSwitcher
             ScrollView {
-                VStack(spacing: 10) {
+                VStack(spacing: 4) {
                     ForEach(visibleSections) { section in
                         sectionView(section)
                             .accessibilityIdentifier("inspector.card.\(section.rawValue)")
@@ -2159,9 +2159,9 @@ public struct InspectorView: View {
     enum SliderRowStyle: String, CaseIterable {
         case standard
 
-        var labelSize: CGFloat { 10 }
+        var labelSize: CGFloat { 11 }
         var labelWeight: Font.Weight { .medium }
-        var readoutSize: CGFloat { 10 }
+        var readoutSize: CGFloat { 11 }
         var rowSpacing: CGFloat { 1 }
         var headSpacing: CGFloat { 6 }
         /// The tone rows have always been `.mini`; the detail rows now are too.
@@ -2418,46 +2418,17 @@ public struct InspectorView: View {
         // Only a fallback for "no decode yet": the file's value, never a claim about the photo.
         let shown = draft ?? stored ?? shot ?? (isTemperature ? 6500 : 0)
 
-        return VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 6) {
+        return HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(row.title)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                     .modifier(ResetOnDoubleClick(
                         action: { resets.whiteBalanceField(isTemperature: isTemperature) },
                         help: Self.resetParameterHelp))
-                // 118: the same slot as 「as shot」. Same height, same baseline, same place: the preview
-                // label replaces the state word while the canvas is a simulation, then the real frame
-                // arriving puts the state word back.
                 WhiteBalanceStatusLabel(kind: whiteBalancePreviewing ? .simulated
                                                                      : (stored == nil ? .asShot : nil))
                     .accessibilityIdentifier("inspector.whiteBalance.status.\(row.title)")
-                Spacer(minLength: 4)
-                SliderNumberField(value: shown,
-                                  range: row.range,
-                                  format: row.format,
-                                  fontSize: 10,
-                                  width: 52,
-                                  accessibilityID: "inspector.whiteBalance.\(row.title)",
-                                  onCommit: { typed in
-                                      let revisionBefore = session.editRevision
-                                      commitWhiteBalanceValue(typed, isTemperature: isTemperature)
-                                      if whiteBalancePreviewing {
-                                          loupe?.releaseWhiteBalancePreview(
-                                              awaiting: session.editRevision != revisionBefore
-                                                  ? session.editRevision : nil)
-                                      }
-                                  })
-            }
-            // 194: 两段式。拖动时 色温/色调 是场景线性的 S1 增益（`WhiteBalanceEstimate`），画的是已经
-            // 在屏幕上的那张缓冲 —— 一次渲染、零次解码；松手写进文档，下一次 develop 把它交给
-            // `CIRAWFilter.neutralTemperature`，定格帧才是真值（S1 增益在该帧里是恒等）。黄色卡片仍是
-            // 「解 RAW 参数」的承诺，只是它现在描述的是**落定**的那一帧。
-            // label / 数值 / 抬起才提交的语义与 `sliderRow` 完全相同，滑杆也是同一个 `shapeSlider`
-            // （`row.shape` 是 `.bar`，颜色因此也是同一处给的）。
-            // 242: 色温's track is mired, tint's is its own units. The row owns the two conversions
-            // (`sliderPosition(of:)` / `value(atSliderPosition:)`), and those call the one Core
-            // implementation — the view never spells a mired formula itself.
+            }.frame(width: StudioTheme.labelWidth, alignment: .leading)
             Self.shapeSlider(Binding(get: { row.sliderPosition(of: shown) },
                                      set: { position in
                                          let newValue = row.value(atSliderPosition: position)
@@ -2467,15 +2438,22 @@ public struct InspectorView: View {
                                      }),
                              in: row.sliderRange,
                              shape: row.shape) { editing in
-                if editing {
-                    beginWhiteBalancePreview()
-                } else {
-                    // Release = quantize + one document write = one development (`commitWhiteBalance`),
-                    // and the simulated preview survives until that frame lands.
-                    commitWhiteBalance(isTemperature: isTemperature)
-                }
+                if editing { beginWhiteBalancePreview() }
+                else { commitWhiteBalance(isTemperature: isTemperature) }
             }
-        }
+            SliderNumberField(value: shown, range: row.range, format: row.format,
+                              fontSize: 11, width: StudioTheme.valueWidth - 10,
+                              accessibilityID: "inspector.whiteBalance.\(row.title)",
+                              onCommit: { typed in
+                                  let revisionBefore = session.editRevision
+                                  commitWhiteBalanceValue(typed, isTemperature: isTemperature)
+                                  if whiteBalancePreviewing {
+                                      loupe?.releaseWhiteBalancePreview(
+                                          awaiting: session.editRevision != revisionBefore
+                                              ? session.editRevision : nil)
+                                  }
+                              })
+        }.frame(minHeight: 30)
     }
 
     /// The dropper (派单 009 C): arm, then the next canvas click samples the **decode buffer**.
@@ -2855,29 +2833,48 @@ struct InspectorCardShell<Accessory: View, Content: View>: View {
         self.content = content
     }
 
+    @State private var collapsed = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 7) {
+                Button { collapsed.toggle() } label: {
+                    Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .frame(width: 16, height: 26).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help(collapsed ? "展开" : "折叠")
+                .accessibilityLabel("\(collapsed ? "展开" : "折叠")\(title)")
                 Text(title)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
                     .accessibilityIdentifier(titleAccessibilityID ?? "")
                     .modifier(ResetOnDoubleClick(action: reset, help: InspectorView.resetGroupHelp))
                 Spacer(minLength: 0)
                 accessory()
+                if let reset {
+                    Button(action: reset) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10)).frame(width: 22, height: 26)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("复位\(title)").accessibilityLabel("复位\(title)")
+                }
             }
-            content()
+            .padding(.horizontal, 10).padding(.vertical, 2)
+            .background(Color(nsColor: StudioTheme.raised))
+            if !collapsed {
+                VStack(alignment: .leading, spacing: 6) { content() }
+                    .padding(.horizontal, WorkspaceLayout.cardInsetH)
+                    .padding(.vertical, WorkspaceLayout.cardInsetV)
+            }
         }
-        .padding(.horizontal, WorkspaceLayout.cardInsetH)
-        .padding(.vertical, WorkspaceLayout.cardInsetV)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Small widget container: glass here, matte everywhere else (§2b item 5).
-        .background(.regularMaterial,
-                    in: RoundedRectangle(cornerRadius: WorkspaceLayout.cardCornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: WorkspaceLayout.cardCornerRadius, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .background(Color(nsColor: StudioTheme.panel))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4)
+            .strokeBorder(Color(nsColor: StudioTheme.separator).opacity(0.7), lineWidth: 0.5))
     }
 }
 
@@ -3169,6 +3166,8 @@ struct SliderNumberField: View {
                         accessibilityID: accessibilityID,
                         onCommit: onCommit)
             .frame(width: width, height: fontSize + 4)
+            .padding(.horizontal, 5).padding(.vertical, 4)
+            .background(Color(nsColor: StudioTheme.well), in: RoundedRectangle(cornerRadius: 4))
             .accessibilityIdentifier(accessibilityID ?? "")
             .help("点击数值可键盘输入：↵ 提交 · Esc 取消 · 点别处取消并退回原值")
     }

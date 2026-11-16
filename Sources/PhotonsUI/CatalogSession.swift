@@ -1136,7 +1136,9 @@ public final class CatalogSession {
             return []
         }
 
-        let job = AnselDenoiseJob(location: denoiseLocation)
+        var denoiseOptions = AnselDenoiseOptions()
+        denoiseOptions.useGPU = ApplicationPreferences.shared.denoiseGPU
+        let job = AnselDenoiseJob(location: denoiseLocation, options: denoiseOptions)
         let queue = denoiseQueue
         let participantID = asset.id
         let rootID = asset.sourceRootId

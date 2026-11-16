@@ -190,9 +190,9 @@ public final class ThumbnailProvider: @unchecked Sendable {
     ///     serialises inside the process. Extra workers only make each image wait longer. That
     ///     measurement is why the old constant was 3, and it is no longer the file the grid reads.
     ///
-    /// So the ceiling follows the machine and leaves one core for the main thread / compositing.
-    /// A fixed 3/4/8 was right for one lane's sample size and wrong for every other machine.
-    public static let defaultConcurrency = max(2, ProcessInfo.processInfo.activeProcessorCount - 1)
+    /// The app now bounds RAW production by the selected processing policy, available memory,
+    /// power mode and thermal state. Explicit concurrency in benchmarks remains independent.
+    public static var defaultConcurrency: Int { ProcessingPreferences.thumbnailConcurrency }
 
     public let cache: ThumbnailCache
     /// The one scheduler. Public so a probe can read `stats()`/`pendingCount`; no view should
@@ -296,12 +296,15 @@ public final class ThumbnailProvider: @unchecked Sendable {
     private var placeholderOrder: [String] = []
     private static let placeholderLimit = 8
 
-    public init(cache: ThumbnailCache, maxConcurrent: Int = ThumbnailProvider.defaultConcurrency) {
+    private let followsProcessingPolicy: Bool
+
+    public init(cache: ThumbnailCache, maxConcurrent: Int? = nil) {
         let adapter = ProducerAdapter()
         self.cache = cache
         self.adapter = adapter
+        self.followsProcessingPolicy = maxConcurrent == nil
         self.service = ThumbnailService(cache: cache,
-                                        config: .init(maxConcurrency: maxConcurrent),
+                                        config: .init(maxConcurrency: maxConcurrent ?? Self.defaultConcurrency),
                                         producer: adapter)
         memory.countLimit = ThumbnailProvider.memoryCountLimit
         memory.totalCostLimit = ThumbnailProvider.memoryByteLimit
@@ -327,7 +330,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
     /// Weak on purpose: closing a library drops the last reference and the provider (and its
     /// queue) goes away with it.
     public static func shared(for cache: ThumbnailCache,
-                              maxConcurrent: Int = ThumbnailProvider.defaultConcurrency) -> ThumbnailProvider {
+                              maxConcurrent: Int? = nil) -> ThumbnailProvider {
         registryLock.lock()
         defer { registryLock.unlock() }
         registry.removeAll { $0.value == nil }
@@ -337,6 +340,14 @@ public final class ThumbnailProvider: @unchecked Sendable {
         let made = ThumbnailProvider(cache: cache, maxConcurrent: maxConcurrent)
         registry.append(WeakProvider(value: made))
         return made
+    }
+
+    static func updateProcessingPolicy() {
+        registryLock.lock()
+        let providers = registry.compactMap(\.value).filter(\.followsProcessingPolicy)
+        registryLock.unlock()
+        let limit = defaultConcurrency
+        for provider in providers { provider.service.setConcurrencyLimit(limit) }
     }
 
     // MARK: - tier selection (006 §1, §6.1)

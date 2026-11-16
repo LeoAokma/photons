@@ -41,7 +41,7 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
     private lazy var denoiseMenuTarget = DenoiseMenuTarget(session: session)
     private let sourcesScroll = NSScrollView()
     private let photosScroll = NSScrollView()
-    private let matte = NSVisualEffectView()
+    private let matte = StudioPanelView()
     private let bridge = ObservationBridge()
 
     /// Same one-snapshot rule as the grid/filmstrip: the photo ids/order plus the tree/album
@@ -192,9 +192,6 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
     public override func loadView() {
         let root = FlippedView()
 
-        matte.material = .sidebar
-        matte.blendingMode = .behindWindow
-        matte.state = .followsWindowActiveState
         root.addSubview(matte)
 
         headerTitle.font = .systemFont(ofSize: 12, weight: .bold)

@@ -12,7 +12,7 @@ struct PanoramaHDRPreview: View {
     var body: some View {
         PanoramaHDRSurface(image: image) { headroom = $0 }
             .overlay(alignment: .bottomLeading) {
-                Text("HDR 预览 · \(headroom.displayText)")
+                Text("\(headroom.isHDR ? "HDR" : "SDR") 预览 · \(headroom.displayText)")
                     .font(.caption).foregroundStyle(.secondary)
                     .padding(7).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
                     .padding(8).allowsHitTesting(false)
@@ -37,15 +37,23 @@ final class PanoramaHDRPreviewView: NSView {
     private var source: CGImage?
     private var timer: Timer?
     private var headroom: DisplayHeadroom?
+    private var preferencesObserver: NSObjectProtocol?
     var onHeadroom: ((DisplayHeadroom) -> Void)?
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
     init() {
         super.init(frame: .zero)
         addSubview(surface)
+        preferencesObserver = NotificationCenter.default.addObserver(
+            forName: .photonsPreferencesDidChange, object: nil, queue: .main) { [weak self] _ in
+                self?.updateHeadroom()
+            }
     }
     required init?(coder: NSCoder) { fatalError("no nib") }
-    deinit { timer?.invalidate() }
+    deinit {
+        timer?.invalidate()
+        if let preferencesObserver { NotificationCenter.default.removeObserver(preferencesObserver) }
+    }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     func setImage(_ image: CGImage) {
@@ -84,13 +92,17 @@ final class PanoramaHDRPreviewView: NSView {
         updateHeadroom()
         guard window != nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateHeadroom() }
+            Task { @MainActor in
+                guard let self, self.window?.occlusionState.contains(.visible) == true else { return }
+                self.updateHeadroom()
+            }
         }
+        timer?.tolerance = 0.2
     }
 
     private func updateHeadroom() {
         let value = DisplayHeadroom.current(for: window?.screen,
-            layerAcceptsEDR: ThumbnailMetalRenderer.shared.isAvailable)
+            layerAcceptsEDR: ThumbnailMetalRenderer.shared.isAvailable && ProcessingPreferences.hdrPreview)
         guard value != headroom else { return }
         headroom = value
         DispatchQueue.main.async { [weak self] in self?.onHeadroom?(value) }

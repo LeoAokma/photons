@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controllers: [EditorWindowController] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ApplicationPreferencesRuntime.shared.start()
         NSApp.mainMenu = MainMenu.build()
         let args = LaunchArguments(CommandLine.arguments)
 
@@ -52,13 +53,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A failed open (or a vanished directory) leaves an empty window and forgets the path:
         // a modal alert at launch is something the user cannot act on, only dismiss.
         if let url = RecentLibrary.launchURL(explicit: args.value("--library"),
-                                             remembered: RecentLibrary.recall()) {
+                                             remembered: ApplicationPreferences.shared.reopenLibrary ? RecentLibrary.recall() : nil) {
             do {
                 try controller.openLibrary(at: url)
             } catch {
                 RecentLibrary.forget()
             }
-        } else {
+        } else if ApplicationPreferences.shared.reopenLibrary {
             RecentLibrary.forget()
         }
         controller.showWindow(nil)
