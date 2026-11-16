@@ -10,6 +10,7 @@
 - 应用首次启动默认英语，设置中的默认选项保持一致；用户保存的中文选择会保留。App Store Connect 的主要语言为 English (U.S.)。
 - `0.3.0 (5)` 已包含功能分支 `86d58dc` 的更新，以及英语默认语言修正；上传包的源码标记为 `17dc9cd`。release 主程序与 helper 编译成功，10 项签名门禁测试和沙盒诊断通过。沙盒诊断覆盖书签往返、GPU、降噪、HDR 及全景任务回导；真实外部目录的首次授权仍需交互验证。
 - 2026-11-16 已通过 Xcode 使用登录账号上传，Apple 返回 **Upload succeeded**。App Store Connect 应用记录为 `6835570029`；服务器处理和 Beta App Review 是后续独立状态，上传成功不代表已允许外部测试。
+- 同日服务器处理完成，内部组 `Developer Beta` 中的构建状态为 **Ready to Test**，图标已显示；外部组 `Private Beta` 已提交 Beta App Review，状态为 **Waiting for Review**。英文测试说明及审核联系信息已保存。两个组尚未添加测试者，未发送邀请；外部构建自动通知关闭。
 - `prepare` 生成的是**本机临时签名的沙盒测试应用**，不会上传，也不是可交给 TestFlight 的正式分发包。
 - `package` 只有在证书、私钥、Team、显式 App ID、描述文件及有效期检查通过后才创建签名 `.pkg`。本轮 Apple 上传验证已通过；后续构建仍需实际运行服务器验证，不能用本地签名校验代替。
 - 首轮构建只支持 Apple Silicon / macOS 14+。Intel 版本尚未编译和测试。
