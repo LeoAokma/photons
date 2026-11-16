@@ -104,6 +104,22 @@ final class SocialMediaSliceModel: ObservableObject {
             return count + layout.count
         }
     }
+    func estimatedFileSize(currentOnly: Bool = false) -> ExportFileSizeEstimate? {
+        let selected = currentOnly ? current.map { [$0] } ?? [] : items
+        guard !selected.isEmpty else { return nil }
+        var estimates: [ExportFileSizeEstimate] = []
+        for item in selected {
+            let settings = settings(for: item)
+            guard let size = sizes[item.id], let layout = try? SliceLayout.plan(size: size, settings: settings) else { return nil }
+            let preset = ExportPreset(format: .jpeg, quality: Double(settings.quality) / 100, colorSpace: .sRGB,
+                hdr: settings.dynamicRange == .hdr ? HDRExport(gainMap: .iso, halfSize: false) : nil,
+                writeXMP: false)
+            guard let estimate = ExportFileSizeEstimator.file(output: ImageSize(width: layout.tileWidth, height: layout.tileHeight), preset: preset) else { return nil }
+            estimates.append(contentsOf: repeatElement(estimate, count: layout.count))
+        }
+        return .total(estimates)
+    }
+
     var destination: URL? { current?.sourceURL.map { SocialMediaSliceExporter.outputDirectory(source: $0, parent: outputParent) } }
 
     func prepare() {
@@ -291,14 +307,27 @@ struct SocialMediaSliceWorkspace: View {
                 sidebar.frame(width: 294)
             }
             Divider()
-            HStack {
-                Text(model.status).lineLimit(1)
-                Spacer()
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    ExportFileSizeLabel(estimate: model.estimatedFileSize(), identifier: "slices.estimatedSize")
+                    Text(model.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }.frame(maxWidth: .infinity, alignment: .leading)
                 if model.exporting {
                     ProgressView(value: model.progress).frame(width: 150)
                     Button(L10n.tr("slices.cancel")) { model.cancel() }
+                } else {
+                    if model.items.count > 1 {
+                        Button(L10n.tr("slices.exportCurrent")) { model.requestExport(currentOnly: true) }
+                            .help(ExportFileSizeText.summary(model.estimatedFileSize(currentOnly: true)))
+                            .disabled(model.preparing || model.layout == nil)
+                    }
+                    Button(L10n.tr("3fd47edce45b")) { model.window?.performClose(nil) }
+                    Button(L10n.tr("slices.exportSelection", "\(model.items.count)")) { model.requestExport() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.preparing || model.totalSlices == 0)
                 }
-            }.font(.caption).padding(.horizontal, 16).frame(height: 38)
+            }.padding(.horizontal, 20).padding(.vertical, 12)
+
         }
         .background(.regularMaterial)
         .alert(L10n.tr("slices.exportError"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
@@ -453,13 +482,6 @@ struct SocialMediaSliceWorkspace: View {
                     .help(model.destination?.path ?? "")
                 if model.outputParent != nil {
                     Button(L10n.tr("slices.useSource")) { model.outputParent = nil }.disabled(model.exporting)
-                }
-                Button(L10n.tr("slices.exportSelection", "\(model.items.count)")) { model.requestExport() }
-                    .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
-                    .disabled(model.exporting || model.preparing || model.totalSlices == 0)
-                if model.items.count > 1 {
-                    Button(L10n.tr("slices.exportCurrent")) { model.requestExport(currentOnly: true) }
-                        .disabled(model.exporting || model.preparing || model.layout == nil)
                 }
                 Button(L10n.tr("slices.reveal"), systemImage: "folder") { model.reveal() }
                     .disabled(model.exporting || model.lastOutputs.isEmpty)

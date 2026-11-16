@@ -1406,5 +1406,10 @@
   "cache.refresh": "刷新统计",
   "cache.clearAll": "删除全部预览缓存",
   "cache.clear": "删除预览",
-  "cache.hint": "缩略图与直方图按照片及调整版本缓存，修改照片后自动更新。删除缓存不影响原片和调整；再次浏览时会按需重新生成。"
+  "cache.hint": "缩略图与直方图按照片及调整版本缓存，修改照片后自动更新。删除缓存不影响原片和调整；再次浏览时会按需重新生成。",
+  "export.estimatedSize.single": "预计大小：{0}",
+  "export.estimatedSize.total": "预计合计：{0}",
+  "export.estimatedSize.unknown": "预计大小：—",
+  "export.estimatedSize.hint": "根据输出像素、格式、位深、质量及 HDR 增益图估算。实际大小取决于画面细节、水印和元数据；范围仅供参考。",
+  "export.watermark.dngHint": "无损输出下将禁用水印"
 }
