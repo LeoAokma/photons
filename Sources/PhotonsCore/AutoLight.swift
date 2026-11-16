@@ -2,20 +2,24 @@ import Foundation
 
 // MARK: - 422 — the Light card's 自动调节
 //
-// Five steps, in the owner's order, and each one is a **measurement** rather than a table lookup:
+// **Four** steps, in the owner's order, and each one is a **measurement** rather than a table lookup:
 //
 //   1. 曝光     先加. The anchor is the picture's own p99 in scene-linear light: raise the gain until
-//               that percentile sits just inside SDR white, and **never past it** (`p99 ≤ 1.0`).
-//   2. 中间调/阴影  what step 1 did not lift (its own ceiling stopped it) is lifted here, so the SDR
-//               picture is not left underexposed.
+//               that percentile sits **above** SDR white (`p99WhiteTarget = 1.5`) — the owner's own
+//               finished pictures do exactly that (median clipping 2.44 %) — while p99.9 stays at or
+//               below **2.0** (`p999Ceiling`), which is the only overshoot guard left.
+//   2. 中间调/阴影  what step 1 did not lift (the picture's own body is still under `midtoneTarget`)
+//               is lifted here, so the SDR picture is not left underexposed.
 //   3. 高光/白色   the criterion is **texture loss**, not area (`docs/tasks/422-auto-light.md` §0c).
 //               高光 is the first tool and it has a texture **budget**; 白色 then joins it
 //               **simultaneously** for whatever pull is left, because — measured, not assumed — 白色
 //               cannot deliver the darkening alone. See `whiteJoinsHighlights`.
 //   4. 黑色      give back the lift `blackOffset` put on the black floor, then deepen until >0.1 % of
 //               the pixels reach the bottom (cap −100).
-//   5. 对比      only when the picture's own HDR/SDR separation is too small: the stops between p10
-//               and p90.
+//
+// **步骤 5（对比）不做** — 422 裁定（2026-11-17，用户原话「对比不做，曝光按我的习惯来」）：the old
+// "separation too small ⇒ add 对比" rule measured `r = −0.092` against the owner's own contrast, i.e.
+// it could not tell their decisions apart, so the step is deleted and `contrast` is always 0.
 //
 // **Why every slope is measured at the operating point** (§0d). Measured on L1030433, p99 per −100 of
 // 高光: **−0.128 at 0 EV, −0.906 at +2 EV, −2.368 at +3 EV** — 7.1× and then 18.5×. A fixed table
@@ -210,6 +214,11 @@ public enum AutoLight {
         public var baseP99: Double
         public var exposureEV: Double
         public var p99AfterExposure: Double
+        /// The overshoot guard's own number, measured at step 1's exposure (`p999Ceiling` is 2.0).
+        public var p999AfterExposure: Double
+        /// How many 0.05 EV steps the guard took back. 422's calibration target is **0** on the owner's
+        /// five frames, so a non-zero count here means the target and the guard disagree on that frame.
+        public var exposureBackstops: Int
         public var clippedHighAfterExposure: Double
         /// Step 2.
         public var p50AfterExposure: Double
@@ -242,7 +251,8 @@ public enum AutoLight {
         public var blackOffset: Double
         public var blackCancelTerm: Double
         public var clippedLowAfterBlacks: Double
-        /// Step 5.
+        /// **Not a step any more** — 422's verdict deleted 对比. `separationStops` is still the measured
+        /// p90 ÷ p10 (the report keeps the number) and `contrast` is always 0.
         public var separationStops: Double
         public var contrast: Double
         /// What the whole run cost.
@@ -254,16 +264,34 @@ public enum AutoLight {
 
     // MARK: - constants (each measured on the shipping pipeline; numbers in the lane report)
 
-    /// Step 1's anchor: p99 lands **here**, just inside white.
+    /// Step 1's anchor: p99 lands **here**, above SDR white — the owner's own habit, not a convention.
     ///
-    /// 0.98 rather than 1.0 so the p99−p99.9 tail is still below white after the 0.01 EV snap. This is
-    /// where the owner's own median 曝光 comes from physically: the boston frames' p99 at 0 EV measures
-    /// **0.2909–0.4337**, and `log2(0.98 / 0.33) ≈ +1.57`, i.e. the +2 EV neighbourhood they used.
-    public static let p99WhiteTarget: Double = 0.98
-    /// Step 1's hard ceiling. Measured on L1030433: `曝光 +8` manufactures **+98.69 pp** of clipping
-    /// while `高光 −100` then recovers at most **−4.35 pp**, so overreach is unrecoverable and this is a
-    /// constraint, not a preference (§0d).
-    public static let p99Ceiling: Double = 1.0
+    /// **422 裁定 (2026-11-17): 0.98 → 1.5.** The five boston frames, measured auto vs. hand, showed the
+    /// automatic plan 0.72 EV dark (median ΔEV, 5/5) and their finished p50 0.62 stops darker — so the
+    /// picture was genuinely dark, not merely reached by another route. `exposure = log2(target/anchor)`,
+    /// so `log2(1.5 / 0.98) = +0.61` stops of the 0.72 come back and 0.11 stops are left (< 0.15, the
+    /// visible threshold).
+    ///
+    /// Why 1.5 and not 1.59 (which would close the gap exactly): their finished **clipping median is
+    /// 2.44 %**, and `p99 = 1.5` manufactures clipping of that order (≥ 1 %) while 1.59 slightly
+    /// overshoots every frame on average. `target > 1.0` deliberately puts ~1 % of the pixels above the
+    /// white point; going higher only buys headroom for extreme frames to overshoot into.
+    /// (1.2 would come back +0.29 stops and leave 0.29 undelivered — also rejected.)
+    ///
+    /// The old note read "0.98 rather than 1.0 so the p99−p99.9 tail is still below white": that tail is
+    /// now the `p999Ceiling` guard's job (2.0), which is why this constant could move at all.
+    public static let p99WhiteTarget: Double = 1.5
+    /// Step 1's hard ceiling — **redefined by 422's verdict** from `p99 ≤ 1.0` to `p99.9 ≤ 2.0`.
+    ///
+    /// `p99 ≤ 1.0` was a flat contradiction with `p99WhiteTarget = 1.5` (the anchor would always trip the
+    /// walk-back and the calibration would buy nothing). The guard that survives is the one that matters:
+    /// the *tail* — the top 0.1 % — must stay within one stop of the white point, so the anchor can sit
+    /// above white on a normal frame while a pathological one is still walked back at 0.05 EV a step.
+    ///
+    /// Measured on the five boston frames: p99.9 at step 1's exposure is **below 2.0 on all five** and the
+    /// walk-back fires **0 times** (§5.1.3's requirement — a guard that fires here would mean the
+    /// calibration was undone).
+    public static let p999Ceiling: Double = 2.0
 
     /// Step 2's targets. Both are **floors**, not goals: a picture already there is left alone.
     ///
@@ -280,14 +308,16 @@ public enum AutoLight {
 
     /// Step 3's goal: where the highlight pull ends — and it is **derived from the budget, not chosen**.
     ///
-    /// The exposure step is bounded by `p99 ≤ 1.0`, so it deliberately leaves no clipping behind it. The
-    /// highlight step's job is therefore "recover the part of the top that the +EV put at the edge", and
-    /// the honest place to stop is where the 8 % budget stops it. Measured on the five boston frames:
-    /// step 2's p99 is **0.973–0.978** and the budget allows **34–51 units** of 高光 at a measured
-    /// **0.00377 p99/unit** (≈−0.38 per 100), so the budget lands the top at
-    /// `0.975 − 0.042·0.0038·100 ≈ 0.82`. Setting the target to 0.82 (rather than to a "nice" 0.6) is
-    /// what makes 高光 and 白色 share the work only when the criterion genuinely says so — and it
-    /// reproduces the owner's own 白色 = 0 on all five boston frames.
+    /// Step 1 leaves p99 at **1.5** (above white, the owner's own habit), so step 3's job is the ordinary
+    /// one: bring the top back down toward the texture budget's own landing point. The constant is the
+    /// same 0.82 it was — the budget's arithmetic below is unchanged — but the *deficit* it sees is now
+    /// 0.68 instead of 0.16, which is why 高光 reaches deeper on every frame and the criterion's 8 %
+    /// budget is what actually stops it.
+    ///
+    /// Measured on the five boston frames: step 2's p99 is **1.45–1.55**, and the budget allows
+    /// **34–51 units** of 高光 at a measured 0.00377–0.0104 p99/unit, so the top lands near
+    /// `1.5 − ~0.5 ≈ 1.0` on a hot frame — i.e. 高光 and 白色 share the work only when the criterion
+    /// genuinely says so (the old note's conclusion, re-derived at the new anchor).
     public static let p99TopTarget: Double = 0.82
 
     /// Below this much remaining deficit, step 3 does nothing (a picture already inside white).
@@ -326,23 +356,21 @@ public enum AutoLight {
     /// has to widen on a picture with almost nothing near black.
     public static let blackBracketUnits: Double = 24
 
+    // MARK: - 步骤 5（对比）— 422 裁定：不做
+    //
+    // The three constants below are **kept and unused**. 422's verdict deleted step 5 (「对比不做」) and
+    // with it the 分离度 criterion, because the criterion could not tell the owner's decisions apart
+    // (`r = −0.092` on the boston+austria 308-frame sample; five frames alone were worse). They stay in
+    // the source — not in `Plan`, which writes 0 — so a future attempt starts from the record instead of
+    // from `git log`.
+
     /// Step 5 — **分离度**: the stops between p10 and p90, i.e. how far the picture's own body is spread.
-    ///
-    /// Measured: 对比 +16 moves this from 4.127 to 4.629 stops on L1030433 (**+0.0314 st/unit**, and the
-    /// same at 0 and +2 EV — 对比 is a display-referred power curve, so its slope does not move with
-    /// exposure the way the tone sliders' does). The owner's finished boston frames measure **4.36 /
-    /// 2.43 / 4.07 / 5.26 / 3.22**, median **4.07**; the target is that median, so "not separated enough"
-    /// means "flatter than the pictures this owner actually finished".
-    ///
-    /// ⚠️ **Honest limit, for the main line to rule on (§5 item 3).** Five frames cannot establish this
-    /// criterion: on them the correlation between the measured separation and the 对比 the owner applied
-    /// is weak and one frame inverts it (L1030944 has the *lowest* separation, 3.22, and 对比 **0**).
-    /// The rule reproduces their median behaviour, not their per-frame decisions.
+    /// 422 裁定：未使用（对比不做）
     public static let separationTargetStops: Double = 4.1
+    /// 422 裁定：未使用（对比不做）
     public static let separationStopsPerContrast: Double = 0.0314
-    /// Deliberately equal to the owner's own **median** (+8.0) plus half again: the rule below is only
-    /// as good as its criterion, and a cap that could reach their 90th percentile would let a weak
-    /// criterion produce a look they never made.
+    /// Deliberately equal to the owner's own **median** (+8.0) plus half again.
+    /// 422 裁定：未使用（对比不做）
     public static let contrastCeiling: Double = 12
 
     /// Step 3's slope table for ⑧e — the **0 EV** numbers, and exactly the mistake the gate makes.
@@ -403,12 +431,13 @@ public enum AutoLight {
         var exposure = snapExposure(log2(p99WhiteTarget / max(anchor, 1e-5)))
         document.light.exposure = exposure
         var afterExposure = try sample(document).metrics()
-        // **The ceiling is hard.** 曝光 overreach is the one thing 高光 cannot undo (§0d), so a candidate
-        // that measured above white is walked back until it does not.
+        // **The tail guard is hard.** 422's verdict replaced `p99 ≤ 1.0` with `p99.9 ≤ 2.0`: the anchor
+        // (1.5) is deliberately above white, so what is guarded is the overshoot past it, and a candidate
+        // whose top 0.1 % is more than one stop above white is walked back until it is not.
         var backstops = 0
         // ⑧d removes the constraint **and its enforcement**: gating only the anchor would still let the
-        // walk-back hold the top inside white, and the gate would prove nothing.
-        while !gates.noExposureCeiling, afterExposure.p99 > p99Ceiling, backstops < 10, exposure > -4 {
+        // walk-back hold the tail inside the ceiling, and the gate would prove nothing.
+        while !gates.noExposureCeiling, afterExposure.p999 > p999Ceiling, backstops < 10, exposure > -4 {
             exposure = snapExposure(exposure - 0.05)
             document.light.exposure = exposure
             afterExposure = try sample(document).metrics()
@@ -592,18 +621,21 @@ public enum AutoLight {
         }
         let clippedLowAfterBlacks = afterBlacks.clippedLow
 
-        // ── 步骤 5 — 对比（分离度不足时）────────────────────────────────────────────────────────
-        var contrast = 0.0
+        // ── 步骤 5 — 对比 — **422 裁定：不做** ─────────────────────────────────────────────────────
+        //
+        // The verdict (「对比不做，曝光按我的习惯来」) deleted the step. `contrast` stays a field — `Plan`
+        // keeps writing `light.contrast = 0`, which is what the "seven fields" assertion reads — and the
+        // report still carries the *measured* `separationStops` beside the always-zero `contrast`, so a
+        // future rule can be argued against a number instead of a memory.
         let separation = afterBlacks.separationStops
-        if separation > 0, separation < separationTargetStops {
-            contrast = min(contrastCeiling,
-                           ((separationTargetStops - separation) / separationStopsPerContrast).rounded())
-        }
+        let contrast = 0.0
 
         return Plan(exposure: exposure, contrast: contrast, highlights: highlights,
                     midtones: midtones, shadows: shadows, whites: whites, blacks: blacks,
                     report: Report(baseP99: neutral.p99, exposureEV: exposure,
                                    p99AfterExposure: afterExposure.p99,
+                                   p999AfterExposure: afterExposure.p999,
+                                   exposureBackstops: backstops,
                                    clippedHighAfterExposure: afterExposure.clippedHigh,
                                    p50AfterExposure: afterExposure.p50,
                                    midtones: midtones, shadows: shadows,
@@ -660,7 +692,7 @@ public enum AutoLight {
         public var criterionAlwaysFullLoss = false
         /// ⑧c — step 4 starts from 0 instead of from `blackOffset`'s lift.
         public var ignoresBlackOffset = false
-        /// ⑧d — step 1 anchors on p95 instead of p99, i.e. the `p99 ≤ 1.0` constraint is gone.
+        /// ⑧d — step 1 anchors on p95 instead of p99, i.e. the `p99.9 ≤ 2.0` tail guard is gone.
         public var noExposureCeiling = false
         /// ⑧e — the slopes come from the **0 EV** table instead of being re-measured (§0d's 7.1×).
         public var fixedSlopeTable = false

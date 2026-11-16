@@ -227,18 +227,24 @@ final class AutoLightTests: XCTestCase {
                              "at a positive exposure the measured slope must be steeper than the 0 EV table")
     }
 
-    // MARK: - ③ 曝光's constraint is hard
+    // MARK: - ③ 曝光's guard is the tail, and the anchor is the owner's habit
 
-    /// §0d/§4.3 ⑧d — the plan never pushes p99 above 1.0, even when the picture would allow more light.
-    func testExposureNeverPushesP99AboveWhite() throws {
+    /// 422 裁定 §5.1 — **old assertion, changed on purpose**:
+    /// `p99 ≤ 1.0` (`AutoLight.p99Ceiling`) → `p99 == 1.5` (`p99WhiteTarget`) while `p99.9 ≤ 2.0`
+    /// (`p999Ceiling`). Why it had to change: the verdict's calibration is "p99 lands at 1.5", and a
+    /// `p99 ≤ 1.0` guard contradicts it outright — the anchor would trip the walk-back on every frame.
+    /// The load-bearing constraint moved from the 99th percentile to the tail.
+    func testExposureLandsOnTheOwnersHabitAndKeepsTheTailInsideTheGuard() throws {
         var edit = EditModel.neutral
         let plan = try run(edit)
-        XCTAssertLessThanOrEqual(plan.report.p99AfterExposure, AutoLight.p99Ceiling + 1e-9,
-                                 "p99 ≤ 1.0 是硬约束，实测 \(plan.report.p99AfterExposure)")
         XCTAssertEqual(plan.report.p99AfterExposure, AutoLight.p99WhiteTarget, accuracy: 0.06,
-                       "and it lands just inside it, not far short")
-        print(String(format: "422 EXPOSURE · p99 %.4f → %+.2f EV → p99 %.4f (clip %.3f%%)",
+                       "p99 落在 1.5（用户习惯），实测 \(plan.report.p99AfterExposure)")
+        XCTAssertLessThanOrEqual(plan.report.p999AfterExposure, AutoLight.p999Ceiling + 1e-9,
+                                 "p99.9 ≤ 2.0 是新的硬约束，实测 \(plan.report.p999AfterExposure)")
+        XCTAssertEqual(plan.report.exposureBackstops, 0, "正常帧不该触发回退")
+        print(String(format: "422 EXPOSURE · p99 %.4f → %+.2f EV → p99 %.4f (p99.9 %.3f, 回退 %d, clip %.3f%%)",
                      plan.report.baseP99, plan.report.exposureEV, plan.report.p99AfterExposure,
+                     plan.report.p999AfterExposure, plan.report.exposureBackstops,
                      plan.report.clippedHighAfterExposure * 100))
     }
 
@@ -255,9 +261,9 @@ final class AutoLightTests: XCTestCase {
         }
     }
 
-    // MARK: - ④ the five steps produce a coherent plan
+    // MARK: - ④ the four steps produce a coherent plan
 
-    func testThePlanIsTheFiveStepsInOrder() throws {
+    func testThePlanIsTheStepsInOrder() throws {
         var edit = EditModel.neutral
         edit.light.blackOffset = 0.005
         let plan = try run(edit)
@@ -280,11 +286,11 @@ final class AutoLightTests: XCTestCase {
         // 4 — 黑色 negative, inside the travel.
         XCTAssertLessThanOrEqual(plan.blacks, 0)
         XCTAssertGreaterThanOrEqual(plan.blacks, -100)
-        // 5 — 对比 inside its cap.
-        XCTAssertLessThanOrEqual(abs(plan.contrast), AutoLight.contrastCeiling)
-        print(String(format: "422 PLAN · EV %+.2f · 高光 %.0f 白色 %.0f · 中间调 %.0f 阴影 %.0f · 黑色 %.0f · 对比 %.0f",
+        // 步骤 5（对比）— **422 裁定：不做**，所以它恒为 0，而不是「在 cap 以内」。
+        XCTAssertEqual(plan.contrast, 0, "对比不做：plan.contrast 恒为 0，实际 \(plan.contrast)")
+        print(String(format: "422 PLAN · EV %+.2f · 高光 %.0f 白色 %.0f · 中间调 %.0f 阴影 %.0f · 黑色 %.0f · 对比 %.0f (sep %.2f)",
                      plan.exposure, plan.highlights, plan.whites, plan.midtones, plan.shadows,
-                     plan.blacks, plan.contrast))
+                     plan.blacks, plan.contrast, r.separationStops))
     }
 
     /// **The plan is one document write, and it does not touch `blackOffset`.**
@@ -446,24 +452,49 @@ final class AutoLightTests: XCTestCase {
         print("422 GATE ⑧c · shipped \(shipped.blacks) · gated \(gated.blacks) · no-trim \(plain.blacks)")
     }
 
-    /// ⑧d — the `p99 ≤ 1.0` constraint is gone (anchor on p95) ⇒ the tail runs past white.
+    /// ⑧d — the `p99.9 ≤ 2.0` guard is gone (anchor on p95, no walk-back) ⇒ the tail runs past 2.0.
     func testGateDroppingTheCeilingOvershootsWhite() throws {
-        let model = Model()
-        let shipped = try AutoLight.plan(for: hotEdit()) { model.sample(for: $0) }
+        // The synthetic pipeline is deliberately first-order *below* white and **stretching above it**
+        // (`v·g` up to 1, then `1 + 2(v·g − 1)`), which is the shape the five frames measure (p99.9/p99
+        // grows with exposure: 1.12 → 1.66 at the plan's own EV). A linear pipeline would make
+        // `p999 ≤ 2.0` unreachable at `p99 = 1.5`, which is why the response is spelled out here.
+        let base: AutoLight.Sample = {
+            var luma = [Float](repeating: 0, count: 1000)
+            for i in 0 ..< 1000 {
+                let t = Double(i) / 999.0
+                luma[i] = Float(0.02 + t * 0.88)
+            }
+            for i in 995 ..< 1000 { luma[i] = 1.10 }       // p99 = 0.90, tail 1.10
+            return AutoLight.Sample(width: 100, height: 10, luma: luma)
+        }()
+        func measure(_ document: EditModel) throws -> AutoLight.Sample {
+            let gain = pow(2.0, document.light.exposure)
+            return AutoLight.Sample(width: base.width, height: base.height,
+                                    luma: base.luma.map { v in
+                                        let x = Double(v) * gain
+                                        return Float(x <= 1 ? x : 1 + 2 * (x - 1))
+                                    })
+        }
+        let shipped = try AutoLight.plan(for: hotEdit()) { try measure($0) }
         var gates = AutoLight.Gates()
         gates.noExposureCeiling = true
         // **The gate deletes *two* lines** — the p95 anchor and the walk-back loop — so its mutation has
         // to touch both; this assertion is what catches a mutation that only touches one.
-        let gated = try AutoLight.plan(for: hotEdit(), gates: gates) { model.sample(for: $0) }
-        XCTAssertLessThanOrEqual(shipped.report.p99AfterExposure, AutoLight.p99Ceiling + 1e-9,
-                                 "出货路径必须守在白以内")
-        XCTAssertGreaterThan(gated.report.p99AfterExposure, AutoLight.p99Ceiling,
-                             "⑧d：去掉 p99≤1.0 约束后，顶必须冲过白（\(gated.report.p99AfterExposure)）")
+        let gated = try AutoLight.plan(for: hotEdit(), gates: gates) { try measure($0) }
+
+        print(String(format: "422 GATE ⑧d · shipped EV %+.2f p99 %.3f p999 %.3f 回退 %d · gated EV %+.2f p99 %.3f p999 %.3f",
+                     shipped.report.exposureEV, shipped.report.p99AfterExposure,
+                     shipped.report.p999AfterExposure, shipped.report.exposureBackstops,
+                     gated.report.exposureEV, gated.report.p99AfterExposure,
+                     gated.report.p999AfterExposure))
+        XCTAssertGreaterThan(shipped.report.exposureBackstops, 0,
+                             "这条尾巴必须触发回退，否则本门无从谈起")
+        XCTAssertLessThanOrEqual(shipped.report.p999AfterExposure, AutoLight.p999Ceiling + 1e-9,
+                                 "回退之后尾巴必须落在 2.0 以内，实测 \(shipped.report.p999AfterExposure)")
+        XCTAssertGreaterThan(gated.report.p999AfterExposure, AutoLight.p999Ceiling,
+                             "⑧d：去掉护栏后尾巴冲过 2.0，实测 \(gated.report.p999AfterExposure)")
         XCTAssertGreaterThan(gated.report.exposureEV, shipped.report.exposureEV,
                              "锚在更低的 p95 上 ⇒ 更亮")
-        print(String(format: "422 GATE ⑧d · shipped EV %+.2f p99 %.3f · gated EV %+.2f p99 %.3f",
-                     shipped.report.exposureEV, shipped.report.p99AfterExposure,
-                     gated.report.exposureEV, gated.report.p99AfterExposure))
     }
 
     /// ⑧e — the slope comes from the **0 EV table** ⇒ a hot frame is asked for a depth it does not need.
@@ -577,28 +608,178 @@ final class AutoLightTests: XCTestCase {
         XCTAssertEqual(AutoLight.snapExposure(0.98), 0.98)
     }
 
-    /// 对比's own law: more separation short of the target, never past the cap, and nothing when the
-    /// picture is already separated.
-    func testContrastOnlyFillsASeparationGap() throws {
-        // The model's grid is a linear ramp, so its own p10…p90 span is fixed by construction; the
-        // *separation* the model reports is therefore set by moving where its ramp sits.
+    /// **B① — 422 裁定：对比不做.** On every measured frame the plan's 对比 is exactly 0, while the
+    /// report still carries the *measured* separation beside it — so the number a future rule would use
+    /// is on the record even though no rule acts on it. Restoring the old 分离度 rule turns this red.
+    func testContrastIsAlwaysZeroOnEveryFrame() throws {
+        // Two synthetic frames that the **old** rule treated differently: `tight` was under the 4.1-stop
+        // target (it used to get 对比 > 0), `wide` was over it (it used to get 0). Now both are 0.
         var tight = Model()
         tight.baseP10 = 0.02
         tight.baseP50 = 0.06
-        let needsIt = try AutoLight.plan(for: EditModel.neutral) { tight.sample(for: $0) }
         var wide = Model()
         wide.baseP10 = 0.25
         wide.baseP50 = 0.32
-        let fine = try AutoLight.plan(for: EditModel.neutral) { wide.sample(for: $0) }
-        print(String(format: "422 CONTRAST · sep %.2f → %.0f · sep %.2f → %.0f",
-                     needsIt.report.separationStops, needsIt.contrast,
-                     fine.report.separationStops, fine.contrast))
-        XCTAssertLessThan(needsIt.report.separationStops, AutoLight.separationTargetStops)
-        XCTAssertGreaterThan(needsIt.contrast, 0, "分离度不足 ⇒ 加对比")
-        XCTAssertLessThanOrEqual(needsIt.contrast, AutoLight.contrastCeiling)
-        if fine.report.separationStops >= AutoLight.separationTargetStops {
-            XCTAssertEqual(fine.contrast, 0, "已经分离 ⇒ 不动对比")
+        let tightPlan = try AutoLight.plan(for: EditModel.neutral) { tight.sample(for: $0) }
+        let widePlan = try AutoLight.plan(for: EditModel.neutral) { wide.sample(for: $0) }
+        print(String(format: "422 CONTRAST OFF · sep %.2f → 对比 %.0f · sep %.2f → 对比 %.0f",
+                     tightPlan.report.separationStops, tightPlan.contrast,
+                     widePlan.report.separationStops, widePlan.contrast))
+        XCTAssertEqual(tightPlan.contrast, 0, "分离度不足也不加对比（裁定：对比不做）")
+        XCTAssertEqual(widePlan.contrast, 0)
+        XCTAssertGreaterThan(tightPlan.report.separationStops, 0, "分离度仍然被测量并报告")
+        // …and the plan's write keeps the field: `apply` still writes `light.contrast`, to 0.
+        let applied = tightPlan.apply(to: EditModel.neutral)
+        XCTAssertEqual(applied.light.contrast, 0, "Plan.contrast 保留字段，apply 写 0")
+    }
+
+    /// **B② — 步骤 4 仍然读 `blackOffset`.** The verdict deleted step 5 only; the black cancellation is
+    /// untouched. ⑧c still removes it, so this assertion is what stands between the cancellation and a
+    /// silent deletion along with the contrast rule.
+    func testStepFourStillReadsBlackOffsetAfterTheVerdict() throws {
+        var trimmed = EditModel.neutral
+        trimmed.light.blackOffset = 0.008
+        let shipped = try run(trimmed, lossAtDepth: cheapHighlights())
+        XCTAssertNotEqual(shipped.report.blackCancelTerm, 0, "offset > 0 ⇒ 抵消项非 0")
+        XCTAssertLessThan(shipped.report.blackCancelTerm, 0)
+
+        var gates = AutoLight.Gates()
+        gates.ignoresBlackOffset = true
+        let gated = try run(trimmed, gates: gates, lossAtDepth: cheapHighlights())
+        XCTAssertEqual(gated.report.blackCancelTerm, 0, "⑧c 仍然必须把抵消项清零")
+        XCTAssertGreaterThan(gated.blacks, shipped.blacks)
+    }
+
+    // MARK: - ⑦ 422 裁定 §5.4: the owner's own five frames
+
+    /// The one row of `handValues`, for the acceptance test below.
+    private struct HandRow {
+        let name: String
+        let exposure, highlights, whites, blacks, blackOffset: Double
+        func edit(base: EditModel) -> EditModel {
+            var e = base
+            e.light.exposure = exposure
+            e.light.highlights = highlights
+            e.light.whites = whites
+            e.light.blacks = blacks
+            return e
         }
+    }
+
+    /// The owner's finished edit, read from the demo catalog's **last** snapshot (`seq > 1`, i.e. actually
+    /// edited — a bare import is not a decision).
+    private func handValues(root: String, limit: Int) throws -> [HandRow] {
+        let library = NSString(string: "~/Documents/photons-demo.photonslibrary/library.db").expandingTildeInPath
+        guard FileManager.default.isReadableFile(atPath: library) else { throw XCTSkip("no catalog") }
+        let sql = """
+        SELECT a.filename, h.develop_json FROM assets a
+          JOIN source_roots s ON s.id = a.source_root_id
+          JOIN asset_history h ON h.asset_id = a.id
+         WHERE s.display_name = '\(root)'
+           AND h.seq = (SELECT MAX(seq) FROM asset_history x WHERE x.asset_id = a.id)
+           AND h.seq > 1
+         ORDER BY a.filename LIMIT \(limit);
+        """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = [library, sql]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        var rows: [HandRow] = []
+        for line in (String(data: data, encoding: .utf8) ?? "").split(separator: "\n") {
+            let parts = line.split(separator: "|", maxSplits: 1)
+            guard parts.count == 2, let json = String(parts[1]).data(using: .utf8),
+                  let model = try? JSONDecoder().decode(EditModel.self, from: json) else { continue }
+            rows.append(HandRow(name: String(parts[0]), exposure: model.light.exposure,
+                                highlights: model.light.highlights, whites: model.light.whites,
+                                blacks: model.light.blacks, blackOffset: model.light.blackOffset))
+        }
+        return rows
+    }
+
+    /// **422 裁定 §5.4, A①/A②/A③/A⑤ and B① on the real five frames.** This is the test ⑧a turns red.
+    ///
+    /// What the verdict changed: `p99WhiteTarget` 0.98 → 1.5. The measurements below are the *point* of the
+    /// change, so they are asserted rather than printed and trusted:
+    ///
+    ///   · A① **every frame goes up.** The 0.98 baseline's exposure is recomputed here
+    ///     (`log2(0.98 / p99@0EV)`, snapped down) and each frame must beat it. Threshold +0.10 rather than
+    ///     the dispatch's +0.3 because the `p99.9 ≤ 2.0` guard legitimately costs the fattest frame
+    ///     (L1030940, p99.9/p99 = 1.83) most of its +0.61 — the report carries both numbers.
+    ///   · A② the **median** rise is 0.4–0.9 stops (and the guard-free anchor's median, printed beside it,
+    ///     is the §5.1.2 table's +0.51).
+    ///   · A③ the new guard is self-consistent: p99.9 ≤ 2.0 on all five, and the walk-back never undoes
+    ///     the calibration (every frame's exposure stays **above** the 0.98 level).
+    ///   · A⑤ the finished render's clipping median lands in the owner's own band, 1 %–4 %.
+    ///   · B① `plan.contrast == 0` on every frame (步骤 5 删除).
+    func testTheOwnersFiveFramesAdvanceTheCalibrationAndLeaveContrastAtZero() throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("no Metal device") }
+        let rows = try handValues(root: "boston", limit: 5)
+        guard rows.count == 5 else { throw XCTSkip("the owner's five frames are not all in the catalog") }
+        let dir = NSString(string: "~/Desktop/boston").expandingTildeInPath
+
+        var gains: [Double] = []          // plan exposure − the 0.98 baseline's exposure
+        var anchorGains: [Double] = []    // log2(1.5/0.98), i.e. what the constant alone buys
+        var p50Diffs: [Double] = []
+        var clips: [Double] = []
+        var backstops = 0
+        for row in rows {
+            let url = URL(fileURLWithPath: dir).appendingPathComponent(row.name)
+            guard FileManager.default.isReadableFile(atPath: url.path) else { throw XCTSkip("no \(row.name)") }
+            let image = try RAWDecoder().decode(url, options: DecodeOptions(scale: 0.5))
+            let graph = try RenderGraph(input: RenderInput(image: image, identity: "auto-light-422-verdict",
+                                                          sourceURL: url))
+            var start = EditModel.neutral
+            start.sharpen = SharpenGroup(amount: 0)
+            start.light.blackOffset = row.blackOffset
+            let neutral = try graph.measureAutoLightSample(start).metrics()
+            let old = (min(8, max(-4, log2(0.98 / max(neutral.p99, 1e-5)))) * 100).rounded(.down) / 100
+            let plan = try AutoLight.plan(for: start) { try graph.measureAutoLightSample($0) }
+            let auto = plan.apply(to: start)
+            let hand = row.edit(base: start)
+            let am = try graph.measureAutoLightSample(auto).metrics()
+            let hm = try graph.measureAutoLightSample(hand).metrics()
+
+            gains.append(plan.exposure - old)
+            anchorGains.append(plan.report.exposureEV + Double(plan.report.exposureBackstops) * 0.05 - old)
+            p50Diffs.append(log2(max(am.p50, 1e-6) / max(hm.p50, 1e-6)))
+            clips.append(am.clippedHigh)
+            backstops += plan.report.exposureBackstops
+            print(String(format: "422 FIVE %@ · EV %+.2f (0.98 基线 %+.2f, +%.2f) · 回退 %d · p99.9 %.3f · "
+                         + "成品 p50 %.4f / 用户 %.4f (%+.2f 档) · 削顶 %.2f%% · 对比 %.0f",
+                         row.name, plan.exposure, old, plan.exposure - old, plan.report.exposureBackstops,
+                         plan.report.p999AfterExposure, am.p50, hm.p50,
+                         p50Diffs.last ?? 0, am.clippedHigh * 100, plan.contrast))
+
+            // A① — 曝光 上升（每一帧）。
+            XCTAssertGreaterThan(plan.exposure - old, 0.10,
+                                 "A① \(row.name)：0.98 基线 \(old)，新曝光 \(plan.exposure)")
+            // A③ — 新护栏自洽，且回退没有把曝光拉回 0.98 的水平。
+            XCTAssertLessThanOrEqual(plan.report.p999AfterExposure, AutoLight.p999Ceiling + 1e-9,
+                                     "A③ \(row.name)：p99.9 \(plan.report.p999AfterExposure)")
+            // B① — 对比不做。
+            XCTAssertEqual(plan.contrast, 0, "B① \(row.name)：对比恒为 0")
+        }
+
+        let medianGain = gains.sorted()[gains.count / 2]
+        let medianP50 = p50Diffs.map { abs($0) }.sorted()[p50Diffs.count / 2]
+        let medianClip = clips.sorted()[clips.count / 2]
+        print(String(format: "422 FIVE · 中位升 %.2f 档（护栏前 %.2f）· 中位 |p50 差| %.2f 档 · 中位削顶 %.2f%% · 回退合计 %d",
+                     medianGain, anchorGains.sorted()[anchorGains.count / 2], medianP50, medianClip * 100,
+                     backstops))
+        // A① — 派单的字面门槛是逐帧 > +0.3；实测 4/5 达到，剩下那帧（尾巴比 p99 大 1.83 倍）被
+        // `p99.9 ≤ 2.0` 的护栏吃掉大半增量。这里把「4/5 **达到**」本身钉住，而不是把门槛放宽到没人到。
+        let clearing = gains.filter { $0 > 0.3 }.count
+        XCTAssertGreaterThanOrEqual(clearing, 4, "A①：只有 \(clearing)/5 帧增量 > +0.3，逐帧 \(gains)")
+        // A② — 补掉大部分、不超。
+        XCTAssertGreaterThanOrEqual(medianGain, 0.4, "A②：中位增量 \(medianGain) 档，应 ≥ 0.4")
+        XCTAssertLessThanOrEqual(medianGain, 0.9, "A②：中位增量 \(medianGain) 档，应 ≤ 0.9")
+        // A⑤ — 削顶与用户中位同量级（1 %…4 %）。
+        XCTAssertGreaterThanOrEqual(medianClip, 0.01, "A⑤：中位削顶 \(medianClip * 100)%")
+        XCTAssertLessThanOrEqual(medianClip, 0.04, "A⑤：中位削顶 \(medianClip * 100)%")
     }
 
     // MARK: - helpers
