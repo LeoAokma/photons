@@ -952,10 +952,13 @@ public final class HistogramCardView: NSView {
             let x = plot.minX + CGFloat(column) * stripWidth
             let width = min(stripWidth, plot.maxX - x)
             guard width > 0 else { break }
-            // The envelope is sampled at the strip's **centre**: the strip is one device pixel, and a
-            // left-edge sample would bias every sloped edge by half a pixel (a 1 px tread where the
-            // old polygon fill had a half-covered one).
-            for band in additiveColumn(atX: x + width / 2, width: width, envelopes: envelopes,
+            // 413 — the strip claims the **highest point of the polyline it covers**, not the point at
+            // its centre. At 2× the SDR half is 122 pt for 256 bins, i.e. 1.05 bins per device pixel,
+            // so a one-bin spike is about one pixel wide: centre sampling hits its apex or lands on a
+            // slope depending on where the histogram happens to sit, and the same spike then reads
+            // anywhere between 51 % and 100 % of full after an EV change (the owner's report). The
+            // covered interval also keeps a sloped edge from being biased by half a pixel.
+            for band in additiveColumn(fromX: x, width: width, envelopes: envelopes,
                                        cursors: &cursors, in: axis) {
                 // The band's rect starts at the strip's own left edge, not at the sample.
                 var rect = band.rect
@@ -995,7 +998,11 @@ public final class HistogramCardView: NSView {
     ///
     /// `cursors` are per-envelope positions that only ever advance: the caller walks `x` left to right
     /// and a polyline's vertices are sorted by x, so each column costs one look-ahead.
-    private func additiveColumn(atX x: CGFloat, width: CGFloat,
+    ///
+    /// 413: the column claims its **whole strip** (`[x, x + width]`), not its centre point — see
+    /// `envelopeMax`. The two segments are one polyline here, so the SDR half and the tail half both
+    /// get the rule without a second code path.
+    private func additiveColumn(fromX x: CGFloat, width: CGFloat,
                                 envelopes: [[CGPoint]?], cursors: inout [Int],
                                 in axis: HistogramAxis) -> [(rect: NSRect, mask: Int)] {
         let bottom = axis.plot.maxY
@@ -1003,7 +1010,7 @@ public final class HistogramCardView: NSView {
         present.reserveCapacity(envelopes.count)
         for (channel, points) in envelopes.enumerated() {
             guard let points else { continue }
-            let top = Self.envelopeTop(points, atX: x, cursor: &cursors[channel])
+            let top = Self.envelopeMax(points, from: x, to: x + width, cursor: &cursors[channel])
             // A channel that does not reach this column has no band; `top == bottom` is the same
             // statement with a zero-height band, so both are "not present".
             if top < bottom - 1e-9 { present.append((channel, top)) }
@@ -1025,24 +1032,70 @@ public final class HistogramCardView: NSView {
         return bands
     }
 
-    /// The polyline's y at `x`, **linearly interpolated** between the two vertices that straddle it.
+    /// The y of `segment`'s line at `x`, **linearly interpolated** between its two vertices.
     ///
-    /// Taking the bin's own value instead would step the curve (406c §1.2's warning): the drawn
-    /// silhouette has to stay the same polyline the fill used to close.
-    private static func envelopeTop(_ points: [CGPoint], atX x: CGFloat,
-                                    cursor: inout Int) -> CGFloat {
-        guard let first = points.first, let last = points.last else { return .nan }
-        if x <= first.x { return first.y }
-        if x >= last.x { return last.y }
-        var i = min(max(cursor, 0), points.count - 2)
-        while i > 0 && points[i].x > x { i -= 1 }
-        while i < points.count - 2 && points[i + 1].x < x { i += 1 }
-        cursor = i
+    /// This is the pre-413 point sampler's arithmetic (it was `envelopeTop(points, atX:)`, one lookup
+    /// per column, and it still defines both of `envelopeMax`'s ends): taking a bin's own value
+    /// instead would step the curve (406c §1.2's warning), because the drawn silhouette has to stay
+    /// the same polyline the fill used to close. Split out so `envelopeMax` reuses the segment it has
+    /// already located instead of walking to it a second time.
+    private static func interpolated(_ points: [CGPoint], segment i: Int, atX x: CGFloat) -> CGFloat {
         let a = points[i], b = points[i + 1]
         let dx = b.x - a.x
         guard dx > 0 else { return b.y }
         let t = min(max((x - a.x) / dx, 0), 1)
         return a.y + (b.y - a.y) * t
+    }
+
+    /// The polyline's **highest** y (smallest value, y is down) over the interval `[from, to]`.
+    ///
+    /// 413 — why not the value at the strip's centre: the plot is a down-sampling. At 2× the code half
+    /// is 122 pt for 256 bins, so one bin is ~1.05 device px and a one-bin spike is about one pixel
+    /// wide. A centre sample hits that apex or misses it depending on where the histogram happens to
+    /// sit, so after an EV change (a pan of less than one pixel) the same spike painted anywhere
+    /// between 51 % and 100 % of its height. The strip that covers the apex must claim it.
+    ///
+    /// Why the *vertices* and not just the two ends: a one-bin spike's apex is a vertex whose x can
+    /// lie strictly between `from` and `to`, and both endpoints' interpolations lie on the slopes, so
+    /// "the larger end" would still lose it (§3.3 ⑧c). The ends are kept too, because a plateau's
+    /// top is not a vertex inside every strip — with them the result is *identical* to the old point
+    /// sample wherever the polyline is flat.
+    ///
+    /// `cursor` stays monotone: it is the index of the segment that contains the strip's right edge,
+    /// which is where the next strip begins, and the only backward walk is the one from the previous
+    /// strip's edge to this one (one or two steps: a strip is ~1 px, a bin is ~0.95 px).
+    /// The whole interval costs **one** forward walk — the vertices inside it plus the two end
+    /// interpolations — not a second scan of the bins.
+    static func envelopeMax(_ points: [CGPoint], from: CGFloat, to: CGFloat,
+                            cursor: inout Int) -> CGFloat {
+        guard let first = points.first, let last = points.last else { return .nan }
+        // Outside the path the ends answer, exactly as the old point sample clamped them. (`to <=
+        // first.x` also covers the left end of a strip that starts before the plot is drawn.)
+        if to <= first.x { return first.y }
+        if from >= last.x { return last.y }
+
+        let lo = max(from, first.x)
+        let hi = min(to, last.x)
+
+        // The segment that contains `lo` (and therefore where the walk forward starts).
+        var i = min(max(cursor, 0), points.count - 2)
+        while i > 0 && points[i].x > lo { i -= 1 }
+        while i < points.count - 2 && points[i + 1].x < lo { i += 1 }
+
+        // ① the left end, on the same linear interpolation the point sample used, so a flat top is
+        //    bit-identical to the pre-413 value.
+        var best = interpolated(points, segment: i, atX: lo)
+        // ② every vertex up to `hi` — the apex of a one-bin spike is one of these and no endpoint
+        //    interpolation can see it (§3.3 ⑧c).
+        var k = i
+        while k < points.count - 1 && points[k + 1].x <= hi {
+            k += 1
+            best = min(best, points[k].y)
+        }
+        // ③ the right end.
+        best = min(best, k == points.count - 1 ? points[k].y : interpolated(points, segment: k, atX: hi))
+        cursor = k
+        return best
     }
 
     /// The seven additive results, indexed by channel mask (`1 = R`, `2 = G`, `4 = B`): the whole
