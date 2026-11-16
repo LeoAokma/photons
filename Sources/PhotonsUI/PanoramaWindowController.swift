@@ -378,9 +378,7 @@ private struct PanoramaWorkspace: View {
             Text(L10n.tr("e0a7acc067fd")).font(.title2.bold())
             VStack(alignment:.leading,spacing:6) {
                 Text(L10n.tr("dcd3ee9cec9b")).font(.headline)
-                Picker(L10n.tr("ee38b80c37d9"),selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})) {
-                    ForEach(PanoramaCameraBody.allCases) {Text($0.name).tag($0)}
-                }.labelsHidden()
+                CameraBodyPicker(selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})).labelsHidden()
                 PanoramaBodyOrientationPicker(cameraBody:model.cameraBody,selection:Binding(get:{model.bodyOrientation},set:{model.setBodyOrientation($0)}))
                 Text(model.cameraBody.travel(at:model.bodyOrientation).summary).font(.caption).foregroundStyle(.secondary)
             }

@@ -139,9 +139,8 @@ private struct LCCProfileCreatorView: View {
                 Text("f/");TextField(L10n.tr("e3df0be2e19a"),text:$model.apertureText).frame(width:55)
                 Button(L10n.tr("76d2d245b1cd")) { model.choose() }
             }.textFieldStyle(.roundedBorder).disabled(model.busy || model.savedURL != nil)
-            Picker(L10n.tr("dcd3ee9cec9b"),selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})) {
-                ForEach(PanoramaCameraBody.allCases) {Text($0.name).tag($0)}
-            }.frame(width:300).disabled(model.busy || model.savedURL != nil)
+            CameraBodyPicker(selection:Binding(get:{model.cameraBody},set:{model.setBody($0)}))
+                .frame(width:300).disabled(model.busy || model.savedURL != nil)
             HSplitView {
                 VStack(alignment:.leading,spacing:10) {
                     HStack { Text(L10n.tr("3e0560dc572d" , String(describing: (model.frames.count)), String(describing: (model.frames.filter(\.shiftConfirmed).count))));Spacer();Button(L10n.tr("f84ea94b0208")) { model.removeSelected() }.disabled(model.selected==nil) }.font(.caption)

@@ -48,12 +48,19 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
     }
 }
 
-private struct SettingsView: View {
+struct SettingsView: View {
     @State private var page: SettingsPage = .general
+    @State private var cameraBodyTab = false
     @Bindable private var preferences = ApplicationPreferences.shared
     @State private var backdrop = CanvasBackdrop.current
     @State private var concurrency = ProcessingPreferences.thumbnailConcurrency
     private let deviceName = MTLCreateSystemDefaultDevice()?.name
+    private let cameraBodyLibrary: CameraBodyLibrary
+
+    init(cameraBodyTab: Bool = false, cameraBodyLibrary: CameraBodyLibrary = .shared) {
+        _cameraBodyTab = State(initialValue: cameraBodyTab)
+        self.cameraBodyLibrary = cameraBodyLibrary
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -108,6 +115,15 @@ private struct SettingsView: View {
 
     @AppStorage("photons.language") private var language = "zh-Hans"
     private var general:some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Picker(L10n.tr("835b700e028c"), selection: $cameraBodyTab) {
+                Text(L10n.tr("cameraBodies.generalTab")).tag(false)
+                Text(L10n.tr("cameraBodies.title")).tag(true)
+            }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("settings.general.tabs")
+            if cameraBodyTab { CameraBodySettingsView(library: cameraBodyLibrary) } else { generalOptions }
+        }
+    }
+    private var generalOptions:some View {
         VStack(alignment:.leading,spacing:18) {
         group(L10n.tr("9f6fee1aba17")) {
             Picker(L10n.tr("da9054ac44be"),selection:$language) {

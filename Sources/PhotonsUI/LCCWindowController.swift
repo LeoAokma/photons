@@ -403,9 +403,9 @@ struct LCCProfileCorrectionView:View {
                             ForEach(model.profiles) {Text($0.name).tag($0.id.uuidString)}
                         }.disabled(model.busy)
                         Divider()
-                        Picker(L10n.tr("ee38b80c37d9"),selection:Binding(get:{model.cameraBody},set:{model.cameraBody=$0;model.invalidateCorrection()})) {
-                            ForEach(PanoramaCameraBody.allCases) {Text($0.name).tag($0)}
-                        }.disabled(model.busy || model.manifests[model.selected]?.cameraBody != nil)
+                        CameraBodyPicker(selection:Binding(get:{model.cameraBody},set:{
+                            model.cameraBody=$0;model.bodyOrientation=$0.canonicalOrientation(model.bodyOrientation);model.invalidateCorrection()
+                        })).disabled(model.busy || model.manifests[model.selected]?.cameraBody != nil)
                         PanoramaBodyOrientationPicker(cameraBody:model.cameraBody,selection:Binding(get:{model.bodyOrientation},set:{model.bodyOrientation=$0;model.invalidateCorrection()}))
                             .disabled(model.busy || model.manifests[model.selected] != nil)
                         placement

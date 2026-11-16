@@ -22,7 +22,7 @@ public enum PanoramaBodyOrientation:Int,Codable,CaseIterable,Identifiable,Sendab
     }
 }
 
-public struct PanoramaShiftRange:Equatable,Sendable {
+public struct PanoramaShiftRange:Hashable,Codable,Sendable {
     public let left:Double
     public let right:Double
     public let up:Double
@@ -72,9 +72,23 @@ public struct PanoramaShiftRange:Equatable,Sendable {
     }
 }
 
-public enum PanoramaCameraBody:String,Codable,CaseIterable,Identifiable,Sendable {
+public enum PanoramaCameraBody:Codable,CaseIterable,Hashable,Identifiable,Sendable {
     case alpa12Max,alpa12XY,alpa12STC,alpa12Pano,alpa12Plus
-    public var id:String {rawValue}
+    case custom(CameraBodyProfile)
+
+    /// Keep the built-in order and wire IDs stable. User bodies are loaded by CameraBodyStore.
+    public static let allCases:[Self] = [.alpa12Max,.alpa12XY,.alpa12STC,.alpa12Pano,.alpa12Plus]
+    public var id:String {
+        switch self {
+        case .alpa12Max:return "alpa12Max"
+        case .alpa12XY:return "alpa12XY"
+        case .alpa12STC:return "alpa12STC"
+        case .alpa12Pano:return "alpa12Pano"
+        case .alpa12Plus:return "alpa12Plus"
+        case .custom(let profile):return "custom:" + profile.id.uuidString.lowercased()
+        }
+    }
+    public var isBuiltIn:Bool {if case .custom = self {return false};return true}
     public var name:String {
         switch self {
         case .alpa12Max:return "Alpa 12 Max"
@@ -82,6 +96,7 @@ public enum PanoramaCameraBody:String,Codable,CaseIterable,Identifiable,Sendable
         case .alpa12STC:return "Alpa 12 STC"
         case .alpa12Pano:return "Alpa 12 Pano"
         case .alpa12Plus:return "Alpa 12 Plus"
+        case .custom(let profile):return profile.name
         }
     }
     public var defaultTravel:PanoramaShiftRange {
@@ -91,7 +106,27 @@ public enum PanoramaCameraBody:String,Codable,CaseIterable,Identifiable,Sendable
         case .alpa12STC:return .init(left:18,right:18,up:0,down:0)
         case .alpa12Pano:return .init(left:35,right:35,up:10,down:10)
         case .alpa12Plus:return .init(left:20,right:20,up:20,down:20)
+        case .custom(let profile):return profile.travel
         }
+    }
+
+    /// Existing profiles/manifests encode built-ins as strings. Custom bodies carry their full
+    /// definition so later edits/deletion in Settings cannot change an archived calibration.
+    private enum CodingKeys:String,CodingKey {case version,profile}
+    public init(from decoder:Decoder) throws {
+        if let id=try? decoder.singleValueContainer().decode(String.self),
+           let body=Self.allCases.first(where:{$0.id==id}) {self=body;return}
+        let values=try decoder.container(keyedBy:CodingKeys.self)
+        guard try values.decode(Int.self,forKey:.version)==1 else {
+            throw DecodingError.dataCorruptedError(forKey:.version,in:values,debugDescription:"Unsupported camera body version")
+        }
+        self = .custom(try values.decode(CameraBodyProfile.self,forKey:.profile))
+    }
+    public func encode(to encoder:Encoder) throws {
+        if case .custom(let profile)=self {
+            var values=encoder.container(keyedBy:CodingKeys.self)
+            try values.encode(1,forKey:.version);try values.encode(profile,forKey:.profile)
+        } else {var value=encoder.singleValueContainer();try value.encode(id)}
     }
     public var orientations:[PanoramaBodyOrientation] {defaultTravel.distinctOrientations}
     public func travel(at orientation:PanoramaBodyOrientation)->PanoramaShiftRange {defaultTravel.rotated(orientation)}
