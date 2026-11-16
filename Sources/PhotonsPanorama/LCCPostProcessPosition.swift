@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import PhotonsLocalization
 
 public extension PanoramaManifest {
@@ -16,6 +17,18 @@ public extension PanoramaManifest {
     }
     func offset(reference index:Int,position:CGPoint) -> CGPoint? {
         relativePosition(of:index).map {CGPoint(x:$0.x-position.x,y:$0.y-position.y)}
+    }
+    /// Center of the visible exported picture, including crop and output transforms. Its
+    /// physical position is distinct from the optical origin and from any source-frame center.
+    func pictureCenter(offset:CGPoint = .zero) -> CGPoint? {
+        guard let frame=frames.first,let sensor=frame.sensor else {return nil}
+        let r=frame.sensorRect ?? frame.rect,p=canvasPoint(u:0.5,v:0.5)
+        guard r.width>0,r.height>0,p.x.isFinite,p.y.isFinite else {return nil}
+        return CGPoint(x:(p.x-0.5)*sensor.width/r.width-offset.x,
+                       y:(0.5-p.y)*sensor.height/r.height-offset.y)
+    }
+    func offset(pictureCenter position:CGPoint) -> CGPoint? {
+        pictureCenter().map {CGPoint(x:$0.x-position.x,y:$0.y-position.y)}
     }
     /// Exported pixels → original canvas is already stored; invert it to sample an old frame
     /// from the current exported copy, including crop/rotation/perspective and arbitrary resizing.
@@ -91,7 +104,9 @@ public extension LCCCorrectionEngine {
                       let rgb=raster.rgb(uv.x*Double(raster.width-1),uv.y*Double(raster.height-1)),
                       min(rgb.x,rgb.y,rgb.z)>0.00005 else {continue}
                 let physical=CGPoint(x:centers[i].x+(u-0.5)*sensor.width,y:centers[i].y+(0.5-v)*sensor.height)
-                observations.append(.init(frame:i,point:physical,logRGB:SIMD3(log(rgb.x),log(rgb.y),log(rgb.z)),field:field))
+                let compensation=manifest.photometricFields?[i].gain(at:CGPoint(x:u,y:v)) ?? SIMD3(repeating:1)
+                let originalRGB=rgb/compensation
+                observations.append(.init(frame:i,point:physical,logRGB:SIMD3(log(originalRGB.x),log(originalRGB.y),log(originalRGB.z)),field:field))
             }}
         }
         guard observations.count>100 else {throw PanoramaFailure(L10n.tr("fb4baac95a8f"))}

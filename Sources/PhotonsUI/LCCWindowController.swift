@@ -50,6 +50,7 @@ final class LCCWindowModel: ObservableObject {
     @Published var resolvedOffset:CGPoint?
     @Published var positionExplanation=""
     @Published var referenceFrame=0
+    @Published var usePictureCenter=false
     private var uncorrectedPreview:PanoramaPlan?
     private var resultWindow:NSWindow?
     private var exportWindow:PanoramaExportController?
@@ -139,6 +140,7 @@ final class LCCWindowModel: ObservableObject {
         let flat=traditional ? flats[assignments[index]].source.url:nil
         let id=UUID(uuidString:profileID),position=CGPoint(x:shiftX,y:shiftY),refine=self.refine
         let suppliedPosition=positionConfirmed,body=cameraBody,orientation=bodyOrientation,reference=referenceFrame
+        let pictureCenter=usePictureCenter
         busy=true;error=nil;status=L10n.tr("c7bbd14f9634");cancellation=PanoramaCancellation()
         let token=cancellation
         queue.async { [weak self] in
@@ -155,8 +157,8 @@ final class LCCWindowModel: ObservableObject {
                     if let manifest {
                         let offset:CGPoint
                         if suppliedPosition {
-                            guard let value=manifest.offset(reference:reference,position:position) else {throw PanoramaFailure(L10n.tr("lcc.position.geometry"))}
-                            offset=value;explanation=L10n.tr("lcc.position.manual")
+                            guard let value=pictureCenter ? manifest.offset(pictureCenter:position):manifest.offset(reference:reference,position:position) else {throw PanoramaFailure(L10n.tr("lcc.position.geometry"))}
+                            offset=value;explanation=L10n.tr(pictureCenter ? "lcc.position.manualCenter":"lcc.position.manual")
                         } else {
                             let solution=try LCCCorrectionEngine.resolvePostProcessPosition(scene:source,manifest:manifest,profile:profile,cameraBody:body,cancellation:token,progress:progress)
                             offset=solution.offsetMM;explanation=solution.explanation
@@ -176,7 +178,10 @@ final class LCCWindowModel: ObservableObject {
                     guard let self,!self.closed,(try? token.check()) != nil else {return}
                     self.busy=false;self.status=L10n.tr("f31f21c22b68")
                     if traditional {self.showResult(plan,manifest:provenance)}
-                    else {self.profilePreview=plan;self.correctedManifest=provenance;self.resolvedOffset=solvedOffset;self.positionExplanation=explanation}
+                    else {
+                        self.profilePreview=plan;self.correctedManifest=provenance;self.resolvedOffset=solvedOffset;self.positionExplanation=explanation
+                        self.updateReferencePosition()
+                    }
                 }
             } catch {DispatchQueue.main.async {guard (try? token.check()) != nil else {return};self?.busy=false;self?.error=error.localizedDescription}}
         }
@@ -188,8 +193,9 @@ final class LCCWindowModel: ObservableObject {
     func invalidateCorrection() {
         correctedManifest=nil;profilePreview=uncorrectedPreview
         if positionConfirmed {
-            resolvedOffset=placementManifest?.offset(reference:referenceFrame,position:CGPoint(x:shiftX,y:shiftY))
-            positionExplanation=L10n.tr("lcc.position.manual")
+            let position=CGPoint(x:shiftX,y:shiftY)
+            resolvedOffset=usePictureCenter ? placementManifest?.offset(pictureCenter:position):placementManifest?.offset(reference:referenceFrame,position:position)
+            positionExplanation=L10n.tr(usePictureCenter ? "lcc.position.manualCenter":"lcc.position.manual")
         } else {
             let manifest=manifests[selected]
             resolvedOffset=manifest?.profileOffsetMM
@@ -200,16 +206,30 @@ final class LCCWindowModel: ObservableObject {
         }
     }
     func selectReference(_ index:Int) {
-        referenceFrame=index
-        let position=placementManifest?.position(of:index,offset:resolvedOffset) ?? placementManifest?.relativePosition(of:index) ?? .zero
+        referenceFrame=index;usePictureCenter=false
+        updateReferencePosition()
+        if positionConfirmed {positionExplanation=L10n.tr("lcc.position.manual")}
+    }
+    func selectPictureCenter(_ selected:Bool) {
+        usePictureCenter=selected;updateReferencePosition()
+        if positionConfirmed {positionExplanation=L10n.tr(selected ? "lcc.position.manualCenter":"lcc.position.manual")}
+    }
+    func setPositionConfirmed(_ confirmed:Bool) {
+        // Start from the displayed estimate, not stale fields from before the solve.
+        if confirmed {updateReferencePosition()}
+        positionConfirmed=confirmed;invalidateCorrection()
+    }
+    private func updateReferencePosition() {
+        let position:CGPoint
+        if usePictureCenter {position=placementManifest?.pictureCenter(offset:resolvedOffset ?? .zero) ?? .zero}
+        else {position=placementManifest?.position(of:referenceFrame,offset:resolvedOffset) ?? placementManifest?.relativePosition(of:referenceFrame) ?? .zero}
         shiftX=position.x;shiftY=position.y
-        if positionConfirmed {invalidateCorrection()}
     }
     func loadProfilePreview() {
         guard scenes.indices.contains(selected) else {return}
         cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
         let source=scenes[selected],manifest=manifests[selected]
-        profilePreview=nil;uncorrectedPreview=nil;correctedManifest=nil;referenceFrame=0;positionConfirmed=false
+        profilePreview=nil;uncorrectedPreview=nil;correctedManifest=nil;referenceFrame=0;positionConfirmed=false;usePictureCenter=false
         resolvedOffset=manifest?.profileOffsetMM
         if let manifest {
             bodyOrientation=manifest.bodyOrientation
@@ -392,7 +412,13 @@ struct LCCProfileCorrectionView:View {
                         Divider()
                         Text(L10n.tr("lcc.position.title")).font(.headline)
                         Text(model.positionExplanation).font(.caption).foregroundStyle(.secondary)
-                        Toggle(L10n.tr("lcc.position.useReference"),isOn:Binding(get:{model.positionConfirmed},set:{model.positionConfirmed=$0;model.invalidateCorrection()}))
+                        if model.manifests[model.selected] != nil {
+                            Picker(L10n.tr("lcc.position.reference"),selection:Binding(get:{model.usePictureCenter},set:{model.selectPictureCenter($0)})) {
+                                Text(L10n.tr("lcc.position.frame")).tag(false)
+                                Text(L10n.tr("lcc.position.center")).tag(true)
+                            }.pickerStyle(.segmented).disabled(model.busy)
+                        }
+                        Toggle(L10n.tr(model.usePictureCenter ? "lcc.position.useCenter":"lcc.position.useReference"),isOn:Binding(get:{model.positionConfirmed},set:{model.setPositionConfirmed($0)}))
                             .toggleStyle(.checkbox).disabled(model.busy)
                         HStack {
                             TextField("X (mm)",value:Binding(get:{model.shiftX},set:{model.shiftX=$0;model.invalidateCorrection()}),format:.number.precision(.fractionLength(2)))
@@ -405,6 +431,13 @@ struct LCCProfileCorrectionView:View {
                         if let manifest=model.manifests[model.selected] {
                             Text(L10n.tr("6255d52c9bfe",String(manifest.frames.count),manifest.profileName ?? L10n.tr("854f821696ae"))).font(.caption)
                             Text(manifest.correctionApplied ? L10n.tr("14f6c2f69469"):L10n.tr("7b9fc5d84c0d")).font(.caption).foregroundStyle(.secondary)
+                            if !manifest.correctionApplied {
+                                Label(L10n.tr("lcc.post.approximation"),systemImage:"exclamationmark.triangle")
+                                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true)
+                                if manifest.options.matchExposure && manifest.photometricFields == nil {
+                                    Text(L10n.tr("lcc.post.legacyPhotometry")).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }.padding(20)
                 }.frame(width:370)
@@ -435,7 +468,7 @@ struct LCCProfileCorrectionView:View {
                 return .init(name:manifest.frames[i].filename,center:center,sensor:sensor,sourceIndex:i)
             }
             CapturePositionDiagram(frames:frames,cameraBody:model.cameraBody,orientation:model.bodyOrientation,
-                absolute:offset != nil,selected:model.referenceFrame) {model.selectReference($0)}
+                absolute:offset != nil,selected:model.usePictureCenter ? -1:model.referenceFrame) {model.selectReference($0)}
                 .frame(height:260).padding(8).background(.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:10))
             VStack(alignment:.leading,spacing:6) {
                 ForEach(manifest.frames.indices,id:\.self) {i in
@@ -445,7 +478,15 @@ struct LCCProfileCorrectionView:View {
                             Text(manifest.frames[i].filename).lineLimit(1)
                             Spacer()
                             if let p {Text(String(format:offset == nil ? "Δ %+.1f, %+.1f mm":"%+.1f, %+.1f mm",p.x,p.y)).monospacedDigit()}
-                        }.font(.caption).foregroundStyle(model.referenceFrame==i ? Color.accentColor:Color.primary)
+                        }.font(.caption).foregroundStyle(!model.usePictureCenter && model.referenceFrame==i ? Color.accentColor:Color.primary)
+                    }.buttonStyle(.plain).disabled(model.busy)
+                }
+                if model.manifests[model.selected] != nil,let center=manifest.pictureCenter(offset:offset ?? .zero) {
+                    Button {model.selectPictureCenter(true)} label: {
+                        HStack {
+                            Text(L10n.tr("lcc.position.center"));Spacer()
+                            Text(String(format:offset == nil ? "Δ %+.1f, %+.1f mm":"%+.1f, %+.1f mm",center.x,center.y)).monospacedDigit()
+                        }.font(.caption).foregroundStyle(model.usePictureCenter ? Color.accentColor:Color.primary)
                     }.buttonStyle(.plain).disabled(model.busy)
                 }
             }

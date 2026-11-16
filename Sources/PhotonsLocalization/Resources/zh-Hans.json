@@ -1322,12 +1322,19 @@
   "lcc.position.recorded": "已读取拼接时记录的光轴与移轴位置。",
   "lcc.position.inconsistent": "记录的移轴位置不一致，请指定一张源照片作为位置基准。",
   "lcc.position.geometry": "缺少可用的传感器或相对位置记录，请检查拼接信息。",
-  "lcc.position.estimated": "已根据镜头配置与画面估算位置。场景颜色可能影响结果，可选择源照片手动微调基准。",
+  "lcc.position.estimated": "位置仅为画面估算，并非实测移轴读数。场景颜色可能影响结果，可选择源照片或成片画面中心手动指定基准。",
   "lcc.position.manual": "使用所选源照片的手动位置基准。",
   "lcc.position.relative": "已读取相对布局；预览校正时将自动估算光轴位置。",
   "lcc.position.title": "光轴与移轴位置",
   "lcc.position.useReference": "手动指定所选照片的位置",
-  "lcc.position.hint": "默认优先使用拼接记录，否则自动估算。手动指定一张源照片后，其余照片保持原有相对位置。",
+  "lcc.position.hint": "默认优先使用拼接记录，否则自动估算。X 向右、Y 向上，单位 mm。对拼接成片，手动输入是确定位置，保持各源照片的相对布局；成片中心指裁切后画面的中心。",
   "lcc.preview.empty": "选择照片以预览镜头配置校正",
-  "lcc.preview.calculate": "解算并预览校正"
+  "lcc.preview.calculate": "解算并预览校正",
+  "lcc.position.reference": "位置基准",
+  "lcc.position.frame": "源照片",
+  "lcc.position.center": "成片画面中心",
+  "lcc.position.useCenter": "手动指定成片画面中心的位置",
+  "lcc.position.manualCenter": "使用成片画面中心的手动位置基准（包含裁切和旋转）。",
+  "lcc.post.approximation": "后期 LCC 为近似校正，可能残留色偏、暗角或接缝。为获得更可靠的结果，建议使用原片重新拼接，并在合成前应用 LCC。",
+  "lcc.post.legacyPhotometry": "此旧文件未记录拼接时的局部颜色补偿，无法完整撤销该处理。"
 }

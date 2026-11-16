@@ -2,10 +2,34 @@ import PhotonsLocalization
 import Foundation
 import CoreGraphics
 import ImageIO
+import CoreImage
 
 /// Portable geometry. Coordinates are fractions of the uncropped canvas, top/left origin;
 /// millimetres stay physical when a copy is resized. No absolute paths or GPS are embedded.
 public struct PanoramaManifest: Codable {
+    /// The smooth RGB adjustment baked into each source before blending. Keep it portable
+    /// so later LCC can remove it instead of correcting an already compensated field twice.
+    public struct PhotometricField: Codable {
+        var width:Int,height:Int,values:[Float]
+        init(image:CIImage,context:CIContext) {
+            width=32;height=32
+            let raster=PanoramaRaster(image:image,context:context,width:width,height:height)
+            values=(0..<width*height).flatMap {Array(raster.rgba[$0*4..<$0*4+3])}
+        }
+        var isValid:Bool {
+            width>=2 && height>=2 && width<=64 && height<=64 && values.count==width*height*3 && values.allSatisfy {$0.isFinite && $0>0 && $0<=16}
+        }
+        func gain(at point:CGPoint)->SIMD3<Double> {
+            let px=min(Double(width-1),max(0,point.x*Double(width)-0.5))
+            let py=min(Double(height-1),max(0,point.y*Double(height)-0.5))
+            let x=min(width-2,Int(px)),y=min(height-2,Int(py)),fx=px-Double(x),fy=py-Double(y)
+            func sample(_ x:Int,_ y:Int)->SIMD3<Double> {
+                let i=(y*width+x)*3
+                return SIMD3(Double(values[i]),Double(values[i+1]),Double(values[i+2]))
+            }
+            return (sample(x,y)*(1-fx)+sample(x+1,y)*fx)*(1-fy)+(sample(x,y+1)*(1-fx)+sample(x+1,y+1)*fx)*fy
+        }
+    }
     public struct Frame: Codable {
         public var filename: String
         public var camera: String
@@ -35,6 +59,7 @@ public struct PanoramaManifest: Codable {
     /// Row-major homography from the current exported copy into the original crop.
     public var whiteBalance: [Float]?
     public var exposureGains: [Double]?
+    public var photometricFields: [PhotometricField]? = nil
     public var outputTransform: [Double]?
     public var geometryUnrecoverable: Bool?
 
@@ -46,6 +71,10 @@ public struct PanoramaManifest: Codable {
         projection=plan.warps == nil ? "translation":"projective"
         whiteBalance=plan.whiteBalance.map {[$0.0,$0.1]}
         exposureGains=plan.gains
+        if !plan.photometricGains.isEmpty {
+            let context=CIContext(options:[.workingColorSpace:PanoramaEngine.linearSpace,.cacheIntermediates:false])
+            photometricFields=plan.photometricGains.map {PhotometricField(image:$0,context:context)}
+        }
         let transform=CGAffineTransform(scaleX:1/canvas.width,y:1/canvas.height)
         crop=(plan.lccState?.cropRect ?? CGRect(origin:.zero,size:canvas)).applying(transform)
         self.profileID=plan.lccState?.profileID ?? profileID
@@ -112,6 +141,8 @@ public struct PanoramaManifest: Codable {
               crop.width>0,crop.height>0,crop.minX>=0,crop.minY>=0,crop.maxX<=1.001,crop.maxY<=1.001,
               maskWidth>0,maskHeight>0,maskWidth<=8192,maskHeight<=8192,
               outputTransform.map({$0.count==9 && $0.allSatisfy(\.isFinite)}) ?? true,
+              exposureGains.map({$0.count==frames.count && $0.allSatisfy {$0.isFinite && $0>0 && $0<=16}}) ?? true,
+              photometricFields.map({$0.count==frames.count && $0.allSatisfy(\.isValid)}) ?? true,
               weights.count==frames.count,weights.allSatisfy({$0.count==maskWidth*maskHeight}),
               frames.allSatisfy({frame in
                   guard let warp=frame.imageToCanvas else {return projection=="translation"}

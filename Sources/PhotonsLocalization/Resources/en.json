@@ -1322,12 +1322,19 @@
   "lcc.position.recorded": "Using the optical origin and shift positions recorded during stitching.",
   "lcc.position.inconsistent": "Recorded shift positions are inconsistent. Choose one source frame as the position reference.",
   "lcc.position.geometry": "Usable sensor or relative placement information is missing. Check the stitch metadata.",
-  "lcc.position.estimated": "Position estimated from the lens profile and image. Scene colors can affect the result; select a source frame to refine the reference manually.",
+  "lcc.position.estimated": "Estimated from image content, not measured shift readings. Scene colors can bias the result; set a source frame or the picture center as a manual reference.",
   "lcc.position.manual": "Using the selected source frame as a manual position reference.",
   "lcc.position.relative": "Relative layout loaded. The optical origin will be estimated when calculating the correction.",
   "lcc.position.title": "Optical Origin and Shift",
   "lcc.position.useReference": "Set the selected frame position manually",
-  "lcc.position.hint": "Recorded positions take priority; otherwise position is estimated automatically. Setting one source frame preserves the relative placement of all other frames.",
+  "lcc.position.hint": "Recorded positions take priority; otherwise position is estimated. X points right, Y points up, in mm. For a stitched image, manual values specify an exact position and preserve relative source placement. Picture center means the center after cropping.",
   "lcc.preview.empty": "Select a photo to preview lens-profile correction",
-  "lcc.preview.calculate": "Calculate and Preview Correction"
+  "lcc.preview.calculate": "Calculate and Preview Correction",
+  "lcc.position.reference": "Position reference",
+  "lcc.position.frame": "Source frame",
+  "lcc.position.center": "Picture center",
+  "lcc.position.useCenter": "Set the picture center position manually",
+  "lcc.position.manualCenter": "Using the visible picture center as a manual position reference, including crop and rotation.",
+  "lcc.post.approximation": "Post-stitch LCC is approximate. Color casts, shading or seams may remain. For more reliable results, stitch the original photos again with LCC applied before blending.",
+  "lcc.post.legacyPhotometry": "This older file does not record the local color compensation applied during stitching, so that processing cannot be fully reversed."
 }

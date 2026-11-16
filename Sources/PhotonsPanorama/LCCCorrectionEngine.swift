@@ -68,7 +68,7 @@ public enum LCCCorrectionEngine {
                 guard point.x.isFinite,point.y.isFinite,(0...1).contains(point.x),(0...1).contains(point.y) else {continue}
                 let mx=min(original.maskWidth-1,max(0,Int(point.x*Double(original.maskWidth))))
                 let my=min(original.maskHeight-1,max(0,Int(point.y*Double(original.maskHeight))))
-                var sum=SIMD3<Double>.zero,total=0.0,sourceWeight=0.0,missing=false
+                var response=SIMD3<Double>.zero,total=0.0,sourceWeight=0.0,missing=false
                 for (i,frame) in original.frames.enumerated() {
                     let weight=Double(original.weights[i][my*original.maskWidth+mx])/255
                     guard weight>0.001 else {continue}
@@ -80,7 +80,14 @@ public enum LCCCorrectionEngine {
                     let physical:CGPoint
                     physical=CGPoint(x:(unwarped.x-0.5)*sensor.width/rect.width-chosenOffset.x,
                                      y:(0.5-unwarped.y)*sensor.height/rect.height-chosenOffset.y)
-                    if let g=calibrations[i].gain(at:physical) {sum += g*weight;total += weight}
+                    if let g=calibrations[i].gain(at:physical) {
+                        let exposureWeight=weight*(original.exposureGains?[i] ?? 1)
+                        let photometry=original.photometricFields?[i].gain(at:local) ?? SIMD3(repeating:1)
+                        // A blended pixel contains weighted *responses*, not weighted correction
+                        // gains: C = S Σ(w e p / g). Remove shading and baked-in RGB photometry
+                        // while retaining the recorded exposure: C' = S Σ(w e).
+                        response += photometry/g*exposureWeight;total += exposureWeight
+                    }
                     else {missing=true}
                 }
                 // Warped panoramas have empty canvas corners. Those pixels do not need a lens
@@ -88,7 +95,7 @@ public enum LCCCorrectionEngine {
                 guard sourceWeight>0.001 else {continue}
                 contributingPixels += 1
                 if total>0 && !missing {
-                    let gain=sum/total,o=(y*w+x)*4
+                    let gain=SIMD3(repeating:total)/response,o=(y*w+x)*4
                     values[o]=Float(gain.x);values[o+1]=Float(gain.y);values[o+2]=Float(gain.z)
                 } else {uncovered += 1}
             }

@@ -144,7 +144,7 @@ public enum LCCProfileBuilder {
             raw.luminanceNoiseReductionAmount=0;raw.colorNoiseReductionAmount=0
             if !source.camera.hasPrefix("Photons Linear") {raw.neutralTemperature=whiteBalance?.0 ?? 6500;raw.neutralTint=whiteBalance?.1 ?? 0};raw.scaleFactor=Float(scale)
             guard let image=raw.outputImage else {throw PanoramaFailure(L10n.tr("12edd19f4454" , String(describing: (source.url.lastPathComponent))))};output=image
-        } else if let image=CIImage(contentsOf:source.url,options:[.applyOrientationProperty:true]) {output=image}
+        } else if let image=CIImage(contentsOf:source.url,options:[.applyOrientationProperty:true,.expandToHDR:true]) {output=image}
         else {throw PanoramaFailure(L10n.tr("12edd19f4454" , String(describing: (source.url.lastPathComponent))))}
         let normal=output.transformed(by:CGAffineTransform(translationX:-output.extent.minX,y:-output.extent.minY))
         return normal.transformed(by:CGAffineTransform(scaleX:source.size.width*scale/normal.extent.width,y:source.size.height*scale/normal.extent.height))
