@@ -990,9 +990,6 @@ public final class ExportSheetModel {
     /// never exported anything saves its current draft, which is what makes a preference survive a
     /// close without a run.
     public func saveDraftOnClose() {
-        // 421b —— 按 PR 的形状：关闭时先记住当前输出页（HDR / SDR 各自的配方），再写主 draft。
-        // 这是 421 为了「draft 不多写一次」删掉的那一句，本次按用户裁定恢复。
-        rememberOutputTab()
         let draft = lastSuccessfulDraft ?? ExportDraftPersistence.Draft(
             preset: effectivePreset, outputDirectory: outputDirectory)
         ExportDraftPersistence.save(preset: draft.preset,
@@ -1430,17 +1427,7 @@ public struct ExportSheetView: View {
             control: {
                 // 335 —— 按钮回到主列**左端**（138 起），文案去掉省略号（「更改…」→「更改」：
                 // 它开的是同一个目录面板，省略号在这里只占了 15 pt 的宽度）。路径拿剩下的宽度。
-                //
-                // 421b —— 按 PR 的形状：导出目标 Picker 排在「更改」**之前**、宽 150，路径在按钮后，
-                // 于是按钮左沿 = 138 + 150 + readoutGap。这是用户 2026-11-17 裁定的布局。
                 HStack(spacing: ExportRowGrid.readoutGap) {
-                    Picker(L10n.tr("f6727cfa6281"), selection: $model.preset.destination) {
-                        ForEach(ExportDestination.allCases, id: \.self) { Text($0.displayName).tag($0) }
-                    }
-                    .labelsHidden()
-                    .frame(width: ExportRowGrid.presetWidth)
-                    .background(ExportRowGridProbeHost(kind: .accessory,
-                                                       rowID: "export.location.directory.destination"))
                     Button(L10n.tr("6b01fce4dbea")) { model.onChooseDirectory?() }
 
                         .controlSize(.small)
@@ -1455,6 +1442,12 @@ public struct ExportSheetView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(ExportRowGridProbeHost(kind: .accessory,
                                                            rowID: "export.location.directory.path"))
+                    // 导出目标：源文件夹 / 指定目录。这个控件**必须留着** —— 删了它用户就没法
+                    // 在两种目标之间切换（那是功能，不是布局）。放在行尾、宽度收到 90，是为了让
+                    // 「更改」按钮仍从主列起点 138 起排（335），且路径拿到足够宽度不被截（322）。
+                    Picker(L10n.tr("f6727cfa6281"), selection: $model.preset.destination) {
+                        ForEach(ExportDestination.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }.labelsHidden().frame(width: 90)
                 }
             },
             value: { EmptyView() },

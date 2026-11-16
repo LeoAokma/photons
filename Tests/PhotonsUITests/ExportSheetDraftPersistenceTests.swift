@@ -11,20 +11,11 @@ final class ExportSheetDraftPersistenceTests: XCTestCase {
     final class MemoryStore: ExportDraftPersistence.Store {
         var values: [String: Data] = [:]
         var writes = 0
-        /// 421b —— 按 key 计写次数。关闭现在会写两条偏好：主 draft（`storageKey`）与当前输出页
-        /// （`photons.exportTab.*.v1`）。两者是**不同的**偏好，所以「一次写」这条契约按 key 计。
-        private(set) var writesByKey: [String: Int] = [:]
         func exportDraftData(forKey key: String) -> Data? { values[key] }
         func setExportDraftData(_ data: Data?, forKey key: String) {
-            if let data {
-                values[key] = data
-                writes += 1
-                writesByKey[key, default: 0] += 1
-            } else {
-                values.removeValue(forKey: key)
-            }
+            if let data { values[key] = data; writes += 1 }
+            else { values.removeValue(forKey: key) }
         }
-        func writes(forKey key: String) -> Int { writesByKey[key] ?? 0 }
     }
 
     private var scratch: URL!
@@ -75,15 +66,7 @@ final class ExportSheetDraftPersistenceTests: XCTestCase {
 
         XCTAssertEqual(store.writes, 0, "editing must not write defaults on every tick")
         first.saveDraftOnClose()
-        // 421b —— 关闭写两条**不同**的偏好：主 draft 一次，当前输出页（`photons.exportTab.sdr.v1`）
-        // 一次。各自都只写一次 —— 「关闭不写 N 次」的契约按 key 成立。
-        XCTAssertEqual(store.writes(forKey: ExportDraftPersistence.storageKey), 1,
-                       "主 draft 关闭时写一次")
-        // 当前输出页那条写到 `photons.exportTab.<hdr|sdr>.v1`：档位由 `hdrEnabled || usesLinearDNG`
-        // 决定，所以断言写成「两个键加起来恰好一次」，而不是猜当前是哪一档。
-        XCTAssertEqual(store.writes(forKey: "photons.exportTab.hdr.v1")
-                       + store.writes(forKey: "photons.exportTab.sdr.v1"), 1,
-                       "当前输出页关闭时写一次（HDR 或 SDR，视当前档位）")
+        XCTAssertEqual(store.writes, 1)
 
         let second = model()
         XCTAssertEqual(second.preset.format, .jpeg)

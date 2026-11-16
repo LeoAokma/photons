@@ -290,15 +290,8 @@ final class ExportSheetLayout288Tests: XCTestCase {
         let qualityNumber = try XCTUnwrap(descendants(of: hosted.host)
             .compactMap { $0 as? ExportSliderRowProbe }
             .first { $0.kind == .number && $0.rowID == "export.quality" })
-        // 421b —— 数值框加回 5+5 内边距后外框 56，从值列（46）向左探出 10；滑杆的右沿仍然钉
-        // **值列**的左沿（列线），不是外框的左沿。
-        let qualityValueColumn = try XCTUnwrap(gridProbes(in: hosted.host)
-            .first { $0.kind == .value && $0.rowID == "export.quality" })
-        XCTAssertEqual(q.maxX, frame(of: qualityValueColumn, in: hosted.host).minX - 8,
-                       accuracy: 0.5, "滑杆右沿 = 值列左沿 − 8")
-        XCTAssertEqual(frame(of: qualityNumber, in: hosted.host).maxX,
-                       frame(of: qualityValueColumn, in: hosted.host).maxX, accuracy: 0.5,
-                       "数值框外框的右沿 = 值列右沿（内边距只向左长）")
+        XCTAssertEqual(q.maxX, frame(of: qualityNumber, in: hosted.host).minX - 8, accuracy: 0.5,
+                       "滑杆右沿 = 百分数左沿 − 8")
 
         let text = try sourceText()
         XCTAssertEqual(ExportRowGrid.sliderTickMarks, 0, "质量 tick=0")
