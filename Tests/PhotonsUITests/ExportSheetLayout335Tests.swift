@@ -297,11 +297,21 @@ final class ExportSheetLayout335Tests: XCTestCase {
                      number.minX, number.maxX, number.width, unit.minX, unit.maxX,
                      abs(number.midY - unit.midY)))
 
-        XCTAssertEqual(number.minX, 138, accuracy: 0.5, "输入框在主列起点")
-        XCTAssertEqual(number.width, 46, accuracy: 0.5, "输入框宽度不变（288 的 46）")
+        // 421b —— `SliderNumberField` 加回 5+5 内边距与底色（PR 的形状），外框因此是
+        // 「值列宽 + 2×5」= 56；值列本身仍是 46（`ExportRowGrid.valueWidth` 不动），
+        // 所以外框从值列的左沿向左探出 10。钉的是**右沿 = 主列起点 + 值列宽**（值列还在原位）。
+        XCTAssertEqual(number.maxX, 138 + ExportRowGrid.valueWidth, accuracy: 0.5,
+                       "值列右沿 = 主列起点 + 值列宽（外框的 padding 向左探出）")
+        XCTAssertEqual(number.width, ExportRowGrid.valueWidth + 2 * 5, accuracy: 0.5,
+                       "输入框外框宽度 = 值列宽 + 两侧内边距（46 → 56）")
         // 335 §2.3 —— 单位紧跟输入框，同一行、左对齐、固定间距 8。
+        //
+        // 421b —— 输入框外框高 24（`fontSize 12 + 4` + 上下内边距 8），单位文字只有 12 pt，
+        // 两者在行内**居中对齐**，所以 minY 不再相等（差 4.5）；同一行的判据是 midY，
+        // 且单位必须落在输入框外框的纵向范围内。
         XCTAssertEqual(unit.minX, number.maxX + 8, accuracy: 0.5, "单位紧跟输入框")
-        XCTAssertEqual(unit.minY, number.minY, accuracy: 0.5, "单位与输入框同一行")
+        XCTAssertLessThanOrEqual(number.minY, unit.minY, "单位在输入框外框内（上）")
+        XCTAssertGreaterThanOrEqual(number.maxY, unit.maxY, "单位在输入框外框内（下）")
         XCTAssertEqual(unit.midY, number.midY, accuracy: 0.5, "单位与输入框同一 midY")
         // 单位右沿不再贴 540：它跟着输入框走，读数列不存在了。
         XCTAssertLessThan(unit.maxX, 300, "单位在主列左端，不在右侧读数位")
@@ -322,7 +332,19 @@ final class ExportSheetLayout335Tests: XCTestCase {
         print(String(format: "335 button · x %.1f…%.1f 宽 %.1f 高 %.1f · 路径 %.1f…%.1f",
                      button.minX, button.maxX, button.width, button.height, path.minX, path.maxX))
 
-        XCTAssertEqual(button.minX, 138, accuracy: 0.5, "按钮左沿在主列起点")
+        // 421b —— 按 PR 的形状：目标 Picker 在「更改」**之前**、宽 150，所以按钮不再从主列起点
+        // 138 起，而是 138 + 150 + readoutGap。这是用户 2026-11-17 裁定的布局，旧断言
+        // 「按钮左沿 = 138」的前提（Picker 在行尾）已经不成立。
+        let destination = try XCTUnwrap(
+            rect(.accessory, "export.location.directory.destination", in: content),
+            "导出目标 Picker 没有探针")
+        XCTAssertEqual(destination.minX, ExportRowGrid.controlLeft, accuracy: 0.5,
+                       "目标 Picker 在主列起点")
+        XCTAssertEqual(destination.width, ExportRowGrid.presetWidth, accuracy: 0.5,
+                       "目标 Picker 宽 150")
+        XCTAssertEqual(button.minX,
+                       destination.maxX + ExportRowGrid.readoutGap, accuracy: 0.5,
+                       "「更改」按钮紧跟目标 Picker（Picker 在前）")
         XCTAssertEqual(path.minX, button.maxX + ExportRowGrid.readoutGap, accuracy: 0.5,
                        "路径紧跟按钮")
         XCTAssertLessThanOrEqual(path.maxX, 540 + 0.5, "路径不许越过面板右 padding")
@@ -359,16 +381,27 @@ final class ExportSheetLayout335Tests: XCTestCase {
             let slider = try XCTUnwrap(sliderRect(.slider, rowID, in: content), "\(rowID) 没有滑杆")
             let number = try XCTUnwrap(sliderRect(.number, rowID, in: content), "\(rowID) 没有数值框")
             let unit = try XCTUnwrap(sliderRect(.unit, rowID, in: content), "\(rowID) 没有 % 单位")
-            print(String(format: "335 slider · %@ · 滑杆 %.1f…%.1f (宽 %.1f) · 值 %.1f…%.1f · %% %.1f…%.1f",
+            // 421b —— 值列（46）不动；`SliderNumberField` 加回 5+5 内边距后它**外框**是 56，
+            // 向左探出 10（右沿不变）。所以列线仍然读 `.value` 探针，不读外框。
+            let valueColumn = try XCTUnwrap(rect(.value, rowID, in: content),
+                                            "\(rowID) 没有值列探针")
+            print(String(format: "335 slider · %@ · 滑杆 %.1f…%.1f (宽 %.1f) · 值列 %.1f…%.1f"
+                         + " · 外框 %.1f…%.1f · %% %.1f…%.1f",
                          rowID, slider.minX, slider.maxX, slider.width,
+                         valueColumn.minX, valueColumn.maxX,
                          number.minX, number.maxX, unit.minX, unit.maxX))
 
             XCTAssertEqual(slider.minX, 138, accuracy: 0.5, "\(rowID) 滑杆左对齐在主列起点")
             XCTAssertGreaterThanOrEqual(slider.width, ExportRowGrid.sliderWidth, "滑杆不窄于 140")
-            XCTAssertEqual(slider.maxX, number.minX - 8, accuracy: 0.5,
-                           "\(rowID) 滑杆右沿 = 百分数左沿 − 8")
-            XCTAssertEqual(number.minX, 540 - 8 - unit.width - number.width, accuracy: 0.5,
-                           "\(rowID) 值在百分数左边 8 pt")
+            XCTAssertEqual(slider.maxX, valueColumn.minX - 8, accuracy: 0.5,
+                           "\(rowID) 滑杆右沿 = 值列左沿 − 8")
+            XCTAssertEqual(number.maxX, valueColumn.maxX, accuracy: 0.5,
+                           "\(rowID) 数值框外框右沿 = 值列右沿（内边距只向左长）")
+            XCTAssertEqual(number.width,
+                           valueColumn.width + 2 * SliderNumberField.horizontalPadding,
+                           accuracy: 0.5, "\(rowID) 外框宽 = 值列宽 + 两侧内边距（46 → 56）")
+            XCTAssertEqual(valueColumn.minX, 540 - 8 - unit.width - valueColumn.width,
+                           accuracy: 0.5, "\(rowID) 值列在百分数左边 8 pt")
             XCTAssertEqual(unit.maxX, 540, accuracy: 0.5, "\(rowID) 百分数右沿 540")
             XCTAssertEqual(number.midY, slider.midY, accuracy: 1.0, "\(rowID) 同一行")
         }

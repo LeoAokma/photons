@@ -2444,7 +2444,7 @@ public struct InspectorView: View {
                 else { commitWhiteBalance(isTemperature: isTemperature) }
             }
             SliderNumberField(value: shown, range: row.range, format: row.format,
-                              fontSize: 11, width: StudioTheme.valueWidth,
+                              fontSize: 11, width: StudioTheme.valueWidth - 10,
                               accessibilityID: "inspector.whiteBalance.\(row.title)",
                               onCommit: { typed in
                                   let revisionBefore = session.editRevision
@@ -3146,6 +3146,11 @@ struct NumberFieldState: Equatable {
 /// `NumberField.swift`. This view is only the row's data: value, travel, format, and the row's own
 /// write path.
 struct SliderNumberField: View {
+    /// 421b —— 数值框的内边距（PR 的形状：底色 + 圆角）。外框宽 = `width` + 2×`horizontalPadding`，
+    /// 高 = `fontSize + 4` + 2×`verticalPadding`。调用点把 `width` 收窄 10（`valueWidth − 10`），
+    /// 于是**整格**的总宽不变 —— 加的是内边距，不是列宽。
+    static let horizontalPadding: CGFloat = 5
+    static let verticalPadding: CGFloat = 4
     let value: Double
     let range: ClosedRange<Double>
     let format: String
@@ -3168,6 +3173,8 @@ struct SliderNumberField: View {
                         accessibilityID: accessibilityID,
                         onCommit: onCommit)
             .frame(width: width, height: fontSize + 4)
+            .padding(.horizontal, 5).padding(.vertical, 4)
+            .background(Color(nsColor: StudioTheme.well), in: RoundedRectangle(cornerRadius: 4))
             .accessibilityIdentifier(accessibilityID ?? "")
             .help(L10n.tr("3fa8bd7acc8d"))
     }

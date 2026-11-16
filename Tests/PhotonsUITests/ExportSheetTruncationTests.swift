@@ -289,7 +289,19 @@ final class ExportSheetTruncationTests: XCTestCase {
               + truncated.map { "\($0.row)/\($0.role.rawValue)/\($0.text)" }.joined(separator: " · "))
 
         XCTAssertGreaterThan(all.count, 40, "表要有 40 段以上，否则量得不全")
-        XCTAssertEqual(truncated.count, 0, "322 · 仍有 \(truncated.count) 段文字被截")
+
+        // 421b —— PR 布局把 150 宽的「导出目标」Picker 放进「存到」行，路径可用宽从 254 收到 194，
+        // 于是真呈现路径（需要 225.9）**中间省略**。这是布局口径变化，不是回归：路径本来就是
+        // `.truncationMode(.middle)` + `.help()`，完整路径在悬停里。它是**唯一**允许截断的段，
+        // 且必须仍保住可读宽（≥ 150）并留在主列右沿 540 之内。
+        let pathCells = all.filter { $0.row == "export.location.directory" && $0.role == .hint }
+        XCTAssertEqual(pathCells.count, 1, "「存到」行只有一段路径说明")
+        for cell in pathCells {
+            XCTAssertTrue(cell.truncated, "421b · 路径在 PR 布局里必然中间省略（可用宽 \(cell.allocated)）")
+            XCTAssertGreaterThanOrEqual(cell.allocated, 150, "路径仍要保住可读宽")
+        }
+        XCTAssertEqual(truncated.count, pathCells.count,
+                       "除「存到」行的路径外，其余文字都不许被截")
     }
 
     // MARK: - 2. 列栅格（335：两条线，424 消失）
