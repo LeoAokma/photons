@@ -386,7 +386,7 @@ final class SharpenScaleTests: XCTestCase {
             XCTAssertEqual(StageAlgorithmVersion.version(of: stage), version,
                            "249 only moved heal；\(stage.rawValue) 不该变（名单登记的是 \(version)）")
         }
-        XCTAssertEqual(StageAlgorithmVersion.dehaze, 11, "401：恢复增益封顶在 0.4，dehaze 10→11")
+        XCTAssertEqual(StageAlgorithmVersion.dehaze, 12, "417：w 改为 L ≤ A 全参与（天空压暗），dehaze 11→12")
         XCTAssertEqual(StageAlgorithmVersion.heal, 2, "249：修复搬到 S1 源像素")
         XCTAssertEqual(unchanged.count + 3, RenderStage.order.count,
                        "名单漏了一个阶段，等于没盯住它")
