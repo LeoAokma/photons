@@ -2,15 +2,17 @@
 
 当前工程使用 SwiftPM，可以通过签名的 `.pkg` 上传 App Store Connect，暂时不需要迁移到 Xcode 工程。准备脚本位于 `scripts/testflight.py`，所有构建、签名产物及描述文件副本均写入被 Git 忽略的 `.build/testflight/`。
 
-默认标识为 `com.leoaokma.photons`，显示名称为 Photons Studio，版本为 `0.3.0 (4)`。这只是 fork 的待注册标识；创建 App Store Connect 记录前，应确认名称和标识属于自己的账号。之后每次上传使用新的 build number。
+默认标识为 `com.leoaokma.photons`，显示名称为 Photons Studio，版本为 `0.3.0 (5)`。创建 App Store Connect 记录前，应确认名称和标识属于自己的账号。之后每次上传使用新的 build number。
 
 ## 当前状态
 
-- 本机已安装 Xcode 27.2；尚未开通 Apple Developer Program，尚无分发证书及 Mac App Store provisioning profile。
+- 本机已安装 Xcode 27.2，Apple Developer Program 已激活，应用及安装包分发证书已创建且通过本机信任校验。显式 App ID `com.leoaokma.photons`、App Store Connect 应用记录及 Mac App Store provisioning profile 均已创建，证书／描述文件匹配检查通过。
+- 应用首次启动默认英语，设置中的默认选项保持一致；用户保存的中文选择会保留。App Store Connect 的主要语言为 English (U.S.)。
+- `0.3.0 (5)` 已包含功能分支 `86d58dc` 的更新；release 主程序与 helper 编译成功，10 项签名门禁测试和沙盒诊断通过。沙盒诊断覆盖授权目录、GPU、降噪、HDR 及全景任务回导。正式签名 `.pkg` 和 Xcode archive 导出已通过本机检查；尚未完成 Apple 上传验证。
 - `prepare` 生成的是**本机临时签名的沙盒测试应用**，不会上传，也不是可交给 TestFlight 的正式分发包。
 - `package` 只有在证书、私钥、Team、显式 App ID、描述文件及有效期检查通过后才创建签名 `.pkg`。Apple 服务器最终验证仍需在账号开通后实际运行，不能用本地签名校验代替。
 - 首轮构建只支持 Apple Silicon / macOS 14+。Intel 版本尚未编译和测试。
-- 30 天邀请码和订阅导出限制不包含在本轮分发准备中。TestFlight 构建自身的有效期是 90 天，不能当作应用内 30 天授权机制。
+- 本轮 beta 不启用订阅限制或应用内邀请码。使用 TestFlight 邮箱定向邀请，不启用公开链接；构建自身的有效期是 90 天。
 
 ## 开通后的一次性配置
 
@@ -25,10 +27,12 @@
 在仓库根目录运行：
 
 ```sh
-python3 scripts/testflight.py prepare --version 0.3.0 --build 4
+python3 scripts/testflight.py prepare --version 0.3.0 --build 5
 ```
 
 这会构建主程序与三个独立 helper，生成独立的 `.build/testflight/Photons Studio.app`，加入隐私清单和第三方许可／源码，执行沙盒诊断并保存 dSYM。不会替换现有的 Photons Sandbox.app。仅在刚刚构建过相同源码的 release 产品时，才使用 `--skip-build`。
+
+`PHOTONS_ANSEL_MODEL` 可以指定打包时的本地模型路径。沙盒诊断会移除这个环境变量并读取包内模型，避免误用没有授权的构建机路径。
 
 证书安装后，以下变量填自己的值；不要把带个人信息的配置提交到 Git：
 
@@ -41,6 +45,10 @@ python3 scripts/testflight.py package
 ```
 
 签名从 helper 和资源 bundle 向主 app 进行；helper 只携带沙盒继承权限，不复制主 app 的 application identifier。GPL 对应源码记录和二进制哈希会在重新签名后更新。结果为 `.build/testflight/Photons-Studio.pkg`，可以交给 [Transporter](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds)。本机临时签名应用不能直接上传。
+
+App Store 分发时，Xcode 和 Apple 还会重新签名二进制。此版本把 GPL 来源说明中的可执行文件哈希明确标为**打包时记录**，并移除会因重新签名失效的 helper 全文件 `.sha256`；安装后的代码完整性由平台签名校验。模型和源码压缩包的校验值保留。普通本地构建的校验文件不受影响。
+
+应用图标由 Icon Composer 源文件编译进 `Assets.car`，包含 1024×1024 图标，并附带 `.icns`。App Store Connect 的应用图标随构建提交；首次上传完成前后台可能仍显示占位图。
 
 ## 上传与邀请
 
@@ -56,9 +64,11 @@ python3 scripts/testflight.py upload
 
 另一种方式是设置 `PHOTONS_APPLE_ID` 和 `PHOTONS_PASSWORD_KEYCHAIN_ITEM`，后者仅为已保存应用专用密码的 Keychain 项目名称，脚本以 `@keychain:` 引用它。脚本不会打印或读取明文密码。命令语法按本机 Xcode 27.2 的 `altool --help` 编写；`upload` 会先验证再上传并等待 Apple 处理。
 
-构建处理完成后，在 App Store Connect → TestFlight 创建一个内部测试组，先加入开发团队成员和该构建。内部测试者必须是有相应访问权限的 App Store Connect 用户，最多 100 人。给普通体验用户使用外部测试组，不必给他们后台账号；首个外部构建需 Beta App Review，通过后可按邮箱定向邀请，也可以开启公开链接。脚本不会自动邀请任何人。[Apple TestFlight 说明](https://developer.apple.com/testflight/)
+构建处理完成后，在 App Store Connect → TestFlight 创建一个内部测试组，先加入开发团队成员和该构建。内部测试者必须是有相应访问权限的 App Store Connect 用户，最多 100 人。给普通体验用户使用外部测试组，不必给他们后台账号；首个外部构建需 Beta App Review，通过后按邮箱定向邀请。本轮不启用公开链接；邀请前由开发者指定收件人，脚本不会自动邀请任何人。[Apple TestFlight 说明](https://developer.apple.com/testflight/)
 
 外部测试前填好 Beta App Description、What to Test、反馈邮箱和审核联系人；这些真实联系信息应在 App Store Connect 中由负责人填写。首轮建议测试：首次文件夹授权与重启后的访问、HDR/SDR 映射、全景任务取消及完成回导、各导出格式、LCC 文件识别、语言切换和照片库管理。
+
+中英文测试说明和审核备注草稿见 [testflight-beta-notes.md](testflight-beta-notes.md)。
 
 ## 本轮分发边界
 

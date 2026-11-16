@@ -86,16 +86,23 @@ def signing_inputs(bundle_id):
     return identity, installer, profile_path, profile
 
 
-def sign_bundle(identity, entitlements):
+def sign_bundle(identity, entitlements, *, app_store_resigning=False):
     resources = APP / 'Contents/Resources'
     for name in HELPERS:
         executable = resources / 'bin' / name
         run('codesign', '--force', '--sign', identity, '--timestamp=none',
             '--entitlements', ROOT / 'scripts/Photons-Helper.entitlements', executable)
-        digest = hashlib.sha256(executable.read_bytes()).hexdigest()
-        executable.with_name(name + '.sha256').write_text(digest + '  ' + name + '\n')
+        checksum = executable.with_name(name + '.sha256')
+        if app_store_resigning:
+            # Xcode and Apple re-sign Mach-O files. A whole-file checksum would become stale;
+            # the platform code signature verifies delivered code instead. Model hashes stay.
+            checksum.unlink(missing_ok=True)
+        else:
+            digest = hashlib.sha256(executable.read_bytes()).hexdigest()
+            checksum.write_text(digest + '  ' + name + '\n')
     # Signing changes binary hashes; regenerate the corresponding-source records afterward.
-    run('python3', ROOT / 'scripts/bundle-gpl-sources.py', APP)
+    run('python3', ROOT / 'scripts/bundle-gpl-sources.py', APP,
+        *(['--app-store-resigning'] if app_store_resigning else []))
     for bundle in resources.glob('*.bundle'):
         run('codesign', '--force', '--sign', identity, '--timestamp=none', bundle)
     run('codesign', '--force', '--sign', identity, '--timestamp=none', '--entitlements', entitlements, APP)
@@ -136,7 +143,7 @@ def prepare(args):
     sdk_build = run('xcrun', '--sdk', 'macosx', '--show-sdk-build-version', capture=True).decode().strip()
     xcode = run('xcodebuild', '-version', capture=True).decode().splitlines()
     numbers = xcode[0].split()[-1].split('.')
-    info.update(DTPlatformName='macosx', DTPlatformVersion=sdk, DTPlatformBuild=sdk_build,
+    info.update(CFBundleDevelopmentRegion='en', DTPlatformName='macosx', DTPlatformVersion=sdk, DTPlatformBuild=sdk_build,
                 DTSDKName='macosx' + sdk, DTSDKBuild=sdk_build,
                 DTXcode=numbers[0] + (numbers[1] if len(numbers) > 1 else '0')
                     + (numbers[2] if len(numbers) > 2 else '0'),
@@ -145,7 +152,11 @@ def prepare(args):
     write_plist(info_path, info)
     shutil.copy2(ROOT / 'scripts/PrivacyInfo.xcprivacy', resources)
     sign_bundle('-', ROOT / 'scripts/Photons-Sandbox.entitlements')
-    report = json.loads(run(APP / 'Contents/MacOS/Photons', '--sandbox-check', capture=True))
+    # PHOTONS_ANSEL_MODEL selects the input copied by the bundler. The sandbox check must
+    # exercise that bundled copy, not try to open the build machine's ungranted source path.
+    diagnostic_env = dict(os.environ)
+    diagnostic_env.pop('PHOTONS_ANSEL_MODEL', None)
+    report = json.loads(run(APP / 'Contents/MacOS/Photons', '--sandbox-check', capture=True, env=diagnostic_env))
     if report.get('sandbox') is not True or report.get('panorama', {}).get('workerSucceeded') is not True:
         raise ValueError('Sandbox diagnostics did not pass')
     (OUT / 'sandbox-check.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -177,7 +188,7 @@ def package():
     ent_path = OUT / 'AppStore.entitlements'
     write_plist(ent_path, ent)
     shutil.copy2(profile_path, APP / 'Contents/embedded.provisionprofile')
-    sign_bundle(identity, ent_path)
+    sign_bundle(identity, ent_path, app_store_resigning=True)
     run('productbuild', '--component', APP, '/Applications', '--sign', installer, PKG)
     run('pkgutil', '--check-signature', PKG)
     print('Signed distribution package:', PKG)
@@ -204,7 +215,7 @@ def main():
     parser.add_argument('action', choices=('preflight', 'prepare', 'package', 'validate', 'upload'))
     parser.add_argument('--bundle-id', default=setting('BUNDLE_ID') or 'com.leoaokma.photons')
     parser.add_argument('--version', default=setting('VERSION') or '0.3.0')
-    parser.add_argument('--build', default=setting('BUILD_NUMBER') or '4')
+    parser.add_argument('--build', default=setting('BUILD_NUMBER') or '5')
     parser.add_argument('--skip-build', action='store_true', help='Use already built release executables')
     args = parser.parse_args()
     try:

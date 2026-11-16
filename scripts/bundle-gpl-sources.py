@@ -4,14 +4,19 @@
 An installed .app is not a repository checkout. Shipping a source archive avoids
 claiming its recipient already has Vendor/ or relying on a mutable upstream URL.
 """
+import argparse
 import hashlib
 from pathlib import Path
 import subprocess
-import sys
 import tarfile
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("app", type=Path)
+parser.add_argument("--app-store-resigning", action="store_true",
+                    help="Label executable hashes as build-time provenance; Apple may re-sign the binaries")
+args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
-app = Path(sys.argv[1])
+app = args.app
 licenses = app / "Contents/Resources/licenses"
 licenses.mkdir(parents=True, exist_ok=True)
 revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
@@ -31,9 +36,16 @@ for name in ("ansel-denoise-swift", "hdrmerge-swift"):
             tar.add(root / path, arcname=path, recursive=False)
     digest = hashlib.sha256(binary.read_bytes()).hexdigest()
     source_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    executable_digest = (
+        f"Build-time executable SHA-256 (before App Store re-signing): {digest}\n"
+        "Xcode and Apple may re-sign the executable for distribution. This build-time hash is\n"
+        "provenance information, not a checksum for the installed executable. The source archive\n"
+        "checksum below is independent of code signing.\n"
+        if args.app_store_resigning else f"SHA-256: {digest}\n"
+    )
     (licenses / f"{name}-SOURCE-OFFER.txt").write_text(
         f"{name} — corresponding source (GPL-3.0-or-later)\n\n"
-        f"Executable: Contents/Resources/bin/{name}\nSHA-256: {digest}\n"
+        f"Executable: Contents/Resources/bin/{name}\n" + executable_digest +
         f"Source archive: Contents/Resources/licenses/{archive.name}\nSHA-256: {source_digest}\n"
         f"Repository revision at packaging: {revision}\n"
         "The archive includes local fork changes present when packaged, including uncommitted source files.\n"
