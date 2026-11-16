@@ -82,16 +82,27 @@ final class LCCProfileLibraryModel: ObservableObject {
     }
     private func confirmImport(_ imported: LCCLensProfile) {
         let store = self.store
+        var keepingBoth = false
         if FileManager.default.fileExists(atPath: store.url(for: imported.id).path) {
             let alert = NSAlert(); alert.messageText = L10n.tr("558c9f10c4c6")
             alert.informativeText = L10n.tr("86833a8f747b")
+            alert.addButton(withTitle: L10n.tr("lcc.profile.keepBoth"))
             alert.addButton(withTitle: L10n.tr("131b13aa2659")); alert.addButton(withTitle: L10n.tr("2cd0f3be8738"))
-            guard alert.runModal() == .alertFirstButtonReturn else { busy = false; status = L10n.tr("08d7a98d788a"); return }
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: keepingBoth = true
+            case .alertSecondButtonReturn: break
+            default: busy = false; status = L10n.tr("08d7a98d788a"); return
+            }
         }
+        saveImportedProfile(imported, keepingBoth: keepingBoth)
+    }
+    func saveImportedProfile(_ imported: LCCLensProfile, keepingBoth: Bool) {
+        busy = true
+        let store = self.store
         queue.async { [weak self] in
             do {
-                try store.save(imported)
-                DispatchQueue.main.async { self?.refresh(select: imported.id) }
+                let saved = try store.importProfile(imported, keepingBoth: keepingBoth)
+                DispatchQueue.main.async { self?.refresh(select: saved.id) }
             } catch { DispatchQueue.main.async { self?.busy = false; self?.error = error.localizedDescription } }
         }
     }
@@ -141,6 +152,7 @@ struct LCCProfileLibraryView: View {
                             Text(profile.name).font(.title2.bold())
                             Text(profile.camera).foregroundStyle(.secondary)
                             if let body=LCCProfileSummary(profile).calibrationBody {Text(L10n.tr("00f3f3fdc6a8" , String(describing: (body.name)))).font(.caption)}
+                            Text(L10n.tr("lcc.profile.compatibility")).font(.caption).foregroundStyle(.secondary)
                             if let aperture=profile.aperture {Text(L10n.tr("9ff1649978c3" , String(format: "%g", aperture)))}
                             Text(profile.notes).font(.callout).textSelection(.enabled)
                             ForEach(profile.orientations) { orientation in

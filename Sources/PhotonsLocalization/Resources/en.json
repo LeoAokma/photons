@@ -912,8 +912,8 @@
   "e88329a2fa97": "{0} lens profiles · Stored in local application data",
   "6430d7f1cd18": "Read Lens Profile…",
   "8c7ee4e7adb6": "Invalid lens profile size.",
-  "558c9f10c4c6": "Replace Existing Lens Profile?",
-  "86833a8f747b": "A calibration file with the same ID already exists. Replacing it updates its measurement data.",
+  "558c9f10c4c6": "An LCC Profile with This ID Already Exists",
+  "86833a8f747b": "Keep both as independent profiles, or replace the existing measurements. Keeping both preserves the profile referenced by existing panoramas.",
   "131b13aa2659": "Replace",
   "08d7a98d788a": "Import cancelled",
   "03523dad439e": "Export Lens Profile…",
@@ -922,7 +922,7 @@
   "61f6b1a29661": "User-created LCC calibrations that can be viewed, imported, and shared. The included sample was created by the developer as a user.",
   "0d624bdac72a": "Create lens profile…",
   "6db6e93d9c3d": "{0} {1} captures",
-  "00f3f3fdc6a8": "Calibration body: {0}",
+  "00f3f3fdc6a8": "Calibration source body: {0} (record only)",
   "9ff1649978c3": "Calibration aperture f/{0}",
   "bc22134b1d3f": "Back relative to body: {0} · {1} flat fields",
   "6c3b0465bdf0": "H %+.1f to %+.1f mm · V %+.1f to %+.1f mm",
@@ -1442,7 +1442,7 @@
   "cameraBodies.deleteQuestion": "Delete this custom camera body?",
   "cameraBodies.deleteHint": "It will no longer appear in the selection list for new tasks. Saved calibrations and panoramas keep their original body information.",
   "lensInfo.title": "Lens Information",
-  "lensInfo.sharedList": "Shared lens profiles for LCC correction and panorama stitching.",
+  "lensInfo.sharedList": "LCC profiles for the same lens and sensor work across bodies where measured coverage is sufficient. Keep multiple calibrations in this list shared with LCC and stitching.",
   "lensInfo.configureLCC": "Configure LCC",
   "lensInfo.configureDistortion": "Configure Distortion",
   "lensInfo.inDevelopment": "In development",
@@ -1451,5 +1451,8 @@
   "lensInfo.camera": "Calibration camera / back",
   "lensInfo.aperture": "Calibration aperture",
   "lensInfo.captureCount": "{0} calibration photos",
-  "lensInfo.distortion": "Distortion information"
+  "lensInfo.distortion": "Distortion information",
+  "lcc.profile.keepBoth": "Keep Both",
+  "lcc.profile.compatibility": "The same lens and sensor can share calibrations made on different bodies wherever measured coverage is sufficient. Multiple profiles can coexist. Stitching travel remains limited by the active capture body.",
+  "lcc.profile.bodyProvenance": "The body records calibration provenance and coordinate orientation; it does not restrict which bodies can use this profile."
 }

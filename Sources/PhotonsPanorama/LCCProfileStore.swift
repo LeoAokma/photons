@@ -149,4 +149,21 @@ public struct LCCProfileStore {
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         let target=url(for:profile.id);try data.write(to:target,options:.atomic);return target
     }
+    /// Identity belongs to a calibration, not to its lens/back name or capture body.
+    /// Keep an imported revision alongside the local one without changing archived references.
+    @discardableResult public func importProfile(_ profile:LCCLensProfile,keepingBoth:Bool) throws -> LCCProfileSummary {
+        try profile.validate()
+        var imported=profile
+        if keepingBoth && FileManager.default.fileExists(atPath:url(for:profile.id).path) {
+            // Older bundled samples infer their capture body from the fixed ID.
+            imported.cameraBody=LCCProfileSummary(profile).calibrationBody
+            imported.id=UUID()
+            let names=Set(catalog().profiles.map(\.name)),base=String(profile.name.prefix(180))
+            var number=2
+            while names.contains("\(base) · \(number)") {number += 1}
+            imported.name="\(base) · \(number)"
+        }
+        try save(imported)
+        return LCCProfileSummary(imported)
+    }
 }

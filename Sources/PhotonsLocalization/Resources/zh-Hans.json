@@ -912,8 +912,8 @@
   "e88329a2fa97": "{0} 个镜头 profile · 保存在本机应用数据中",
   "6430d7f1cd18": "读取镜头 Profile…",
   "8c7ee4e7adb6": "镜头 profile 大小无效。",
-  "558c9f10c4c6": "替换现有镜头 Profile？",
-  "86833a8f747b": "已存在相同标识的标定文件。替换会更新该文件的测量数据。",
+  "558c9f10c4c6": "已存在相同标识的 LCC 配置",
+  "86833a8f747b": "可保留两份独立配置，或替换现有配置的测量数据。保留两者不会改变已有拼接任务引用的配置。",
   "131b13aa2659": "替换",
   "08d7a98d788a": "已取消导入",
   "03523dad439e": "导出镜头 Profile…",
@@ -922,7 +922,7 @@
   "61f6b1a29661": "用户创建的 LCC 标定，可查看、导入和分享；随附样例由开发者作为用户制作。",
   "0d624bdac72a": "创建镜头 Profile…",
   "6db6e93d9c3d": "{0} {1} 张",
-  "00f3f3fdc6a8": "标定机身：{0}",
+  "00f3f3fdc6a8": "标定来源机身：{0}（仅作记录）",
   "9ff1649978c3": "标定光圈 f/{0}",
   "bc22134b1d3f": "后背相对机身{0} · {1} 张白板",
   "6c3b0465bdf0": "H %+.1f 至 %+.1f mm · V %+.1f 至 %+.1f mm",
@@ -1442,7 +1442,7 @@
   "cameraBodies.deleteQuestion": "删除此自建机身配置？",
   "cameraBodies.deleteHint": "删除后不会再出现在新任务的选择列表中。已保存的标定和拼接记录仍保留原机身信息。",
   "lensInfo.title": "镜头信息",
-  "lensInfo.sharedList": "与 LCC 校正和拼接共用同一份镜头配置列表。",
+  "lensInfo.sharedList": "同一镜头与传感器的 LCC 可在覆盖充分时跨机身使用，也可保留多份配置。列表与 LCC 校正和拼接共用。",
   "lensInfo.configureLCC": "配置 LCC",
   "lensInfo.configureDistortion": "配置畸变修正",
   "lensInfo.inDevelopment": "开发中",
@@ -1451,5 +1451,8 @@
   "lensInfo.camera": "标定相机 / 后背",
   "lensInfo.aperture": "标定光圈",
   "lensInfo.captureCount": "{0} 张标定照片",
-  "lensInfo.distortion": "畸变信息"
+  "lensInfo.distortion": "畸变信息",
+  "lcc.profile.keepBoth": "保留两者",
+  "lcc.profile.compatibility": "同一镜头与传感器可共用不同机身采集的标定；按实际测量覆盖范围使用，可保留多份配置。拼接移轴范围仍由当前拍摄机身决定。",
+  "lcc.profile.bodyProvenance": "机身用于记录标定来源和坐标方向，不限制此配置可用于哪些机身。"
 }

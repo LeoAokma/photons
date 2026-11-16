@@ -99,6 +99,8 @@ public struct LCCLensProfile: Codable, Equatable, Identifiable {
     public var notes: String
     public var createdAt: Date
     public var captures: [LCCProfileCapture]
+    /// Capture provenance only. Optical compatibility and measured coverage do not depend
+    /// on this body; the active panorama body separately constrains attainable positions.
     public var cameraBody:PanoramaCameraBody? = nil
     public var orientations: [LCCCaptureOrientation] {
         Array(Set(captures.map(\.orientation))).sorted { $0.rawValue < $1.rawValue }

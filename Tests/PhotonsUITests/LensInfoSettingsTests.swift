@@ -65,6 +65,23 @@ final class LensInfoSettingsTests: XCTestCase {
         XCTAssertEqual(controller.window?.windowNumber, number)
     }
 
+    func testKeepingBothImportsSelectsNewCalibrationAndUpdatesSharedCatalog() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lens-import-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = LCCProfileStore(directory: root), original = profile(name: "Same lens and sensor")
+        try store.save(original)
+        let model = LCCProfileLibraryModel(store: store, installBundledProfile: false)
+        model.refresh(select: original.id); try await waitForLibrary(model)
+        var imported = original; imported.notes = "A separate calibration"; imported.cameraBody = .alpa12STC
+        model.saveImportedProfile(imported, keepingBoth: true)
+        try await waitForLibrary(model)
+        XCTAssertEqual(model.profiles.count, 2)
+        XCTAssertNotEqual(model.selected, original.id)
+        XCTAssertEqual(model.profile?.notes, imported.notes)
+        XCTAssertEqual(model.profile?.cameraBody, .alpa12STC)
+        XCTAssertEqual(try store.load(original.id), original)
+    }
+
     func testEmptyLibraryDoesNotStayLoadingAndDistortionIsUnavailable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("lens-empty-\(UUID())")
         let model = LCCProfileLibraryModel(store: .init(directory: root), installBundledProfile: false)

@@ -145,6 +145,7 @@ private struct LCCProfileCreatorView: View {
             }.textFieldStyle(.roundedBorder).disabled(model.busy || model.savedURL != nil)
             CameraBodyPicker(selection:Binding(get:{model.cameraBody},set:{model.setBody($0)}))
                 .frame(width:300).disabled(model.busy || model.savedURL != nil)
+            Text(L10n.tr("lcc.profile.bodyProvenance")).font(.caption).foregroundStyle(.secondary)
             HSplitView {
                 VStack(alignment:.leading,spacing:10) {
                     HStack { Text(L10n.tr("3e0560dc572d" , String(describing: (model.frames.count)), String(describing: (model.frames.filter(\.shiftConfirmed).count))));Spacer();Button(L10n.tr("f84ea94b0208")) { model.removeSelected() }.disabled(model.selected==nil) }.font(.caption)
