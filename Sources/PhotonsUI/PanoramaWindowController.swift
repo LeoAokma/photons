@@ -75,7 +75,7 @@ private final class PanoramaWindowModel: ObservableObject {
         if positionReference?.sourceIndex==index {positionReference=nil;estimatedReference=nil;lccOffset = .zero;changeLCC()}
         alignmentNeedsUpdate=knownPositions.count>1
     }
-    func changeLCC() {
+    func changeLCC(automaticallyLocate:Bool=false) {
         guard let current=plan,!busy else {return}
         guard current.isRegistered else {lccEnabled=false;return}
         if let reference=positionReference,let sensor {lccOffset=reference.profileOffset(in:current,sensor:sensor)}
@@ -85,22 +85,61 @@ private final class PanoramaWindowModel: ObservableObject {
         guard let id=UUID(uuidString:selectedLensProfileID),let sensor else {error="请先选择镜头 profile 并确定传感器尺寸。";lccEnabled=false;return}
         let cached=lccSession,offset=lccOffset,crop=cropToLCC,exposure=exposureEV,protect=protectHighlights
         let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
-        run { [weak self] engine,token,progress in
-            let session:LCCEditingSession
-            if let cached,cached.profile.id==id,cached.sensor==sensor {session=cached}
-            else {
-                session=try LCCEditingSession(plan:current,profileID:id,sensor:sensor,engine:engine,token:token,progress:progress)
-                DispatchQueue.main.async {self?.lccSession=session}
+        let shouldLocate=automaticallyLocate && positionReference==nil
+        cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
+        busy=true;error=nil;status=shouldLocate ? "正在准备 LCC 并自动解算位置…":"正在更新 LCC 校正…"
+        queue.async { [weak self] in
+            let engine=PanoramaEngine()
+            let progress:PanoramaEngine.Progress={message in
+                DispatchQueue.main.async {guard (try? token.check()) != nil else {return};self?.status=message}
             }
-            var prepared=current
-            prepared.originalPreviewImages=session.preparedPlan.originalPreviewImages
-            prepared.lccLinearPreviewImages=session.preparedPlan.lccLinearPreviewImages
-            prepared.lccRawPreviews=session.preparedPlan.lccRawPreviews
-            prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
-            return try engine.applyingLCC(prepared,profile:session.profile,fields:session.fields,offsetMM:offset,sensor:sensor,crop:crop,cancellation:token,
-                exposureEV:exposure,protectHighlights:protect,whiteBalanceOverride:wb)
+            do {
+                let session:LCCEditingSession
+                if let cached,cached.profile.id==id,cached.sensor==sensor {session=cached}
+                else {session=try LCCEditingSession(plan:current,profileID:id,sensor:sensor,engine:engine,token:token,progress:progress)}
+                var prepared=current
+                prepared.originalPreviewImages=session.preparedPlan.originalPreviewImages
+                prepared.lccLinearPreviewImages=session.preparedPlan.lccLinearPreviewImages
+                prepared.lccRawPreviews=session.preparedPlan.lccRawPreviews
+                prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
+                var solution:LCCPositionSolution?,locationIssue:String?
+                if shouldLocate {
+                    do {solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:sensor,cancellation:token,progress:progress)}
+                    catch {
+                        try token.check()
+                        // Keep a usable calibrated preview so a partial profile can still be
+                        // aligned manually. Never report a failed estimate as an applied solution.
+                        locationIssue="自动解算未完成：\(error.localizedDescription) 可点击“手动对齐lcc”调整位置。"
+                    }
+                }
+                let resolvedOffset=solution?.offsetMM ?? offset
+                let result=try engine.applyingLCC(prepared,profile:session.profile,fields:session.fields,offsetMM:resolvedOffset,sensor:sensor,crop:crop,cancellation:token,
+                    exposureEV:exposure,protectHighlights:protect,whiteBalanceOverride:wb)
+                try token.check()
+                DispatchQueue.main.async {
+                    guard let self else {return}
+                    guard (try? token.check()) != nil else {self.busy=false;self.status="";return}
+                    self.lccSession=session;self.plan=result;self.selectLensProfile()
+                    if let solution {
+                        self.lccOffset=solution.offsetMM
+                        let r=result.sourceRect(0)
+                        self.estimatedReference=PanoramaPositionReference(sourceIndex:0,positionMM:CGPoint(
+                            x:(r.midX-result.size.width/2)*sensor.width/r.width-solution.offsetMM.x,
+                            y:(result.size.height/2-r.midY)*sensor.height/r.height-solution.offsetMM.y))
+                        self.positionExplanation=solution.explanation
+                    } else if let locationIssue {self.positionExplanation=locationIssue}
+                    self.busy=false;self.error=locationIssue
+                    self.status=solution != nil ? "LCC 自动解算并已应用 · 预览与输出共用同一位置":"预览就绪 · 拼接位置已锁定"
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.busy=false;self?.status=""
+                    if !(error is CancellationError) {self?.error=error.localizedDescription}
+                }
+            }
         }
     }
+
     func alignLCC(initialOffset:CGPoint?=nil,explanation:String?=nil,proposal:PanoramaPlan?=nil) {
         guard let plan,let session=lccSession,lccEnabled,!busy,positionReference==nil else {return}
         if let alignmentWindow {alignmentWindow.showWindow(nil);return}
@@ -383,7 +422,7 @@ private struct PanoramaWorkspace: View {
             Button("镜头 Profile 管理…") {model.manageLCC(showProfiles:true)}
             Toggle("LCC校正",isOn:$model.lccEnabled).toggleStyle(.checkbox)
                 .disabled(model.plan?.isRegistered != true)
-                .onChange(of:model.lccEnabled) {_,_ in model.changeLCC()}
+                .onChange(of:model.lccEnabled) {_,enabled in model.changeLCC(automaticallyLocate:enabled)}
             if model.lccEnabled {
                 if let warning=model.plan?.lccState?.warning {
                     Text(warning).font(.caption).foregroundStyle(.orange)
@@ -419,7 +458,7 @@ private struct PanoramaWorkspace: View {
                 if model.protectHighlights,let ev=model.plan?.lccState?.highlightEV {
                     Text("高光保护自动曝光 \(ev,specifier:"%.2f") EV；高光平滑过渡，DNG 保留线性余量。").font(.caption).foregroundStyle(.secondary)
                 }
-                Text(model.positionReference == nil ? "未设基准时 profile 原点默认位于拼接中心，可手动对齐。先校正 RAW 通道，再应用白平衡；预览与输出共用位置和增益。" : "LCC 已跟随位置基准锁定。清除基准后可手动对齐。").font(.caption).foregroundStyle(.secondary)
+                Text(model.positionReference == nil ? "开启 LCC 时自动解算并应用位置，也可手动对齐或重新解算。先校正 RAW 通道，再应用白平衡；预览与输出共用位置和增益。" : "LCC 已跟随位置基准锁定。清除基准后可手动对齐。").font(.caption).foregroundStyle(.secondary)
             }
             Divider()
             Text("重叠处理").font(.headline)
