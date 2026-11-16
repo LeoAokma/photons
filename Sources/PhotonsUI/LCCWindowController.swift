@@ -1,4 +1,5 @@
 import AppKit
+import PhotonsFileAccess
 import SwiftUI
 import PhotonsPanorama
 
@@ -30,8 +31,12 @@ private final class LCCWindowModel: ObservableObject {
     @Published var error: String?
     @Published var selected = 0
     @Published var saved = false
+    private var sourceAccess: [FileAccess] = []
     private let queue = DispatchQueue(label:"Photons.lcc",qos:.userInitiated)
-    init(urls:[URL]) { self.urls = urls }
+    init(urls:[URL]) {
+        sourceAccess = urls.map { FileAccessStore.shared.access(to: $0) }
+        self.urls = sourceAccess.map(\.url)
+    }
     func load() {
         busy = true; status = "读取照片和已确认的 LCC 对应关系…"
         let urls = self.urls
@@ -40,10 +45,12 @@ private final class LCCWindowModel: ObservableObject {
                 let scenes = try urls.map { try PanoramaSource(url:$0) }
                 let records = LCCPairingStore().records().filter { urls.contains($0.scene) }
                 let flatURLs = Array(Set(records.map(\.flat))).sorted { $0.lastPathComponent < $1.lastPathComponent }
-                let flats = try flatURLs.map { try LCCInspector.inspect($0) }
+                let flatAccess = flatURLs.map { FileAccessStore.shared.access(to: $0) }
+                let flats = try flatAccess.map { try LCCInspector.inspect($0.url) }
                 let assignments = urls.map { u in records.first(where: { $0.scene == u }).flatMap { r in flatURLs.firstIndex(of:r.flat) } ?? -1 }
                 DispatchQueue.main.async {
                     guard let self, !self.closed else { return }
+                    self.sourceAccess += flatAccess
                     self.scenes = scenes; self.flats = flats; self.assignments = assignments; self.busy = false
                     self.saved = !scenes.isEmpty && assignments.allSatisfy { $0 >= 0 }
                     self.status = self.saved ? "已载入确认过的对应关系" : "添加 LCC 后，请逐张核对并确认对应关系"
@@ -58,6 +65,9 @@ private final class LCCWindowModel: ObservableObject {
         panel.beginSheetModal(for:window) { [weak self] response in
             guard response == .OK, let self else { return }
             let urls = panel.urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            do { for url in urls { try FileAccessStore.shared.rememberSelection(url) } }
+            catch { self.error = error.localizedDescription; return }
+            self.sourceAccess += urls.map { FileAccessStore.shared.access(to: $0) }
             if scenes { self.urls = urls; self.saved = false; self.load() }
             else { self.addFlats(urls) }
         }

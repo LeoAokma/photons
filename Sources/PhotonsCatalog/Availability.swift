@@ -1,4 +1,5 @@
 import Foundation
+import PhotonsFileAccess
 import GRDB
 
 // The library stores *references*. Once a file is moved or renamed outside Photons, the row points
@@ -264,7 +265,7 @@ extension Catalog {
         let url = folder.standardizedFileURL
         if let existing = try roots().first(where: { $0.pathHint == url.path }) { return existing }
         let volumeUUID = (try? url.resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString) ?? nil
-        let bookmark = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        let bookmark = try FileAccessStore.bookmark(for: url)
         let root = SourceRoot(volumeUuid: volumeUUID,
                               bookmark: bookmark,
                               displayName: url.lastPathComponent,
@@ -272,6 +273,7 @@ extension Catalog {
                               managementMode: .reference,
                               status: .online)
         try dbQueue.write { db in try root.insert(db) }
+        retainSourceAccess(root)
         return root
     }
 

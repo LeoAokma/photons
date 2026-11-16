@@ -1,4 +1,5 @@
 import Foundation
+import PhotonsFileAccess
 import CoreImage
 import PhotonsExtensions
 
@@ -228,7 +229,9 @@ extension PanoramaEngine {
                     let raw=try LCCCameraPipeline.read(source,maxDimension:2048)
                     raws.append(raw);images.append(LCCCameraPipeline.cameraImage(raw))
                     if let pair=records.first(where:{$0.scene==source.url.standardizedFileURL}) {
-                        let flat=try PanoramaSource(url:pair.flat)
+                        let flatAccess=FileAccessStore.shared.access(to:pair.flat)
+                        defer {withExtendedLifetime(flatAccess) {}}
+                        let flat=try PanoramaSource(url:flatAccess.url)
                         guard LCCInspector.incompatibility(scene:source,flat:flat)==nil else {throw PanoramaFailure("配对白板与照片不匹配")}
                         flats.append(try LCCCameraPipeline.read(flat,maxDimension:512))
                     } else {flats.append(nil)}

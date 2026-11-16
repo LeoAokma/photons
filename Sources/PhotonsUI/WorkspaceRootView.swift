@@ -1,4 +1,5 @@
 import AppKit
+import PhotonsFileAccess
 import SwiftUI
 import PhotonsCatalog
 import PhotonsCore
@@ -851,6 +852,7 @@ public final class WorkspaceRootView: NSView {
         panel.prompt = "打开"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
+            try FileAccessStore.shared.rememberSelection(url)
             try session.open(url)
             window?.title = "Photons — \(url.deletingPathExtension().lastPathComponent)"
         } catch {

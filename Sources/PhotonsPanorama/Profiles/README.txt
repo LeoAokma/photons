@@ -1,4 +1,9 @@
 43XL + iiic / Hasselblad CFV 100C / f/11 / infinity
+All profiles currently supplied with Photons are user-generated calibration files,
+created and shared by the developer acting as a user, not official/certified lens profiles.
+They use the same readable, unencrypted format as other user profiles and may be
+viewed, copied, imported and exported. Installing an app update does not replace an
+existing user copy. Importing a profile with the same ID requires explicit replacement.
 Measured 2026-11-15. 36 landscape and 9 counterclockwise portrait LCC captures.
 The built-in .photonslcc contains oriented Float32 CFA block means, their standard
 errors, cell coordinates, shifts, sensor size and capture conditions. It keeps the

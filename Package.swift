@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "PhotonsCore", targets: ["PhotonsCore"]),
+        .library(name: "PhotonsFileAccess", targets: ["PhotonsFileAccess"]),
         .library(name: "PhotonsExport", targets: ["PhotonsExport"]),
         .library(name: "PhotonsCatalog", targets: ["PhotonsCatalog"]),
         // Optional post-processing that writes a NEW file (AI denoise, HDR merge). No
@@ -31,10 +32,12 @@ let package = Package(
         // network download that has already failed on this machine (see the session-bus pitfalls).
         .target(name: "PhotonsCore", resources: [.copy("Kernels")]),
         .target(name: "PhotonsExport", dependencies: ["PhotonsCore"]),
-        .target(name: "PhotonsExtensions"),
-        .target(name: "PhotonsPanorama", dependencies: ["PhotonsExtensions"], resources: [.copy("Profiles")]),
+        .target(name: "PhotonsFileAccess"),
+        .target(name: "PhotonsExtensions", dependencies: ["PhotonsFileAccess"]),
+        .target(name: "PhotonsPanorama", dependencies: ["PhotonsExtensions", "PhotonsFileAccess"], resources: [.copy("Profiles")]),
         .target(name: "PhotonsCatalog", dependencies: [
             "PhotonsCore",
+            "PhotonsFileAccess",
             .product(name: "GRDB", package: "GRDB.swift"),
         ]),
         .executableTarget(name: "photonsctl", dependencies: ["PhotonsCore", "PhotonsExport", "PhotonsCatalog"]),
@@ -46,9 +49,10 @@ let package = Package(
         // `HDRMergeService` — the GPLv3 `hdrmerge-swift` binary is spawned as a child process by that
         // module, never linked, so this edge keeps Photons MIT.
         .target(name: "PhotonsUI", dependencies: ["PhotonsCore", "PhotonsExport", "PhotonsCatalog",
-                                                  "PhotonsExtensions", "PhotonsPanorama"],
+                                                  "PhotonsExtensions", "PhotonsPanorama", "PhotonsFileAccess"],
                 resources: []),
-        .executableTarget(name: "PhotonsApp", dependencies: ["PhotonsCore", "PhotonsExport", "PhotonsCatalog", "PhotonsUI"]),
+        .executableTarget(name: "PhotonsApp", dependencies: ["PhotonsCore", "PhotonsExport", "PhotonsCatalog", "PhotonsUI", "PhotonsFileAccess"]),
+        .testTarget(name: "PhotonsFileAccessTests", dependencies: ["PhotonsFileAccess"]),
         .testTarget(name: "PhotonsCoreTests", dependencies: ["PhotonsCore", "PhotonsExport"]),
         .testTarget(name: "PhotonsExportTests", dependencies: ["PhotonsExport", "PhotonsCore"]),
         .testTarget(name: "PhotonsExtensionsTests", dependencies: ["PhotonsExtensions"]),

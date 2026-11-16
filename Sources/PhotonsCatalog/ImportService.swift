@@ -1,4 +1,5 @@
 import Foundation
+import PhotonsFileAccess
 import GRDB
 
 public struct ImportOptions: Sendable {
@@ -69,6 +70,9 @@ public final class ImportService: @unchecked Sendable {
                     options: ImportOptions,
                     onFile: ((Int, Int) -> Void)? = nil,
                     progress: ((String) -> Void)? = nil) throws -> ImportSummary {
+        let access = sources.map { FileAccessStore.shared.access(to: $0) }
+        defer { withExtendedLifetime(access) {} }
+        let sources = access.map(\.url)
         let started = CFAbsoluteTimeGetCurrent()
         guard !sources.isEmpty else { throw CatalogError.importSourceMissing(URL(fileURLWithPath: ".")) }
 

@@ -1,4 +1,5 @@
 import AppKit
+import PhotonsFileAccess
 import SwiftUI
 import UniformTypeIdentifiers
 import PhotonsPanorama
@@ -24,6 +25,7 @@ public final class PanoramaWindowController: NSWindowController, NSWindowDelegat
 @MainActor
 private final class PanoramaWindowModel: ObservableObject {
     let urls: [URL]
+    private let sourceAccess: [FileAccess]
     weak var window: NSWindow?
     @Published var choosingMode = true
     @Published var busy = false
@@ -61,7 +63,10 @@ private final class PanoramaWindowModel: ObservableObject {
     private var exportWindow: PanoramaExportController?
     private var cancellation = PanoramaCancellation()
     private let queue = DispatchQueue(label:"Photons.panorama",qos:.userInitiated)
-    init(urls: [URL]) { self.urls = urls; refreshLCC() }
+    init(urls: [URL]) {
+        sourceAccess = urls.map { FileAccessStore.shared.access(to: $0) }
+        self.urls = sourceAccess.map(\.url); refreshLCC()
+    }
     func cancel() { cancellation.cancel(); exportWindow?.dismiss() }
     func setBody(_ body:PanoramaCameraBody) {
         cameraBody=body;bodyOrientation=body.canonicalOrientation(bodyOrientation);bodyPlacementChanged()
@@ -296,7 +301,9 @@ private final class PanoramaWindowModel: ObservableObject {
             guard result == .OK, let destination = panel.url, let self else { return }
             self.busy = true; self.error = nil; self.cancellation = PanoramaCancellation()
             let token = self.cancellation
+            let destinationAccess = FileAccess(destination)
             self.queue.async {
+                defer { withExtendedLifetime(destinationAccess) {} }
                 do {
                     try PanoramaEngine().export(plan,to:destination,format:.dng,cancellation:token) { message in
                         DispatchQueue.main.async { self.status = message }

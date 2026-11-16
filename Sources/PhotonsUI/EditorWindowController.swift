@@ -1,6 +1,7 @@
 import AppKit
 import PhotonsCatalog
 import PhotonsCore
+import PhotonsFileAccess
 
 /// One editor window: titlebar contract, the workspace, and the commands the menu dispatches.
 ///
@@ -83,6 +84,42 @@ public final class EditorWindowController: NSWindowController {
 
     public func openLibraryPanel() {
         rootView.openLibraryPanel()
+    }
+
+    public func presentLibraryAccessError(_ error: Error) {
+        DispatchQueue.main.async { [weak self] in
+            self?.showToolMessage("无法打开上次的照片库。请通过“文件 → 打开库…”重新选择照片库。\n\(error.localizedDescription)")
+        }
+    }
+
+    @objc public func createLibraryAction(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "照片库.photonslibrary"
+        panel.canCreateDirectories = true
+        panel.message = "选择照片库的保存位置"
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+        guard selected.pathExtension == "photonslibrary" else {
+            showToolMessage("照片库名称需要以 .photonslibrary 结尾。"); return
+        }
+        let access = FileAccess(selected)
+        do {
+            try withExtendedLifetime(access) {
+                _ = try Catalog.create(at: selected)
+                try FileAccessStore.shared.rememberSelection(selected)
+                try openLibrary(at: selected)
+            }
+        } catch { showToolMessage(error.localizedDescription) }
+    }
+
+    @objc public func authorizePhotoFolderAction(_ sender: Any?) {
+        guard session.isOpen else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.message = "选择照片库引用的原片文件夹，以恢复读取和保存权限。照片不会被移动。"
+        panel.prompt = "授权文件夹"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try session.authorizePhotoFolder(url) }
+        catch { showToolMessage(error.localizedDescription) }
     }
 
     // MARK: commands (used by the menu and by `--ui-smoke`)
@@ -590,8 +627,10 @@ public final class EditorWindowController: NSWindowController {
         case #selector(zoomOutAction(_:)):
             return session.mode == .loupe && session.anchorID != nil
                 && rootView.loupeController.viewState.isActualSize
-        case #selector(openLibraryAction(_:)):
+        case #selector(openLibraryAction(_:)), #selector(createLibraryAction(_:)):
             return true
+        case #selector(authorizePhotoFolderAction(_:)):
+            return session.isOpen
         case #selector(importAction(_:)):
             // Nowhere to write without a library, and a second import while one runs would put two
             // walks on the same root at once. Grey in both cases instead of starting a panel whose

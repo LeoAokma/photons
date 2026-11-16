@@ -1,4 +1,5 @@
 import Foundation
+import PhotonsFileAccess
 import CoreImage
 
 public struct LCCPositionSolution {
@@ -40,7 +41,9 @@ public enum LCCPositionSolver {
             if useFlats {
                 guard let pair=flatRecords[i] else {continue}
                 progress("读取已配对白板 \(flats+1)…")
-                let source=try PanoramaSource(url:pair.flat)
+                let flatAccess=FileAccessStore.shared.access(to:pair.flat)
+                        defer {withExtendedLifetime(flatAccess) {}}
+                        let source=try PanoramaSource(url:flatAccess.url)
                 guard LCCInspector.incompatibility(scene:plan.sources[i],flat:source)==nil else {continue}
                 image=field.isCameraSpace ? LCCCameraPipeline.cameraImage(try LCCCameraPipeline.read(source,maxDimension:512)):try LCCProfileBuilder.linearImage(source:source,scale:256/source.size.width);flats += 1
             } else {

@@ -1,4 +1,5 @@
 import AppKit
+import PhotonsFileAccess
 import Observation
 import SwiftUI
 import ImageIO
@@ -266,6 +267,11 @@ public final class ExportSheetModel {
     /// Where the files go. Chosen with a folder picker in the sheet; a sane default otherwise.
     public var outputDirectory: URL {
         didSet { resetFinishedReportAfterConfigurationChange() }
+    }
+
+    public func chooseOutputDirectory(_ url: URL) {
+        do { try FileAccessStore.shared.rememberSelection(url); outputDirectory = url; errorText = nil }
+        catch { errorText = "无法保存导出目录权限：\(error.localizedDescription)" }
     }
 
     /// Named presets, one file each (see `ExportPresetStore`).
@@ -823,6 +829,11 @@ public final class ExportSheetModel {
             errorText = error.localizedDescription
             return
         }
+        let directoryAccess = FileAccessStore.shared.access(to: outputDirectory)
+        if SandboxEnvironment.isSandboxed && !FileManager.default.isWritableFile(atPath: directoryAccess.url.path) {
+            errorText = "请点击位置旁的选择按钮，选择并授权导出文件夹。"
+            return
+        }
         errorText = nil
         report = nil
         total = items.count
@@ -838,7 +849,8 @@ public final class ExportSheetModel {
         // Snapshot at the click, not at completion: the sheet is disabled during the run, and the
         // rows' sizes must describe the preset the files were actually written with.
         let preset = effectivePreset
-        let directory = outputDirectory
+        let directory = directoryAccess.url
+        let sourceAccess = items.compactMap(\.sourceURL).map { FileAccessStore.shared.access(to: $0) }
         // 161 §5 — what a successful run remembers. The draft is the *run's* snapshot, so a field
         // the user changes after the report appears cannot leak into "last used".
         pendingRunDraft = ExportDraftPersistence.Draft(preset: preset, outputDirectory: directory)
@@ -850,6 +862,7 @@ public final class ExportSheetModel {
             return image
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            defer { withExtendedLifetime((directoryAccess, sourceAccess)) {} }
             let report = BatchExporter.run(items: items, preset: preset,
                                            outputDirectory: directory,
                                            concurrency: BatchExporter.defaultConcurrency,
@@ -2220,6 +2233,6 @@ public final class ExportSheetController: NSObject {
         panel.message = "导出到哪里"
         panel.directoryURL = model.outputDirectory
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        model.outputDirectory = url
+        model.chooseOutputDirectory(url)
     }
 }

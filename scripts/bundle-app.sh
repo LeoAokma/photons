@@ -12,7 +12,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${1:-release}"
 BUILD_DIR="$ROOT/.build/$CONFIG"
-APP="$ROOT/.build/Photons.app"
+APP="${PHOTONS_APP:-$ROOT/.build/Photons.app}"
+export CONFIG
 
 if [ ! -x "$BUILD_DIR/Photons" ]; then
     echo "bundle-app: no executable at $BUILD_DIR/Photons" >&2
@@ -120,6 +121,9 @@ if [ -x "$ROOT/scripts/build-hdrmerge.sh" ] && [ -x "$ROOT/scripts/bundle-hdrmer
         echo "hdrmerge    skipped（没有构建好的 hdrmerge-swift；「HDR 合并…」会显示未找到工具）" >&2
 fi
 
+python3 "$ROOT/scripts/bundle-gpl-sources.py" "$APP"
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/licenses/Photons-MIT.txt"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md"
 xattr -cr "$APP" 2>/dev/null || true
 
 # Ad-hoc signature: enough to launch locally and to keep Gatekeeper quiet on this machine.

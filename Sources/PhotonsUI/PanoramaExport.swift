@@ -1,4 +1,5 @@
 import AppKit
+import PhotonsFileAccess
 import SwiftUI
 import CoreImage
 import PhotonsCore
@@ -88,7 +89,9 @@ final class PanoramaExportController {
         panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.canCreateDirectories = true; panel.directoryURL = model.outputDirectory
         panel.beginSheetModal(for: window) { [weak self] response in
-            if response == .OK, let url = panel.url { self?.model.outputDirectory = url }
+            if response == .OK, let url = panel.url {
+                self?.model.chooseOutputDirectory(url)
+            }
         }
     }
 

@@ -106,13 +106,11 @@ public struct LCCProfileStore {
     public func url(for id:UUID)->URL { directory.appendingPathComponent(id.uuidString.lowercased()+".photonslcc") }
     public func installBundledProfile() throws {
         let target=url(for:LCCLensProfile.builtInID)
+        // This is a developer-created user sample, not a protected official profile. Once copied,
+        // the user's file owns this ID: application updates must never overwrite their edits.
+        if FileManager.default.fileExists(atPath:target.path) { return }
         guard let source=Bundle.module.url(forResource:"43xl-iiic-cfv100c",withExtension:"photonslcc",subdirectory:"Profiles") else {
             throw PanoramaFailure("应用内缺少 43XL 镜头标定数据，请重新安装完整应用。")
-        }
-        if FileManager.default.fileExists(atPath:target.path) {
-            let a=try FileHandle(forReadingFrom:source),b=try FileHandle(forReadingFrom:target)
-            defer {try? a.close();try? b.close()}
-            if try a.read(upToCount:48)==b.read(upToCount:48) {return}
         }
         let bytes=try Data(contentsOf:source)
         let profile=try LCCProfileCodec.decode(bytes)

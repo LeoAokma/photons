@@ -1,4 +1,5 @@
 import AppKit
+import PhotonsFileAccess
 import PhotonsCatalog
 
 /// 文件 ▸ 导入照片… — panel, then a *background* import, then reload + select.
@@ -69,6 +70,8 @@ public final class ImportCoordinator {
             lastError = "未打开库"
             return
         }
+        do { for url in request.sources { try FileAccessStore.shared.rememberSelection(url) } }
+        catch { lastError = "无法保存文件夹访问权限：\(error.localizedDescription)"; onError?(lastError!); return }
         isImporting = true
         runCount += 1
         lastError = nil

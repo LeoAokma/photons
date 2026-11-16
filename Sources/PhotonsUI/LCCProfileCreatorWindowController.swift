@@ -1,4 +1,5 @@
 import AppKit
+import PhotonsFileAccess
 import SwiftUI
 import PhotonsPanorama
 
@@ -23,6 +24,7 @@ final class LCCProfileCreatorWindowController: NSWindowController, NSWindowDeleg
 private final class LCCProfileCreatorModel: ObservableObject {
     weak var window:NSWindow?
     var onCreated:((LCCProfileSummary)->Void)?
+    private var sourceAccess: [FileAccess] = []
     @Published var name=""
     @Published var apertureText=""
     @Published var notes=""
@@ -72,6 +74,7 @@ private final class LCCProfileCreatorModel: ObservableObject {
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         guard frames.count+fresh.count<=256 else { error="一个 profile 最多包含 256 张白板。";return }
         guard !fresh.isEmpty else { return }
+        sourceAccess += fresh.map { FileAccess($0) }
         busy=true;status="读取 LCC 缩略图和曝光信息…";token=PanoramaCancellation();let token=self.token
         queue.async { [weak self] in
             do {

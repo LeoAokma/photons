@@ -407,10 +407,17 @@ public final class CatalogSession {
 
     public var isOpen: Bool { catalog != nil }
 
+    public func authorizePhotoFolder(_ url: URL) throws {
+        guard let catalog else { return }
+        try catalog.authorizeSourceFolder(url)
+        lastAvailability = try catalog.refreshAvailability()
+        reload()
+    }
+
     public func open(_ url: URL) throws {
         let c = try Catalog.open(at: url)
         catalog = c
-        libraryURL = url.standardizedFileURL
+        libraryURL = c.layout.packageURL
         // A missing cache directory is created by the initialiser; a failure here only means the
         // grid falls back to placeholders, which must not stop the library from opening.
         thumbnailCache = try? ThumbnailCache(layout: c.layout)
@@ -2897,6 +2904,8 @@ public final class CatalogSession {
         var outcome = RelinkOutcome()
         guard !targets.isEmpty else { return outcome }
 
+        do { try catalog.authorizeSourceFolder(folder) }
+        catch { outcome.failures.append("无法保存文件夹访问权限：\(error.localizedDescription)"); outcome.failed = chosen.map(\.id); return outcome }
         let found = LostFileFinder.find(folder: folder, targets: targets)
         outcome.unmatched = found.unmatched
         outcome.rejected = found.rejected

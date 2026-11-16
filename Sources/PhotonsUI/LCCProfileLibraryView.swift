@@ -1,6 +1,8 @@
 import AppKit
 import SwiftUI
 import PhotonsPanorama
+import PhotonsFileAccess
+import UniformTypeIdentifiers
 
 @MainActor
 final class LCCProfileLibraryModel: ObservableObject {
@@ -44,6 +46,54 @@ final class LCCProfileLibraryModel: ObservableObject {
     func reveal() {
         if let id=selected {NSWorkspace.shared.activateFileViewerSelecting([LCCProfileStore().url(for:id)])}
     }
+    func importProfile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "photonslcc") ?? .data]
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let access = FileAccess(url)
+        busy = true; status = "读取镜头 Profile…"
+        queue.async { [weak self] in
+            defer { withExtendedLifetime(access) {} }
+            do {
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size > 0, size <= 256 * 1024 * 1024 + 65584 else { throw PanoramaFailure("镜头 profile 大小无效。") }
+                let imported = try LCCProfileCodec.decode(Data(contentsOf: url))
+                DispatchQueue.main.async { self?.confirmImport(imported) }
+            } catch { DispatchQueue.main.async { self?.busy = false; self?.error = error.localizedDescription } }
+        }
+    }
+    private func confirmImport(_ imported: LCCLensProfile) {
+        let store = LCCProfileStore()
+        if FileManager.default.fileExists(atPath: store.url(for: imported.id).path) {
+            let alert = NSAlert(); alert.messageText = "替换现有镜头 Profile？"
+            alert.informativeText = "已存在相同标识的标定文件。替换会更新该文件的测量数据。"
+            alert.addButton(withTitle: "替换"); alert.addButton(withTitle: "取消")
+            guard alert.runModal() == .alertFirstButtonReturn else { busy = false; status = "已取消导入"; return }
+        }
+        queue.async { [weak self] in
+            do {
+                try store.save(imported)
+                DispatchQueue.main.async { self?.refresh(select: imported.id) }
+            } catch { DispatchQueue.main.async { self?.busy = false; self?.error = error.localizedDescription } }
+        }
+    }
+    func exportProfile() {
+        guard let profile else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "photonslcc") ?? .data]
+        panel.nameFieldStringValue = profile.name.replacingOccurrences(of: "/", with: "-") + ".photonslcc"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let access = FileAccess(url)
+        busy = true; status = "导出镜头 Profile…"
+        queue.async { [weak self] in
+            defer { withExtendedLifetime(access) {} }
+            do {
+                try LCCProfileCodec.encode(profile).write(to: url, options: .atomic)
+                DispatchQueue.main.async { self?.busy = false; self?.status = "已导出：\(url.lastPathComponent)" }
+            } catch { DispatchQueue.main.async { self?.busy = false; self?.error = error.localizedDescription } }
+        }
+    }
 }
 
 struct LCCProfileLibraryView: View {
@@ -53,7 +103,7 @@ struct LCCProfileLibraryView: View {
             HStack {
                 VStack(alignment:.leading,spacing:4) {
                     Text("镜头 Profiles").font(.title.bold())
-                    Text("为每种镜头与后背保存横竖方向的 LCC 标定。").foregroundStyle(.secondary)
+                    Text("用户创建的 LCC 标定，可查看、导入和分享；随附样例由开发者作为用户制作。").foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("创建镜头 Profile…") {model.create()}.buttonStyle(.borderedProminent)
@@ -94,7 +144,10 @@ struct LCCProfileLibraryView: View {
             HStack {
                 if model.busy {ProgressView().controlSize(.small)}
                 Text(model.status).font(.caption).foregroundStyle(.secondary)
-                Spacer();Button("在 Finder 中显示") {model.reveal()}.disabled(model.selected==nil)
+                Spacer()
+                Button("导入…") {model.importProfile()}.disabled(model.busy)
+                Button("导出…") {model.exportProfile()}.disabled(model.profile==nil || model.busy)
+                Button("在 Finder 中显示") {model.reveal()}.disabled(model.selected==nil)
             }
         }.padding(22).onAppear {model.refresh()}.onChange(of:model.selected) {_,_ in model.readSelected()}
         .alert("镜头 Profiles",isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})) {Button("好") {model.error=nil}} message: {Text(model.error ?? "")}

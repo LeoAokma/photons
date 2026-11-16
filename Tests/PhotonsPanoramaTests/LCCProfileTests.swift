@@ -42,6 +42,18 @@ final class LCCProfileTests:XCTestCase {
         XCTAssertLessThan(corner.grid.floats.min()!,300)
         XCTAssertEqual(corner.grid.width,137);XCTAssertEqual(corner.grid.height,183)
     }
+    func testInstallingSampleAgainPreservesUserChanges() throws {
+        let dir=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {try? FileManager.default.removeItem(at:dir)}
+        let store=LCCProfileStore(directory:dir);try store.installBundledProfile()
+        var profile=try store.load(LCCLensProfile.builtInID)
+        profile.name="我的测量";profile.notes="用户修改必须保留"
+        let url=try store.save(profile)
+        let before=try Data(contentsOf:url)
+        try store.installBundledProfile()
+        XCTAssertEqual(try Data(contentsOf:url),before)
+        XCTAssertEqual(try store.load(profile.id).name,"我的测量")
+    }
     func testShiftNameParsingDoesNotGuessUnknownNames() {
         XCTAssertEqual(LCCShiftFilename.parse("V18D_H5L.3FR")?.x,-5)
         XCTAssertEqual(LCCShiftFilename.parse("V18D_H5L.3FR")?.y,-18)
