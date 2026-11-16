@@ -44,6 +44,12 @@ Opt-in fixture variables are `PHOTONS_BOSTON_DIR` for analysis/DNG checks and `P
 
 This does **not** supersede the unresolved full acceptance failures documented in [fork-integration-validation.md](fork-integration-validation.md). The complete test suite has not become green through these targeted changes.
 
+## Packaged runtime
+
+The release sandbox package at `f2bb09a` passed strict code-signature verification and `--sandbox-check`: app sandbox enabled, security-scoped bookmark round trip, Apple M5 Pro GPU, denoise/HDR helper protocols, worker HDR HEIC export, metadata round trip and automatic catalog import.
+
+The user's existing Panorama-Demo library migrated from schema 6 to 7 with all 122 assets retained, zero foreign-key violations and a `backups/library.bak-v6.db` backup. The running window visibly shows complete portrait/landscape thumbnails, the size slider, a populated grid histogram and a correctly decoded B0000662_Panorama.dng. The Mac was locked during the final GUI check, so interactive slider dragging, context-menu activation and import-panel clicking were not rechecked in this packaged build. Import controls and grid sizing have automated coverage above; Finder menu wiring was reviewed in code.
+
 ## Limits
 
 A fitted rotation is an effective image transform, not a measurement proving physical vibration. Moving the lens can change viewpoint and produce depth-dependent parallax. A single projective transform, seam selection and blending improve these examples but cannot guarantee perfect alignment at every depth, around moving subjects or in arbitrary captures. RAW-before-stitch LCC remains preferable to correction of an already blended RGB panorama.
