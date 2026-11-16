@@ -118,7 +118,7 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in refreshStatus() }
     }
 
-    @AppStorage("photons.language") private var language = "zh-Hans"
+    @AppStorage("photons.language") private var language = L10n.defaultLanguage
     private var general:some View {
         VStack(alignment: .leading, spacing: 20) {
             Picker(L10n.tr("835b700e028c"), selection: $generalTab) {

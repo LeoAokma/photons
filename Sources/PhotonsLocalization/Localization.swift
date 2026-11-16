@@ -3,7 +3,10 @@ import Foundation
 public enum L10n {
     /// Freeze the interface language for the lifetime of a process. Language changes apply on
     /// restart, so menu commands, open tool windows and background jobs never switch halfway.
-    public static let language=(ProcessInfo.processInfo.environment["PHOTONS_LANGUAGE"] ?? UserDefaults.standard.string(forKey:"photons.language")) == "en" ? "en":"zh-Hans"
+    public static let defaultLanguage = "en"
+    public static let language = (ProcessInfo.processInfo.environment["PHOTONS_LANGUAGE"]
+        ?? UserDefaults.standard.string(forKey: "photons.language")
+        ?? defaultLanguage) == "zh-Hans" ? "zh-Hans" : "en"
     private static func load(_ name:String)->[String:String] {
         guard let url=Bundle.module.url(forResource:name,withExtension:"json"),
               let data=try? Data(contentsOf:url),let table=try? JSONDecoder().decode([String:String].self,from:data) else {return [:]}
