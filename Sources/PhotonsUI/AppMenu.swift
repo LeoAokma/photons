@@ -195,7 +195,8 @@ public enum MainMenu {
         main.addItem(toolsItem)
         let tools = NSMenu(title: "工具")
         toolsItem.submenu = tools
-        tools.addItem(withTitle: "全景拼接…", action: #selector(EditorWindowController.panoramaAction(_:)), keyEquivalent: "")
+        let panorama = tools.addItem(withTitle: "全景拼接…", action: #selector(EditorWindowController.panoramaAction(_:)), keyEquivalent: "m")
+        panorama.keyEquivalentModifierMask = [.control]
         tools.addItem(withTitle: "LCC矫正…", action: #selector(EditorWindowController.lccAction(_:)), keyEquivalent: "")
 
         // View
