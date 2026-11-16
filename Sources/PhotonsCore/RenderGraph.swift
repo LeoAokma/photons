@@ -5494,7 +5494,10 @@ private func dispatchSharpenTile(_ enc: MTLComputeCommandEncoder, _ size: ImageS
         let veilH = max(1, (h + qTex - 1) / qTex)
 
         var params = DehazeParamsU(
-            a: SIMD4(Float(edit.effects.dehaze) / 100, 0.95, 0.1, 0.02),
+            // 417 — `t0 = 0.05` (was 0.1). See the 417 note in `s1_9_dehaze.metal`: on scene light
+            // `t = t0` is where *every* foggy pixel lands, and at 0.1 the gain's whole swing happened
+            // inside a 0.05-wide luminance window.
+            a: SIMD4(Float(edit.effects.dehaze) / 100, 0.95, 0.05, 0.02),
             b: SIMD4(plan.origin.x, plan.origin.y,
                      Float(plan.content.width), Float(plan.content.height)),
             c: SIMD4(Int32(proxyW), Int32(proxyH), Int32(qProxy), Int32(qW)),
