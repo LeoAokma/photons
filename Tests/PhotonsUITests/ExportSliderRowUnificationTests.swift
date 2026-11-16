@@ -167,14 +167,18 @@ final class ExportSliderRowUnificationTests: XCTestCase {
         let opacityRect = rect(of: opacityNumber, in: hosted.host)
         let ppiRect = rect(of: ppiNumber, in: hosted.host)
 
-        XCTAssertEqual(qualityRect.width, 46, accuracy: 0.5)
-        XCTAssertEqual(opacityRect.width, 46, accuracy: 0.5)
-        XCTAssertEqual(ppiRect.width, 46, accuracy: 0.5)
+        // 421b —— `SliderNumberField` 加回 5+5 内边距与底色（PR 的形状）：值列仍是 46，
+        // **外框**是 46 + 10 = 56。所以 x 的左沿比值列向左多 10，右沿与值列一致。
+        let outerWidth = ExportRowGrid.valueWidth + 2 * SliderNumberField.horizontalPadding
+        XCTAssertEqual(qualityRect.width, outerWidth, accuracy: 0.5)
+        XCTAssertEqual(opacityRect.width, outerWidth, accuracy: 0.5)
+        XCTAssertEqual(ppiRect.width, outerWidth, accuracy: 0.5)
         XCTAssertEqual(qualityRect.minX, opacityRect.minX, accuracy: 0.5,
                        "质量与不透明度同一行型（值 + %），x 相同")
         let ppiControl = try XCTUnwrap(controlRect("export.ppi", in: hosted.host))
-        XCTAssertEqual(ppiRect.minX, ppiControl.minX, accuracy: 0.5,
-                       "335 · PPI 输入框在主列起点 138")
+        // PPI 的值列从主列起点 138 起；外框的右沿 = 主列起点 + 值列宽（内边距只向左长）。
+        XCTAssertEqual(ppiRect.maxX, ppiControl.minX + ExportRowGrid.valueWidth, accuracy: 0.5,
+                       "335 · PPI 值列从主列起点起（外框向左探出内边距）")
 
         XCTAssertTrue(hasProbe(.number, "export.ppi", in: hosted.host))
         try assertTogglePresent("export.ppi.enabled", row: "export.ppi", in: hosted.host)
@@ -206,9 +210,10 @@ final class ExportSliderRowUnificationTests: XCTestCase {
         let percentNumber = try probe(.number, "export.size.percent", in: percentHosted.host)
         let percentRect = rect(of: percentNumber, in: percentHosted.host)
 
-        XCTAssertEqual(longRect.width, 46, accuracy: 0.5)
-        XCTAssertEqual(percentRect.width, 46, accuracy: 0.5)
+        XCTAssertEqual(longRect.width, outerWidth, accuracy: 0.5)
+        XCTAssertEqual(percentRect.width, outerWidth, accuracy: 0.5)
         // 335 —— 长边（px）与百分比（%）的单位宽度不同，值贴的是同一根右沿（540）。
+        // 421b —— 外框的**右沿**不变（内边距向左长），所以这条仍然钉右沿。
         let pxWidth = ("px" as NSString).size(withAttributes: [
             .font: NSFont.systemFont(ofSize: ExportRowGrid.Font.unit)
         ]).width

@@ -117,8 +117,11 @@ final class ExportSliderRowTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(qualitySlider.frame.width, ExportRowGrid.sliderWidth - 0.01,
                                     "滑杆不窄于 140（335 之后是吃满主列）")
         XCTAssertGreaterThanOrEqual(opacitySlider.frame.width, ExportRowGrid.sliderWidth - 0.01)
-        XCTAssertEqual(qualityNumber.frame.width, 46, accuracy: 0.01)
-        XCTAssertEqual(opacityNumber.frame.width, 46, accuracy: 0.01)
+        // 421b —— 值列仍是 46；`SliderNumberField` 的探针量的是**外框**，加回 5+5 内边距后
+        // 是 46 + 10 = 56（PR 的底色/圆角）。两行同宽这条不变。
+        let outerWidth = ExportRowGrid.valueWidth + 2 * SliderNumberField.horizontalPadding
+        XCTAssertEqual(qualityNumber.frame.width, outerWidth, accuracy: 0.01)
+        XCTAssertEqual(opacityNumber.frame.width, outerWidth, accuracy: 0.01)
         XCTAssertEqual(qualitySlider.frame.width, opacitySlider.frame.width, accuracy: 0.01,
                        "两行滑杆同宽")
         XCTAssertEqual(qualityNumber.frame.width, opacityNumber.frame.width, accuracy: 0.01,
