@@ -19,10 +19,12 @@ enum PanoramaSeams {
         var occluded: [String] = []
         for i in 0..<n {
             try cancellation.check()
-            let raster = rasters[i], ox = plan.origins[i].x*sx, oy = plan.origins[i].y*sy
+            let raster = rasters[i]
+            let inverse = (plan.warps?[i] ?? .translation(plan.origins[i])).inverse!
             var blackEdges = 0
             for y in 0..<h { for x in 0..<w {
-                let lx = Double(x)+0.5-ox, ly = Double(y)+0.5-oy, p = y*w+x
+                let local=inverse.point(CGPoint(x:(Double(x)+0.5)/sx,y:(Double(y)+0.5)/sy))
+                let lx=local.x/plan.sources[i].size.width*Double(raster.width),ly=local.y/plan.sources[i].size.height*Double(raster.height),p=y*w+x
                 guard let c = raster.rgb(lx,ly) else { continue }
                 let luma = (c.x+c.y+c.z)/3
                 let distance = min(lx,ly,Double(raster.width)-1-lx,Double(raster.height)-1-ly)
@@ -58,8 +60,8 @@ enum PanoramaSeams {
         plan.photometricGains=[]
         if plan.options.matchExposure && plan.lccState == nil {
             func local(_ i:Int,_ p:Int)->CGPoint {
-                CGPoint(x:((Double(p%w)+0.5)/sx-plan.origins[i].x)/plan.sources[i].size.width-0.5,
-                        y:((Double(p/w)+0.5)/sy-plan.origins[i].y)/plan.sources[i].size.height-0.5)
+                let point=plan.sourcePoint(i,panorama:CGPoint(x:(Double(p%w)+0.5)/sx,y:(Double(p/w)+0.5)/sy))
+                return CGPoint(x:point.x/plan.sources[i].size.width-0.5,y:point.y/plan.sources[i].size.height-0.5)
             }
             var samples:[PanoramaPhotometry.Sample]=[]
             for a in 0..<n {for b in a+1..<n {
@@ -108,9 +110,11 @@ enum PanoramaSeams {
                     try? VNImageRequestHandler(cgImage:cg).perform([request])
                     for person in request.results ?? [] where person.confidence > 0.55 {
                         let box = person.boundingBox.insetBy(dx:-0.025,dy:-0.025)
-                        let rect = CGRect(x:plan.origins[i].x*sx+box.minX*Double(rasters[i].width),
-                                          y:plan.origins[i].y*sy+(1-box.maxY)*Double(rasters[i].height),
-                                          width:box.width*Double(rasters[i].width),height:box.height*Double(rasters[i].height))
+                        let sourceSize=plan.sources[i].size
+                        let local=CGRect(x:box.minX*sourceSize.width,y:(1-box.maxY)*sourceSize.height,width:box.width*sourceSize.width,height:box.height*sourceSize.height)
+                        let warp=plan.warps?[i] ?? .translation(plan.origins[i])
+                        let p=[CGPoint(x:local.minX,y:local.minY),CGPoint(x:local.maxX,y:local.minY),CGPoint(x:local.maxX,y:local.maxY),CGPoint(x:local.minX,y:local.maxY)].map {warp.point($0)}
+                        let rect=CGRect(x:p.map(\.x).min()!*sx,y:p.map(\.y).min()!*sy,width:(p.map(\.x).max()!-p.map(\.x).min()!)*sx,height:(p.map(\.y).max()!-p.map(\.y).min()!)*sy)
                         for y in max(0,Int(rect.minY))..<min(h,max(0,Int(ceil(rect.maxY)))) {
                             for x in max(0,Int(rect.minX))..<min(w,max(0,Int(ceil(rect.maxX)))) { unary[i][y*w+x] += 8 }
                         }

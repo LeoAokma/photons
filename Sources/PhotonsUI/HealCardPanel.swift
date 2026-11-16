@@ -187,7 +187,7 @@ public struct HealCardPanel: View {
                 Text(L10n.tr("3e65075eb3e9"))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-                Slider(value: redEyeRadiusBinding, in: RedEye.radiusPointsRange)
+                AdjustmentSlider(value: redEyeRadiusBinding, in: RedEye.radiusPointsRange)
                     .controlSize(.mini)
                     .accessibilityIdentifier("inspector.redeye.radius")
                 Text(String(format: "%.1f pt", session.redEyeRadiusPoints))
@@ -199,7 +199,7 @@ public struct HealCardPanel: View {
                 Text(L10n.tr("a2846644a638"))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-                Slider(value: redEyeStrengthBinding, in: 0 ... 100)
+                AdjustmentSlider(value: redEyeStrengthBinding, in: 0 ... 100)
                     .controlSize(.mini)
                     .accessibilityIdentifier("inspector.redeye.strength")
                 Text("\(Int((session.redEyeStrength * 100).rounded()))")
@@ -220,7 +220,7 @@ public struct HealCardPanel: View {
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .frame(width: 26, alignment: .leading)
-            Slider(value: Binding(get: { spot.radius },
+            AdjustmentSlider(value: Binding(get: { spot.radius },
                                   set: { session.setHealRadius($0, for: spot.id, commit: false) }),
                    in: HealSpot.radiusRange,
                    onEditingChanged: { editing in

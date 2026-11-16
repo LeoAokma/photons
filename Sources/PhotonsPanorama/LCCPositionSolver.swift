@@ -25,8 +25,8 @@ public enum LCCPositionSolver {
         let engine=PanoramaEngine(),records=allowPairedFlats ? LCCPairingStore().records():[]
         var observations:[Observation]=[],flats=0
         let w=plan.sources[0].size.width,h=plan.sources[0].size.height
-        let centers=plan.sources.indices.map {i in CGPoint(x:(plan.sourceRect(i).midX-plan.size.width/2)*sensor.width/w,
-            y:(plan.size.height/2-plan.sourceRect(i).midY)*sensor.height/h)}
+        let centers=plan.sources.indices.map {i in CGPoint(x:(plan.sensorRect(i).midX-plan.size.width/2)*sensor.width/w,
+            y:(plan.size.height/2-plan.sensorRect(i).midY)*sensor.height/h)}
         let travel=cameraBody.travel(at:bodyOrientation)
         guard let bounds=travel.opticalOriginBounds(centers:centers) else {
             throw PanoramaFailure(L10n.tr("cd505be730c2" , String(describing: (cameraBody.name)), String(describing: (bodyOrientation.rawValue))))
@@ -79,8 +79,9 @@ public enum LCCPositionSolver {
         return LCCPositionSolution(offsetMM:result.point,explanation:explanation,flatCount:flats,residual:result.error,requiresManualSeed:!useFlats && approximateOffset == nil)
     }
     static func search(observations:[Observation],xRange:ClosedRange<Double>,yRange:ClosedRange<Double>,flat:Bool,
-                       cancellation:PanoramaCancellation) throws -> (point:CGPoint,error:Double) {
+                       cancellation:PanoramaCancellation,accept: (CGPoint)->Bool = {_ in true}) throws -> (point:CGPoint,error:Double) {
         func score(_ offset:CGPoint)->Double {
+            guard accept(offset) else {return .infinity}
             var groups:[Int:[SIMD3<Double>]]=[:]
             for o in observations {
                 guard let g=o.field.gain(at:CGPoint(x:o.point.x-offset.x,y:o.point.y-offset.y)) else {continue}

@@ -22,7 +22,7 @@ import GRDB
 //  2. **Offline roots are skipped, not marked.** "The drive is unplugged" and "the file moved" are
 //     different sentences; only the second one is actionable, and marking a whole unplugged volume
 //     missing would be a lie the user cannot clear without plugging it back in.
-//  3. **Relinking is identity-checked.** `content_hash` is the identity (v1's `UNIQUE`), so a
+//  3. **Relinking is identity-checked.** `content_hash` identifies the original bytes, so a
 //     candidate file whose hash differs is not "the moved file" — it is a different photo that
 //     happens to share a name. The caller gets a typed error, not a silent overwrite.
 //  4. **Deletion is one transaction, and the cache is cleaned after it.** Rows and history land
@@ -324,7 +324,7 @@ extension Catalog {
         }
 
         if let thumbnails {
-            for row in doomed {
+            for row in doomed where (try? asset(contentHash: row.contentHash)) == nil {
                 report.thumbnailFiles += thumbnails.removeAll(contentHash: row.contentHash,
                                                              developJSONs: [row.developJSON, "{}"])
             }
@@ -391,7 +391,7 @@ extension Catalog {
             try db.execute(sql: "DELETE FROM source_roots WHERE id = ?", arguments: [id])
         }
         if let thumbnails {
-            for row in doomed {
+            for row in doomed where (try? asset(contentHash: row.contentHash)) == nil {
                 report.thumbnailFiles += thumbnails.removeAll(contentHash: row.contentHash,
                                                              developJSONs: [row.developJSON, "{}"])
             }

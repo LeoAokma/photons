@@ -41,6 +41,10 @@ public struct HistoryPanel: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
+            Button(L10n.tr("history.resetImport")) {session.resetToImportedState()}
+                .disabled(session.importedEdit == nil || session.loadedEditAssetID == nil)
+                .help(L10n.tr("history.resetImportHint"))
+                .accessibilityIdentifier("history.resetImport")
             if rows.isEmpty {
                 Text(L10n.tr("74091edcb8a2"))
                     .font(.system(size: HistoryPanelLayout.metaFontSize))

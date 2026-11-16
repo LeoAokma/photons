@@ -244,6 +244,8 @@ public final class AssetCardView: NSView {
     public var thumbnail: CGImage? {
         didSet {
             thumbnailView.image = thumbnail
+            needsLayout = true
+            needsDisplay = true
             overlay.needsDisplay = true
         }
     }
@@ -298,7 +300,12 @@ public final class AssetCardView: NSView {
     public override func layout() {
         super.layout()
         let rect = swatchRect
-        thumbnailView.frame = rect
+        if let thumbnail {
+            let scale = min(rect.width / CGFloat(thumbnail.width), rect.height / CGFloat(thumbnail.height))
+            let size = NSSize(width: CGFloat(thumbnail.width) * scale, height: CGFloat(thumbnail.height) * scale)
+            thumbnailView.frame = NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
+                                        width: size.width, height: size.height)
+        } else { thumbnailView.frame = rect }
         overlay.frame = bounds
     }
 
@@ -318,7 +325,12 @@ public final class AssetCardView: NSView {
         path.addClip()
         let primary = PlaceholderSwatch.color(for: asset.contentHash)
         let secondary = PlaceholderSwatch.secondaryColor(for: asset.contentHash)
-        NSGradient(starting: primary, ending: secondary)?.draw(in: path, angle: -90)
+        if thumbnail == nil {
+            NSGradient(starting: primary, ending: secondary)?.draw(in: path, angle: -90)
+        } else {
+            NSColor.canvasMatte.setFill()
+            path.fill()
+        }
 
         if thumbnail == nil {
             // A thin "this is a placeholder" rule set: one diagonal + the extension, no image work.
@@ -430,6 +442,11 @@ public final class AssetGridController: NSViewController, NSCollectionViewDataSo
     public let scrollView = NSScrollView()
     /// The filter strip: 星级 ≥ N / 旗标 / 色标 / 相机 + one chip per active facet.
     public let filterBar = FilterBarView()
+    public let thumbnailSizeSlider: NSSlider = AdjustmentNSSlider(value: 150, minValue: 100, maxValue: 420, target: nil, action: nil)
+    private let thumbnailSizeLabel = NSTextField(labelWithString: L10n.tr("grid.thumbnailSize"))
+    private let gridFooter = FlippedView()
+    private static let sizePreference = "photons.grid.thumbnailWidth"
+    private var resizeSettledAt: TimeInterval = 0
     /// 右键：从库中删除… / 查找丢失的文件… — shared code, one instance per browser.
     public let contextMenu = AssetContextMenu()
     /// §378 — the verbs behind the 「堆叠 ▸」 submenu the shared menu carries.
@@ -529,6 +546,7 @@ public final class AssetGridController: NSViewController, NSCollectionViewDataSo
         // where the event landed), and let the verbs run through the session.
         contextMenu.onRemove = { [weak self] ids in self?.removeAssets(ids) }
         contextMenu.onRemoveAndDelete = { [weak self] ids in self?.removeAndDeleteAssets(ids) }
+        contextMenu.onReveal = { [weak self] ids in self?.session?.revealAssetsInFinder(ids) }
         contextMenu.onFindLost = { [weak self] ids in self?.findAndRelinkMissingAssets(ids) }
         // 相册（078 B10）：同一个 `AssetContextMenu` 对象在三个面共用，所以三个面拿到的
         // 「加入相册 / 移出相册」是同一份代码，不是三份。写入走 session（一次事务），
@@ -578,6 +596,19 @@ public final class AssetGridController: NSViewController, NSCollectionViewDataSo
         }
         container.addSubview(filterBar)
         container.addSubview(scroll)
+        let saved = UserDefaults.standard.double(forKey: Self.sizePreference)
+        thumbnailSizeSlider.doubleValue = saved > 0 ? min(420, max(100, saved)) : 150
+        thumbnailSizeSlider.target = self
+        thumbnailSizeSlider.action = #selector(thumbnailSizeChanged(_:))
+        thumbnailSizeSlider.isContinuous = true
+        thumbnailSizeSlider.controlSize = .small
+        thumbnailSizeSlider.setAccessibilityLabel(L10n.tr("grid.thumbnailSize"))
+        thumbnailSizeSlider.setAccessibilityIdentifier("grid.thumbnailSize")
+        thumbnailSizeLabel.font = .systemFont(ofSize: 11)
+        thumbnailSizeLabel.textColor = .secondaryLabelColor
+        gridFooter.addSubview(thumbnailSizeLabel)
+        gridFooter.addSubview(thumbnailSizeSlider)
+        container.addSubview(gridFooter)
         view = container
     }
 
@@ -593,7 +624,11 @@ public final class AssetGridController: NSViewController, NSCollectionViewDataSo
         let h = FilterBarView.height
         let b = view.bounds
         filterBar.frame = NSRect(x: 0, y: 0, width: b.width, height: h)
-        scrollView.frame = NSRect(x: 0, y: h, width: b.width, height: max(0, b.height - h))
+        scrollView.frame = NSRect(x: 0, y: h, width: b.width, height: max(0, b.height - h - 32))
+        gridFooter.frame = NSRect(x: 0, y: max(h, b.height - 32), width: b.width, height: 32)
+        let sliderWidth = min(180, max(80, b.width - 100))
+        thumbnailSizeSlider.frame = NSRect(x: max(16, b.width - sliderWidth - 20), y: 7, width: sliderWidth, height: 18)
+        thumbnailSizeLabel.frame = NSRect(x: max(8, thumbnailSizeSlider.frame.minX - 80), y: 8, width: 74, height: 16)
         filterBar.needsLayout = true
     }
 
@@ -757,12 +792,20 @@ public final class AssetGridController: NSViewController, NSCollectionViewDataSo
         }
     }
 
+    @objc private func thumbnailSizeChanged(_ sender: NSSlider) {
+        UserDefaults.standard.set(sender.doubleValue, forKey: Self.sizePreference)
+        resizeSettledAt = ProcessInfo.processInfo.systemUptime + 0.2
+        lastWanted = []
+        updateMetrics()
+        scheduleThumbnailReconcile()
+    }
+
     private func updateMetrics() {
         guard isViewLoaded else { return }
         let width = collectionView.bounds.width > 1
             ? collectionView.bounds.width
             : max(1, view.bounds.width)
-        let m = GridLayout.metrics(forWidth: width)
+        let m = GridLayout.metrics(forWidth: width, preferredWidth: CGFloat(thumbnailSizeSlider.doubleValue))
         guard m != metrics else { return }
         metrics = m
         flow.itemSize = m.itemSize
@@ -956,7 +999,7 @@ public final class AssetGridController: NSViewController, NSCollectionViewDataSo
         reconcileWork = work
         // One frame of coalescing: a live scroll fires this dozens of times per second and the
         // answer only changes when the visible *row range* changes.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.04, resizeSettledAt - ProcessInfo.processInfo.systemUptime), execute: work)
     }
 
     /// Visible items plus exactly one row either side (006 §5: prefetch is "visible + one row",
@@ -988,7 +1031,7 @@ public final class AssetGridController: NSViewController, NSCollectionViewDataSo
               cell.cardView.asset?.id == id else { return }
         // An in-flight request still carries the pre-edit key. Letting it land after the new one
         // would repaint the old frame, so it is cancelled before the re-request.
-        thumbRequests[index]?.cancel()
+        thumbRequests[index]?.cancel(preservingStartedWork: false)
         thumbRequests.removeValue(forKey: index)
         applyThumbnail(to: cell, index: index, asset: session.assets[index])
     }

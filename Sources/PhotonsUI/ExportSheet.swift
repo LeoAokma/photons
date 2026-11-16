@@ -49,22 +49,25 @@ public enum UIExportError: LocalizedError {
 public enum UIExportRenderer {
 
     public static func render(item: ExportItem, preset: ExportPreset,
-                              native: ImageSize?) throws -> DisplayImage {
+                              native: ImageSize?, deferResampling: Bool = false) throws -> DisplayImage {
         guard let url = item.sourceURL else { throw UIExportError.noSourceFile(item.name) }
         let edit = item.edit ?? .neutral
         let decoder = try RAWDecoder()
+        let isRAW = UIExportSource.isRAW(url)
 
         let source: ImageSize
         if let native, native.width > 0, native.height > 0 {
             source = native
         } else {
-            let probe = try decoder.probe(url)
-            source = ImageSize(width: probe.nativeWidth, height: probe.nativeHeight)
+            source = try UIExportSource.size(at: url)
         }
 
         let content = edit.geometry.outputPixels(in: source)
         let scale = preset.renderScale(content: content)
         let decodeScale = decodeScaleLadder(scale)
+        // The social slicer owns the final resampling algorithm. Keep the decoded resolution
+        // for that caller instead of first shrinking through the graph's regular resize stage.
+        let renderScale = deferResampling ? 1 : scale / Double(decodeScale)
         // 194: the export is the **settled** picture, so it develops at the document's own balance —
         // the same development the loupe settles on — and the graph is told the buffer already carries
         // it (S1 identity below). Exporting the as-shot buffer with an S1 gain instead would ship the
@@ -76,10 +79,11 @@ public enum UIExportRenderer {
         // showed the adjusted ones. The export must ask for the document's development, not a subset.
         let inputs = edit.decodeInputs
         let exportWhiteBalance = inputs.whiteBalance
-        let decoded = try decoder.decode(url, options: DecodeOptions(decoderVersion: inputs.decoderVersion,
+        let decoded = try isRAW ? decoder.decode(url, options: DecodeOptions(decoderVersion: inputs.decoderVersion,
                                                                     scale: decodeScale,
                                                                     whiteBalance: exportWhiteBalance,
                                                                     detail: inputs.detail))
+            : UIExportSource.decodeRaster(url, scale: decodeScale)
 
         let identity = "export|\(item.id)|v\(decoded.decoderVersion)"
             + String(format: "|s%.4f", decodeScale)
@@ -95,7 +99,7 @@ public enum UIExportRenderer {
         //     20 × the export's own working set.
         let graph = try RenderGraph(input: RenderInput(image: decoded, identity: identity,
                                                       sourceURL: url,
-                                                      whiteBalance: exportWhiteBalance),
+                                                      whiteBalance: isRAW ? exportWhiteBalance : .asShot),
                                     textureRetention: .none)
         defer { graph.releaseAllTextures() }
         // 113 — HDR export is **one** render of the HDR frame; the SDR base is a projection of it.
@@ -106,7 +110,7 @@ public enum UIExportRenderer {
         // moment the SDR side grew a real tone map (112). Now both halves come from one frame.
         if preset.isHDR {
             let hdr = RenderOptions(canvas: nil,
-                                    scale: scale / Double(decodeScale),
+                                    scale: renderScale,
                                     display: DisplayOptions(primaries: preset.colorSpace,
                                                             bitDepth: preset.effectiveBitDepth,
                                                             headroom: 1,
@@ -126,7 +130,7 @@ public enum UIExportRenderer {
         // which is the byte-identical hard clamp.
         if preset.appliesSDRToneMap {
             let linearOptions = RenderOptions(canvas: nil,
-                                              scale: scale / Double(decodeScale),
+                                              scale: renderScale,
                                               display: DisplayOptions(primaries: preset.colorSpace,
                                                                       bitDepth: preset.effectiveBitDepth,
                                                                       headroom: 1,
@@ -140,7 +144,7 @@ public enum UIExportRenderer {
                                                   toneMap: preset.sdrToneMapping == .standard ? .standard:.global)
         }
         let options = RenderOptions(canvas: nil,
-                                    scale: scale / Double(decodeScale),
+                                    scale: renderScale,
                                     display: DisplayOptions(primaries: preset.colorSpace,
                                                             bitDepth: preset.effectiveBitDepth,
                                                             headroom: 1),
@@ -701,7 +705,29 @@ public final class ExportSheetModel {
         var out = preset
         if out.sizingMode == .none { out.longEdge = nil }
         if !out.isHDR { out.sdrToneMapping = .standard }
+        if usesLinearDNG { out.watermarkText = "" }
         return out
+    }
+
+    /// Complete selection only: a partial dimension list must never understate a batch's size.
+    public var estimatedFileSize: ExportFileSizeEstimate? {
+        guard selectionCount > 0, selectionContents.count == selectionCount else { return nil }
+        return ExportFileSizeEstimator.estimate(contents: selectionContents, preset: effectivePreset, linearDNG: usesLinearDNG)
+    }
+
+    private var rememberedWatermarkText = "Photons"
+    public var watermarkEnabled: Bool { !usesLinearDNG && !preset.watermarkText.isEmpty }
+    public var canChooseWatermark: Bool { phase != .running && !usesLinearDNG }
+    public var canEditWatermark: Bool { canChooseWatermark && watermarkEnabled }
+
+    public func setWatermarkEnabled(_ enabled: Bool) {
+        guard canChooseWatermark else { return }
+        if enabled {
+            if preset.watermarkText.isEmpty { preset.watermarkText = rememberedWatermarkText }
+        } else {
+            if !preset.watermarkText.isEmpty { rememberedWatermarkText = preset.watermarkText }
+            preset.watermarkText = ""
+        }
     }
 
     /// 206 — the output pixel size for one crop, through the same `ExportSizing` + gain-map trim the
@@ -1710,16 +1736,23 @@ public struct ExportSheetView: View {
                 value: { EmptyView() },
                 unit: { EmptyView() },
                 accessory: { EmptyView() })
-            Group {
             ExportRowGridRow(
                 rowID: "export.watermark.text",
                 label: { rowLabel(L10n.tr("454aca5e7137")) },
                 control: {
                     HStack {
-                        Picker(L10n.tr("aa9f217c8186"), selection: Binding(get:{ !model.preset.watermarkText.isEmpty },set:{ model.preset.watermarkText = $0 ? "Photons" : "" })) {
-                            Text(L10n.tr("484d55613910")).tag(false); Text(L10n.tr("14b69bd6eeb0")).tag(true)
-                        }.labelsHidden().frame(width:90)
-                        TextField(L10n.tr("454aca5e7137"), text: $model.preset.watermarkText)
+                        Picker(L10n.tr("aa9f217c8186"), selection: Binding(get: { model.watermarkEnabled }, set: model.setWatermarkEnabled)) {
+                            Text(L10n.tr("484d55613910")).tag(false)
+                            Text(L10n.tr("14b69bd6eeb0")).tag(true).disabled(model.usesLinearDNG)
+                        }
+                        .pickerStyle(.menu).labelsHidden().frame(width: 90)
+                        .disabled(!model.canChooseWatermark)
+                        .accessibilityIdentifier("export.watermark.mode")
+                        .help(model.usesLinearDNG ? L10n.tr("export.watermark.dngHint") : L10n.tr("aa9f217c8186"))
+                        TextField(L10n.tr("454aca5e7137"), text: Binding(
+                            get: { model.usesLinearDNG ? "" : model.preset.watermarkText },
+                            set: { model.preset.watermarkText = $0 }))
+                            .disabled(model.phase == .running || model.usesLinearDNG)
                     }
                         .textFieldStyle(.roundedBorder)
                         .exportControlFont("export.watermark.text", kind: .textField)
@@ -1744,7 +1777,7 @@ public struct ExportSheetView: View {
                     .exportControlFont("export.watermark.position", kind: .picker)
                     .frame(maxWidth: ExportRowGrid.menuWidth, alignment: .leading)
                     .accessibilityIdentifier("export.watermark.position")
-                    .disabled(model.phase == .running)
+                    .disabled(!model.canEditWatermark)
                 },
                 value: { EmptyView() },
                 unit: { EmptyView() },
@@ -1752,13 +1785,19 @@ public struct ExportSheetView: View {
             // 322 —— 水印的三件事在一段里，顺序：文字 → 位置 → 不透明度。
             exportSliderRow(label: L10n.tr("a53d909714ae"), value: model.preset.watermarkOpacity,
                             range: 0 ... 100, format: "%.0f", decimals: 0,
-                            unit: "%", enabled: model.phase != .running,
+                            unit: "%", enabled: model.canEditWatermark,
                             axID: "export.watermark.opacity") { typed in
                 // 288 —— 滑杆连续，5 % 的量化在写入路径上。
                 let quantized = (typed / 5).rounded() * 5
                 model.preset.watermarkOpacity = min(100, max(0, quantized))
             }
-            }.disabled(model.usesLinearDNG)
+            if model.usesLinearDNG {
+                Text(L10n.tr("export.watermark.dngHint"))
+                    .font(.system(size: ExportRowGrid.Font.hint))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("export.watermark.disabledHint")
+            }
         }
     }
 
@@ -1826,17 +1865,18 @@ public struct ExportSheetView: View {
     /// 302 §2A —— 摘要行 22 / 按钮 28，**同一条水平带**（中心差 ≤ 1 pt），左右都是 20 pt padding。
     private var footer: some View {
         HStack(spacing: 10) {
-            Text(model.footerStatus)
-                .font(.system(size: ExportRowGrid.Font.footer))
-                .foregroundStyle(model.errorText == nil
-                                 ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.red))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(model.footerStatus)
-                .frame(height: ExportRowGrid.footerHeight)
-                .background(ExportRowGridProbeHost(kind: .summary, rowID: "export.footer.summary"))
-                .background(ExportLayoutProbeHost(kind: .status))
-                .frame(height: ExportRowGrid.buttonHeight)
+            VStack(alignment: .leading, spacing: 3) {
+                ExportFileSizeLabel(estimate: model.estimatedFileSize)
+                if model.phase != .idle || model.errorText != nil {
+                    Text(model.footerStatus)
+                        .font(.system(size: ExportRowGrid.Font.footer))
+                        .foregroundStyle(model.errorText == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.red))
+                        .lineLimit(1).truncationMode(.middle).help(model.footerStatus)
+                }
+            }
+            .frame(minHeight: ExportRowGrid.footerHeight, alignment: .leading)
+            .background(ExportRowGridProbeHost(kind: .summary, rowID: "export.footer.summary"))
+            .background(ExportLayoutProbeHost(kind: .status))
             Spacer(minLength: 8)
             HStack(alignment: .center, spacing: 8) {
                 ForEach(model.footerItems) { item in
@@ -2044,7 +2084,7 @@ public struct ExportSheetView: View {
                 if let picker {
                     picker
                 } else if showsSlider {
-                    Slider(value: Binding(get: { value }, set: write), in: range)
+                    AdjustmentSlider(value: Binding(get: { value }, set: write), in: range)
                         .controlSize(.small)
                         .frame(minWidth: ExportRowGrid.sliderWidth, maxWidth: .infinity)
                         .background(ExportSliderRowProbeHost(kind: .slider, rowID: axID))
@@ -2173,6 +2213,8 @@ public final class ExportSheetController: NSObject {
     /// re-capture deliberately.
     public private(set) var items: [ExportItem] = []
     private var natives: [String: ImageSize] = [:]
+    private var sizeProbeGeneration = UUID()
+    private let sizeProbeQueue = DispatchQueue(label: "Photons.exportDimensions", qos: .userInitiated)
 
     public init(session: CatalogSession, outputDirectory: URL? = nil) {
         self.session = session
@@ -2281,6 +2323,29 @@ public final class ExportSheetController: NSObject {
         // never a thumbnail), in selection order so "第一张" is the same picture the sheet names.
         model.selectionNatives = items.compactMap { sizes[$0.id] }
         model.selectionCount = items.count
+        sizeProbeGeneration = UUID()
+        let generation = sizeProbeGeneration
+        let capturedItems = items
+        let missing = capturedItems.filter { sizes[$0.id] == nil && $0.sourceURL != nil }
+        guard !missing.isEmpty else { return }
+        sizeProbeQueue.async { [weak self] in
+            var found: [String: ImageSize] = [:]
+            for item in missing {
+                guard let url = item.sourceURL else { continue }
+                let access = FileAccessStore.shared.access(to: url)
+                found[item.id] = try? UIExportSource.size(at: access.url)
+                withExtendedLifetime(access) {}
+            }
+            let resolved = found
+            DispatchQueue.main.async {
+                guard let self, self.sizeProbeGeneration == generation else { return }
+                self.natives.merge(resolved) { _, new in new }
+                self.model.selectionNatives = capturedItems.compactMap { self.natives[$0.id] }
+                self.model.selectionContents = capturedItems.compactMap { item in
+                    self.natives[item.id].map { (item.edit ?? .neutral).geometry.outputPixels(in: $0) }
+                }
+            }
+        }
     }
 
     private func chooseDirectory() {

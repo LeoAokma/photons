@@ -849,56 +849,42 @@ public final class HistogramCardView: NSView {
         lastCeilingStops = 0
         drawAxis(axis)
 
-        // **Three series, added like light** (403). The owner's rule: 「直方图取消白色线，只绘制 RGB，RGB
-        // 重叠部分的颜色按光叠加展示——即都有的话白色，R+G 就是黄色」. So the luma outline is gone from the
-        // *paint* (its bins, its clipping numbers and the pointer readout are all untouched) and the three
-        // colour curves are filled with `plusLighter`, each at full strength: red + green = yellow, and all
-        // three = white. Coefficients below 1.0 would add up to grey instead, which is not what was asked.
-        //
-        // The **transparency layer is load-bearing, not an optimisation**: `plusLighter` on the card would
-        // mix the curves with the bed, so the sum would depend on the appearance (and a single channel would
-        // wash out on a light bed). Inside a layer the sums start from transparent black — the overlap
-        // colour is a function of the data only — and the finished layer is composited over the bed once.
-        // Nothing opaque goes in the layer: the bed, the grid and the ticks are painted *before* it and the
-        // axis chrome *after* it.
-        //
-        // Both segments are still **one** path per series, so the curve crosses the SDR/tail boundary
-        // without a seam.
+        // Add RGB in a bounded sRGB bitmap, before converting to the display's color space.
+        // Adding wide-gamut/extended colors directly in the window can clip negative components
+        // independently and turn the neutral overlap into an EDR pink highlight.
         lastDrawnSeries = 0
         lastDrawnBins = 0
         lastDrawnHDRBins = 0
         if let histogram {
             let bins = histogram.binCount
-            let series: [(channel: Histogram.Channel, color: NSColor)] = [
-                (.red, NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)),
-                (.green, NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)),
-                (.blue, NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)),
-            ]
-            if let context = NSGraphicsContext.current {
-                let cg = context.cgContext
-                cg.saveGState()
-                cg.beginTransparencyLayer(auxiliaryInfo: nil)
-                context.compositingOperation = .plusLighter
-                for (channel, color) in series {
+            let scale = window?.backingScaleFactor ?? 2
+            if let composite = HistogramRGBComposite.context(size: axis.plot.size, scale: scale) {
+                composite.translateBy(x: -axis.plot.minX, y: -axis.plot.minY)
+                composite.setBlendMode(.plusLighter)
+                let channels: [Histogram.Channel] = [.red, .green, .blue]
+                for (index, channel) in channels.enumerated() {
                     let c = histogram[channel]
                     let points = HistogramCardFormat.points(c, binCount: bins, axis: axis,
                                                             peak: HistogramCardFormat.scalePeak(c))
                     guard points.count > 2 else { continue }
-                    let path = NSBezierPath()
-                    path.move(to: points[0])
-                    for p in points.dropFirst() { path.line(to: p) }
-                    path.close()
-                    color.setFill()
-                    path.fill()
+                    let path = CGMutablePath()
+                    path.addLines(between: points)
+                    path.closeSubpath()
+                    composite.setFillColor(red: index == 0 ? 1 : 0,
+                                           green: index == 1 ? 1 : 0,
+                                           blue: index == 2 ? 1 : 0, alpha: 1)
+                    composite.addPath(path)
+                    composite.fillPath()
                     lastDrawnSeries += 1
                     lastDrawnBins = max(lastDrawnBins, points.count - 2)
                     lastDrawnHDRBins = max(lastDrawnHDRBins, c.hdrBins.count)
                 }
-                // Back to sourceOver *before* the layer is flattened: the layer as a whole goes onto the
-                // bed normally, so only the curves inside it were added to each other.
-                context.compositingOperation = .sourceOver
-                cg.endTransparencyLayer()
-                cg.restoreGState()
+                if let image = composite.makeImage(), let destination = NSGraphicsContext.current?.cgContext {
+                    destination.saveGState()
+                    destination.setBlendMode(.normal)
+                    destination.draw(image, in: axis.plot)
+                    destination.restoreGState()
+                }
             }
             // The 0.999 / 0.001 thresholds as tick marks: they are what the numbers below mean.
             drawThresholdTicks(in: axis)
@@ -1575,5 +1561,19 @@ private struct HistogramCardHost: NSViewRepresentable {
         view.onToggleHighlightWarning = onToggle
         if loupe?.pointerReadoutTarget !== view { loupe?.pointerReadoutTarget = view }
         view.needsDisplay = true
+    }
+}
+
+/// The bounded intermediate prevents extended-range additive blending in an HDR window.
+enum HistogramRGBComposite {
+    static func context(size: CGSize, scale: CGFloat) -> CGContext? {
+        guard size.width > 0, size.height > 0,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: Int(ceil(size.width * scale)),
+                                      height: Int(ceil(size.height * scale)), bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.scaleBy(x: scale, y: scale)
+        return context
     }
 }

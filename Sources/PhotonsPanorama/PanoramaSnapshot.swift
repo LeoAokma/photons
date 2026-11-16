@@ -49,6 +49,7 @@ public struct PanoramaSnapshot: Codable {
             return state
         }
     }
+    var warps:[PanoramaTransform]?
     var version=1
     var sources:[PanoramaSource],origins:[CGPoint],size:CGSize,whiteBalance:[Float]?
     var gains:[Double],ownership:[Int16],masks:[Data],maskWidth:Int,maskHeight:Int
@@ -57,13 +58,16 @@ public struct PanoramaSnapshot: Codable {
         guard plan.isRegistered else {throw PanoramaFailure(L10n.tr("64a9879edbe2"))}
         let context=CIContext(options:[.workingColorSpace:PanoramaEngine.linearSpace,.cacheIntermediates:false])
         defer {context.clearCaches()}
+        version=plan.warps == nil ? 1:2
+        warps=plan.warps
         sources=plan.sources;origins=plan.origins;size=plan.size;whiteBalance=plan.whiteBalance.map {[$0.0,$0.1]}
         gains=plan.gains;ownership=plan.ownership;masks=plan.blendMasks;maskWidth=plan.maskWidth;maskHeight=plan.maskHeight
         photometry=plan.photometricGains.map {Image($0,width:64,height:64,context:context)}
         options=plan.options;lcc=plan.lccState.map {LCC($0,context:context)}
     }
     public func plan() throws->PanoramaPlan {
-        guard version==1,(1...16).contains(sources.count),origins.count==sources.count,gains.count==sources.count,
+        guard (version==1 && warps==nil || version==2 && warps != nil),(1...16).contains(sources.count),origins.count==sources.count,gains.count==sources.count,
+              warps == nil || (warps!.count==sources.count && warps!.allSatisfy(\.isValid)),
               maskWidth>0,maskHeight>0,maskWidth<=8192,maskHeight<=8192,
               ownership.count==maskWidth*maskHeight,masks.isEmpty || (masks.count==sources.count && masks.allSatisfy({$0.count==maskWidth*maskHeight*4})),
               lcc == nil || (lcc!.gains.count==sources.count && lcc!.fixed.count==sources.count),
@@ -73,7 +77,7 @@ public struct PanoramaSnapshot: Codable {
         var plan=PanoramaPlan(sources:sources,origins:origins,size:size,registrationScores:[],whiteBalance:wb,gains:gains,
             ownership:ownership,blendMasks:masks,photometricGains:try photometry.map {try $0.image()},maskWidth:maskWidth,maskHeight:maskHeight,
             optical:OpticalEstimate(center:nil,confidence:0,explanation:"",occludedEdges:[]),options:options,previewScale:1,previewImages:[],preview:nil)
-        plan.lccState=try lcc?.state();return plan
+        plan.warps=warps;plan.lccState=try lcc?.state();return plan
     }
     public var sourceURLs:[URL] {sources.map(\.url)}
 }

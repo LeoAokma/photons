@@ -1214,7 +1214,7 @@ public enum HistogramMatte372 {
 /// the pre-372 arithmetic and bytes are untouched there.
 private struct HistogramCoverage {
     /// A value no photograph can hold (see `histogram_matte_sample()` in the kernel).
-    static let excludedSample = Float16(-65504)
+    static let excludedSample = HistogramSnapshot.excludedSample
 
     let canvas: SIMD2<Float>
     let planes: [SIMD4<Float>]

@@ -32,12 +32,13 @@ let package = Package(
         // SwiftPM has no dependable .metal build step here, and the Metal toolchain component is a
         // network download that has already failed on this machine (see the session-bus pitfalls).
         .target(name: "PhotonsLocalization",resources:[.process("Resources")]),
-        .target(name: "PhotonsCore", dependencies:["PhotonsLocalization"], resources: [.copy("Kernels")]),
+        .target(name: "PhotonsImageCodecs"),
+        .target(name: "PhotonsCore", dependencies:["PhotonsLocalization", "PhotonsImageCodecs"], resources: [.copy("Kernels")]),
         .target(name: "PhotonsExport", dependencies: ["PhotonsCore","PhotonsLocalization","PhotonsPanorama"]),
         .target(name: "PhotonsFileAccess"),
         .target(name: "PhotonsJobs", dependencies:["PhotonsPanorama","PhotonsExport","PhotonsFileAccess","PhotonsLocalization"]),
         .executableTarget(name:"PhotonsPanoramaWorker", dependencies:["PhotonsJobs","PhotonsLocalization"]),
-        .target(name: "PhotonsExtensions", dependencies: ["PhotonsFileAccess","PhotonsLocalization"]),
+        .target(name: "PhotonsExtensions", dependencies: ["PhotonsFileAccess","PhotonsLocalization","PhotonsImageCodecs"]),
         .target(name: "PhotonsPanorama", dependencies: ["PhotonsCore", "PhotonsExtensions", "PhotonsFileAccess", "PhotonsLocalization"], resources: [.copy("Profiles")]),
         .target(name: "PhotonsCatalog", dependencies: ["PhotonsLocalization",
             "PhotonsCore",

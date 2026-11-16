@@ -1,3 +1,4 @@
+import PhotonsCore
 import PhotonsLocalization
 import Foundation
 import CoreImage
@@ -135,14 +136,15 @@ public enum LCCProfileBuilder {
     static func linearImage(source:PanoramaSource,scale:Double,whiteBalance:(Float,Float)?=nil) throws -> CIImage {
         try source.checkUnchanged()
         let output:CIImage
-        if source.isRAW,let raw=CIRAWFilter(imageURL:source.url) {
+        if source.isRAW,let initial=CIRAWFilter(imageURL:source.url) {
+            let raw=try LinearDNGCompatibility.filter(for:source.url,initial:initial)
             raw.isLensCorrectionEnabled=false;raw.isGamutMappingEnabled=false
             raw.boostAmount=0;raw.boostShadowAmount=0;raw.localToneMapAmount=0
             raw.exposure=0;if !source.camera.hasPrefix("Photons Linear") {raw.baselineExposure=0};raw.shadowBias=0;raw.sharpnessAmount=0
             raw.luminanceNoiseReductionAmount=0;raw.colorNoiseReductionAmount=0
             if !source.camera.hasPrefix("Photons Linear") {raw.neutralTemperature=whiteBalance?.0 ?? 6500;raw.neutralTint=whiteBalance?.1 ?? 0};raw.scaleFactor=Float(scale)
             guard let image=raw.outputImage else {throw PanoramaFailure(L10n.tr("12edd19f4454" , String(describing: (source.url.lastPathComponent))))};output=image
-        } else if let image=CIImage(contentsOf:source.url,options:[.applyOrientationProperty:true]) {output=image}
+        } else if let image=CIImage(contentsOf:source.url,options:[.applyOrientationProperty:true,.expandToHDR:true]) {output=image}
         else {throw PanoramaFailure(L10n.tr("12edd19f4454" , String(describing: (source.url.lastPathComponent))))}
         let normal=output.transformed(by:CGAffineTransform(translationX:-output.extent.minX,y:-output.extent.minY))
         return normal.transformed(by:CGAffineTransform(scaleX:source.size.width*scale/normal.extent.width,y:source.size.height*scale/normal.extent.height))

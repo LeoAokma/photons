@@ -1,3 +1,4 @@
+import PhotonsCore
 import PhotonsLocalization
 import Foundation
 import CoreGraphics
@@ -82,7 +83,8 @@ public struct PanoramaSource: Codable {
         let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
         camera = tiff[kCGImagePropertyTIFFModel as String] as? String ?? L10n.tr("1e3818fd0c54")
         var identified = SensorSize.identify(properties: props)
-        if isRAW, let f = CIRAWFilter(imageURL: url) {
+        if isRAW, let initial = CIRAWFilter(imageURL: url) {
+            let f = try LinearDNGCompatibility.filter(for: url, initial: initial)
             f.isLensCorrectionEnabled = false
             guard let image = f.outputImage else { throw PanoramaFailure(L10n.tr("ae0e8fc37498" , String(describing: (url.lastPathComponent)))) }
             size = image.extent.size
@@ -121,12 +123,12 @@ public struct PanoramaPositionReference:Equatable {
     public let positionMM:CGPoint
     public init(sourceIndex:Int,positionMM:CGPoint) {self.sourceIndex=sourceIndex;self.positionMM=positionMM}
     public func position(of index:Int,in plan:PanoramaPlan,sensor:SensorSize)->CGPoint {
-        let a=plan.sourceRect(sourceIndex),b=plan.sourceRect(index)
+        let a=plan.sensorRect(sourceIndex),b=plan.sensorRect(index)
         return CGPoint(x:positionMM.x+(b.midX-a.midX)*sensor.width/a.width,
                        y:positionMM.y-(b.midY-a.midY)*sensor.height/a.height)
     }
     public func profileOffset(in plan:PanoramaPlan,sensor:SensorSize)->CGPoint {
-        let r=plan.sourceRect(sourceIndex)
+        let r=plan.sensorRect(sourceIndex)
         return CGPoint(x:(r.midX-plan.size.width/2)*sensor.width/r.width-positionMM.x,
                        y:(plan.size.height/2-r.midY)*sensor.height/r.height-positionMM.y)
     }
@@ -145,6 +147,7 @@ public struct OpticalEstimate {
 /// only the Core Image compositor converts them to lower-left coordinates.
 public struct PanoramaPlan {
     public var isRegistered = true
+    public var warps: [PanoramaTransform]? = nil
     public let sources: [PanoramaSource]
     public let origins: [CGPoint]
     public let size: CGSize
@@ -172,8 +175,14 @@ public struct PanoramaPlan {
     public var outputSize: CGSize { lccState?.cropRect?.size ?? size }
 
     public var megapixels: Double { size.width * size.height / 1_000_000 }
+    public func sourcePoint(_ index:Int, panorama point:CGPoint) -> CGPoint {
+        if let inverse=warps?[index].inverse {return inverse.point(point)}
+        return CGPoint(x:point.x-origins[index].x,y:point.y-origins[index].y)
+    }
+    public func sensorRect(_ index:Int) -> CGRect {CGRect(origin:origins[index],size:sources[index].size)}
     public func sourceRect(_ index: Int, scale: Double = 1) -> CGRect {
-        CGRect(origin: origins[index], size: sources[index].size).applying(CGAffineTransform(scaleX: scale, y: scale))
+        let rect = warps?[index].bounds(sources[index].size) ?? CGRect(origin: origins[index], size: sources[index].size)
+        return rect.applying(CGAffineTransform(scaleX: scale, y: scale))
     }
 }
 

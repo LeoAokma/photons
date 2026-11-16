@@ -224,6 +224,7 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
         contextMenu.willOpen = { [weak self] in self?.prepareContextMenu() }
         contextMenu.onRemove = { [weak self] ids in self?.removeAssets(ids) }
         contextMenu.onRemoveAndDelete = { [weak self] ids in self?.removeAndDeleteAssets(ids) }
+        contextMenu.onReveal = { [weak self] ids in self?.session?.revealAssetsInFinder(ids) }
         contextMenu.onFindLost = { [weak self] ids in self?.findAndRelinkMissingAssets(ids) }
         // 照片列表也是「菜单入口」的一部分：选中几张 → 右键 → 加入相册（078 B10）。
         contextMenu.albumsProvider = { [weak self] ids in
@@ -993,7 +994,7 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
               cell.assetID == id else { return }
         // An in-flight request still carries the pre-edit key; cancel it so it cannot repaint the
         // old frame after the new one arrives.
-        thumbRequests[row]?.cancel()
+        thumbRequests[row]?.cancel(preservingStartedWork: false)
         thumbRequests.removeValue(forKey: row)
         applyThumbnail(to: cell, row: row, asset: session.assets[row])
     }
@@ -1430,6 +1431,12 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
 
         if let target = menuFolderTarget {
             menu.addItem(.separator())
+            if let url = session?.folderURL(rootID: target.rootID, path: target.path) {
+                let reveal = NSMenuItem(title: L10n.tr("1280364b7f84"), action: #selector(folderMenuReveal(_:)), keyEquivalent: "")
+                reveal.target = self
+                reveal.representedObject = url
+                menu.addItem(reveal)
+            }
             // 张数用 COUNT(*)：一个上万张的子树也必须立刻弹出菜单，不能为了标题先捞一遍 id。
             let count = session?.folderAssetCount(rootID: target.rootID, path: target.path) ?? 0
             let remove = NSMenuItem(title: FolderRemovalText.menuTitle(name: target.displayName, count: count),
@@ -1447,6 +1454,11 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
     // MARK: 文件夹的右键菜单（379 「从照片库移除此文件夹…」）
 
     /// The words this verb shows — one copy, so the menu title and the alert cannot disagree.
+    @objc private func folderMenuReveal(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     public enum FolderRemovalText {
         public static let confirmButton = L10n.tr("6135d4159e89")
         public static let cancelButton = L10n.tr("2cd0f3be8738")

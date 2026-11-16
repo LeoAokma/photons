@@ -28,16 +28,17 @@ public final class SettingsWindowController: NSWindowController {
 }
 
 private enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, workspace, hdr, performance, libraries
+    case general, workspace, hdr, performance, libraries, cache
     var id: String { rawValue }
     var title: String {
-        switch self { case .general: return L10n.tr("835b700e028c"); case .libraries: return L10n.tr("df3be042e1cf"); case .workspace: return L10n.tr("37979829426b"); case .hdr: return L10n.tr("f02381de45eb"); case .performance: return L10n.tr("58d26314335d") }
+        switch self { case .cache: return L10n.tr("cache.title"); case .general: return L10n.tr("835b700e028c"); case .libraries: return L10n.tr("df3be042e1cf"); case .workspace: return L10n.tr("37979829426b"); case .hdr: return L10n.tr("f02381de45eb"); case .performance: return L10n.tr("58d26314335d") }
     }
     var symbol: String {
-        switch self { case .general: return "gearshape"; case .libraries: return "photo.stack"; case .workspace: return "rectangle.3.group"; case .hdr: return "sun.max"; case .performance: return "cpu" }
+        switch self { case .cache: return "internaldrive"; case .general: return "gearshape"; case .libraries: return "photo.stack"; case .workspace: return "rectangle.3.group"; case .hdr: return "sun.max"; case .performance: return "cpu" }
     }
     var subtitle: String {
         switch self {
+        case .cache: return L10n.tr("cache.subtitle")
         case .general: return L10n.tr("acb3664262f1")
         case .libraries: return L10n.tr("74ff79c4bef3")
         case .workspace: return L10n.tr("886ed0494986")
@@ -47,12 +48,24 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
     }
 }
 
-private struct SettingsView: View {
+enum GeneralSettingsTab { case preferences, cameraBodies, lenses }
+
+struct SettingsView: View {
     @State private var page: SettingsPage = .general
+    @State private var generalTab: GeneralSettingsTab
     @Bindable private var preferences = ApplicationPreferences.shared
     @State private var backdrop = CanvasBackdrop.current
     @State private var concurrency = ProcessingPreferences.thumbnailConcurrency
     private let deviceName = MTLCreateSystemDefaultDevice()?.name
+    private let cameraBodyLibrary: CameraBodyLibrary
+    private let lensLibrary: LCCProfileLibraryModel
+
+    init(generalTab: GeneralSettingsTab = .preferences, cameraBodyLibrary: CameraBodyLibrary = .shared,
+         lensLibrary: LCCProfileLibraryModel = .shared) {
+        _generalTab = State(initialValue: generalTab)
+        self.cameraBodyLibrary = cameraBodyLibrary
+        self.lensLibrary = lensLibrary
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -90,6 +103,7 @@ private struct SettingsView: View {
                         case .workspace: workspace
                         case .hdr: hdr
                         case .performance: performance
+                        case .cache: PreviewCacheSettingsView()
                         }
                     }.padding(.top, 20).padding(.bottom, 16)
                 }
@@ -106,11 +120,33 @@ private struct SettingsView: View {
 
     @AppStorage("photons.language") private var language = "zh-Hans"
     private var general:some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Picker(L10n.tr("835b700e028c"), selection: $generalTab) {
+                Text(L10n.tr("cameraBodies.generalTab")).tag(GeneralSettingsTab.preferences)
+                Text(L10n.tr("cameraBodies.title")).tag(GeneralSettingsTab.cameraBodies)
+                Text(L10n.tr("lensInfo.title")).tag(GeneralSettingsTab.lenses)
+            }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("settings.general.tabs")
+            switch generalTab {
+            case .preferences: generalOptions
+            case .cameraBodies: CameraBodySettingsView(library: cameraBodyLibrary)
+            case .lenses: LensInfoSettingsView(model: lensLibrary)
+            }
+        }
+    }
+    private var generalOptions:some View {
+        VStack(alignment:.leading,spacing:18) {
         group(L10n.tr("9f6fee1aba17")) {
             Picker(L10n.tr("da9054ac44be"),selection:$language) {
                 Text(L10n.tr("4eaa632ed776")).tag("zh-Hans");Text("English").tag("en")
             }.accessibilityIdentifier("settings.language")
             Text(L10n.tr("ee45ba7af403")).settingsHint()
+        }
+        group(L10n.tr("5467922dce50")) {
+            Picker(L10n.tr("settings.historyDepth"),selection:$preferences.historyDepth) {
+                ForEach(ApplicationPreferences.historyDepthOptions,id:\.self) {Text(L10n.tr("settings.historyCount",String($0))).tag($0)}
+            }.accessibilityIdentifier("settings.historyDepth")
+            Text(L10n.tr("settings.historyHint")).settingsHint()
+        }
         }
     }
     private var workspace: some View {

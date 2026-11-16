@@ -1,6 +1,7 @@
 import Foundation
 import ImageIO
 import PhotonsCore
+import PhotonsPanorama
 
 // MARK: - 107 · source metadata carried into the export
 //
@@ -170,7 +171,7 @@ public struct ExportMetadataContext {
             CGImageMetadataRegisterNamespaceForPrefix(metadata, "https://photons.app/ns/panorama/1.0/" as CFString,
                                                        "photonsPano" as CFString, nil)
             CGImageMetadataSetValueWithPath(metadata, nil, "photonsPano:Manifest" as CFString,
-                                            panoramaData.base64EncodedString() as CFString)
+                                            PanoramaMetadataPacket.string(panoramaData) as CFString)
         }
         // A source packet written by ImageIO carries the *source's* EXIF dimensions. The file we are
         // about to write has different ones (crop/scale), and ImageIO prefers the XMP over the

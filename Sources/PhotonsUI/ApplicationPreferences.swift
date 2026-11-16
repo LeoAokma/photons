@@ -52,8 +52,16 @@ public final class ApplicationPreferences {
         public static let processing = "photons.processingPolicy"
         public static let denoiseGPU = "photons.denoiseUseGPU"
         public static let reopenLibrary = "photons.reopenLastLibrary"
+        public static let historyDepth = "photons.historyDepth"
     }
     @ObservationIgnored private let defaults: UserDefaults
+    public static let historyDepthOptions = [10, 20, 50, 100]
+    public var historyDepth: Int {
+        didSet {
+            if !Self.historyDepthOptions.contains(historyDepth) { historyDepth = 20 }
+            persist(historyDepth, key: Key.historyDepth, changed: historyDepth != oldValue)
+        }
+    }
     public var appearance: WorkspaceAppearance {
         didSet { persist(appearance.rawValue, key: Key.appearance, changed: appearance != oldValue) }
     }
@@ -72,6 +80,8 @@ public final class ApplicationPreferences {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let depth = defaults.integer(forKey: Key.historyDepth)
+        historyDepth = Self.historyDepthOptions.contains(depth) ? depth : 20
         appearance = WorkspaceAppearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .dark
         hdrPreview = defaults.object(forKey: Key.hdrPreview) as? Bool ?? true
         processing = ProcessingPolicy(rawValue: defaults.string(forKey: Key.processing) ?? "") ?? .automatic

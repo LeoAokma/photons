@@ -147,7 +147,7 @@ private final class PanoramaWindowModel: ObservableObject {
                     self.lccSession=session;self.plan=result;self.selectLensProfile()
                     if let solution {
                         self.lccOffset=solution.offsetMM
-                        let r=result.sourceRect(0)
+                        let r=result.sensorRect(0)
                         self.estimatedReference=PanoramaPositionReference(sourceIndex:0,positionMM:CGPoint(
                             x:(r.midX-result.size.width/2)*sensor.width/r.width-solution.offsetMM.x,
                             y:(result.size.height/2-r.midY)*sensor.height/r.height-solution.offsetMM.y))
@@ -171,7 +171,7 @@ private final class PanoramaWindowModel: ObservableObject {
         let c=LCCAlignmentWindowController(plan:proposal ?? plan,session:session,offset:initialOffset ?? lccOffset,crop:cropToLCC,explanation:explanation) { [weak self] result,offset in
             guard self?.positionReference==nil else {return}
             self?.plan=result;self?.lccOffset=offset;self?.status=L10n.tr("b733a8d2ca5b")
-            let r=result.sourceRect(0)
+            let r=result.sensorRect(0)
             self?.estimatedReference=PanoramaPositionReference(sourceIndex:0,positionMM:CGPoint(
                 x:(r.midX-result.size.width/2)*session.sensor.width/r.width-offset.x,
                 y:(result.size.height/2-r.midY)*session.sensor.height/r.height-offset.y))
@@ -208,16 +208,7 @@ private final class PanoramaWindowModel: ObservableObject {
     }
     func refreshLCC() {
         lccCount = LCCPairingStore().records().filter { urls.contains($0.scene) }.count
-        queue.async { [weak self] in
-            do {
-                let store=LCCProfileStore();try store.installBundledProfile();let catalog=store.catalog()
-                DispatchQueue.main.async {
-                    self?.lensProfiles=catalog.profiles
-                    self?.profileStatus=catalog.issues.isEmpty ? L10n.tr("5af8232321e0") : catalog.issues.joined(separator:"\n")
-                    self?.selectLensProfile()
-                }
-            } catch { DispatchQueue.main.async { self?.profileStatus=error.localizedDescription } }
-        }
+        LCCProfileLibraryModel.shared.refresh()
     }
     func selectLensProfile() {
         UserDefaults.standard.set(selectedLensProfileID,forKey:"Photons.panorama.lensProfileID")
@@ -235,7 +226,11 @@ private final class PanoramaWindowModel: ObservableObject {
         self.plan=plan
     }
     func manageLCC(showProfiles:Bool = false) {
-        let controller = LCCWindowController(urls:urls,showProfiles:showProfiles)
+        if showProfiles {
+            LCCProfileLibraryWindowController.shared.open(select:UUID(uuidString:selectedLensProfileID))
+            return
+        }
+        let controller = LCCWindowController(urls:urls)
         controller.onClose = { [weak self] in self?.refreshLCC(); self?.lccWindow = nil }
         lccWindow = controller; controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
     }
@@ -295,7 +290,7 @@ private final class PanoramaWindowModel: ObservableObject {
         let profile=lensProfiles.first {$0.id.uuidString==selectedLensProfileID}
         let manifest=PanoramaManifest(plan:plan,profileID:profile?.id,profileName:profile?.name,
             offsetMM:positionReference != nil || estimatedReference != nil ? lccOffset:nil,
-            sensor:sensor,bodyOrientation:bodyOrientation)
+            sensor:sensor,bodyOrientation:bodyOrientation,cameraBody:cameraBody)
         let controller=PanoramaExportController(plan:plan,manifest:manifest)
         controller.onExported=onExported
         controller.onQueued={ [weak self] in self?.exportWindow=nil;self?.window?.close() }
@@ -306,10 +301,17 @@ private final class PanoramaWindowModel: ObservableObject {
 
 private struct PanoramaWorkspace: View {
     @ObservedObject var model: PanoramaWindowModel
+    @ObservedObject private var profileLibrary = LCCProfileLibraryModel.shared
     var body: some View {
         Group {
             if model.choosingMode { modeSelection }
             else { workspace }
+        }
+        .onReceive(profileLibrary.$profiles) { profiles in
+            model.lensProfiles=profiles;model.selectLensProfile()
+        }
+        .onReceive(profileLibrary.$error) { error in
+            model.profileStatus=error ?? L10n.tr("5af8232321e0")
         }
         .alert(L10n.tr("8b92765d86d0"),isPresented:Binding(get:{ model.error != nil },set:{ if !$0 { model.error = nil } })) {
             Button(L10n.tr("f867f3417859"),role:.cancel) { model.error = nil }
@@ -378,9 +380,7 @@ private struct PanoramaWorkspace: View {
             Text(L10n.tr("e0a7acc067fd")).font(.title2.bold())
             VStack(alignment:.leading,spacing:6) {
                 Text(L10n.tr("dcd3ee9cec9b")).font(.headline)
-                Picker(L10n.tr("ee38b80c37d9"),selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})) {
-                    ForEach(PanoramaCameraBody.allCases) {Text($0.name).tag($0)}
-                }.labelsHidden()
+                CameraBodyPicker(selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})).labelsHidden()
                 PanoramaBodyOrientationPicker(cameraBody:model.cameraBody,selection:Binding(get:{model.bodyOrientation},set:{model.setBodyOrientation($0)}))
                 Text(model.cameraBody.travel(at:model.bodyOrientation).summary).font(.caption).foregroundStyle(.secondary)
             }
@@ -453,7 +453,7 @@ private struct PanoramaWorkspace: View {
                 Button(L10n.tr("45d14f0c4f3d")) {model.solvePosition()}.disabled(model.positionReference != nil)
                 Text(L10n.tr("3b0da2de91ba")).font(.caption)
                 HStack {Text(L10n.tr("4626a2810ff9"));Spacer();Text(String(format:"%+.2f EV",model.exposureEV)).monospacedDigit()}
-                Slider(value:$model.exposureEV,in:-4...4,step:0.05,onEditingChanged:{editing in if !editing {model.changeLCC()}})
+                AdjustmentSlider(value:$model.exposureEV,in:-4...4,step:0.05,onEditingChanged:{editing in if !editing {model.changeLCC()}})
                 Toggle(L10n.tr("fa9bce35de33"),isOn:$model.automaticLCCWB).toggleStyle(.checkbox)
                     .onChange(of:model.automaticLCCWB) {_,value in
                         if !value,let wb=model.plan?.lccState?.whiteBalance {model.lccTemperature=Double(wb.0);model.lccTint=Double(wb.1)}
@@ -481,7 +481,7 @@ private struct PanoramaWorkspace: View {
             Toggle(L10n.tr("dcc5dc5e40cb"),isOn:$model.options.avoidMotion).onChange(of:model.options.avoidMotion) { _,_ in model.refresh() }
             Toggle(L10n.tr("f332d17f7e09"),isOn:$model.options.matchExposure).onChange(of:model.options.matchExposure) { _,_ in model.refresh() }
             Text(L10n.tr("802a18c71f09")).font(.callout)
-            Slider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })
+            AdjustmentSlider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })
             Picker(L10n.tr("f55043412c64"),selection:$model.options.preferredSource) {
                 Text(L10n.tr("db9773faa309")).tag(-1)
                 ForEach(Array(model.urls.enumerated()),id:\.offset) { i,url in Text(url.lastPathComponent).tag(i) }
@@ -534,66 +534,15 @@ private struct PanoramaPositionOverview: View {
     let cameraBody:PanoramaCameraBody
     let bodyOrientation:PanoramaBodyOrientation
     let onSelect:(Int)->Void
-    private let colors: [Color] = [.cyan,.purple,.green,.pink,.yellow,.blue]
-    private func geometry(_ canvas:CGSize)->(photos:[CGRect],body:CGRect?,factor:Double,offset:CGPoint) {
-        let photos:[CGRect]
-        var body:CGRect?
-        if let sensor {
-            photos=plan.sources.indices.map {i in
-                let r=plan.sourceRect(i)
-                let c=reference?.position(of:i,in:plan,sensor:sensor) ?? CGPoint(
-                    x:(r.midX-plan.size.width/2)*sensor.width/r.width,
-                    y:(plan.size.height/2-r.midY)*sensor.height/r.height)
-                return CGRect(x:c.x-sensor.width/2,y:-c.y-sensor.height/2,width:sensor.width,height:sensor.height)
-            }
-            // The range is a frame footprint swept over the entire camera travel. Without a
-            // measured reference, center its bounding rectangle on the panorama, not the axis.
-            body=cameraBody.travel(at:bodyOrientation).coverage(sensor:sensor,centered:reference==nil)
-        } else {photos=plan.sources.indices.map {plan.sourceRect($0)}}
-        var bounds=photos.reduce(CGRect.null) {$0.union($1)}
-        if let body {bounds=bounds.union(body)}
-        let factor=min((canvas.width-28)/bounds.width,(canvas.height-40)/bounds.height)
-        let offset=CGPoint(x:(canvas.width-bounds.width*factor)/2-bounds.minX*factor,
-                           y:(canvas.height-bounds.height*factor)/2-bounds.minY*factor+4)
-        func display(_ r:CGRect)->CGRect {CGRect(x:r.minX*factor+offset.x,y:r.minY*factor+offset.y,width:r.width*factor,height:r.height*factor)}
-        return (photos.map(display),body.map(display),factor,offset)
-    }
-    var body: some View {
-        GeometryReader { proxy in
-            let layout=geometry(proxy.size)
-            Canvas { context, canvas in
-                if let body=layout.body {
-                    context.fill(Path(body),with:.color(.primary.opacity(0.025)))
-                    context.stroke(Path(body),with:.color(.primary.opacity(0.65)),style:StrokeStyle(lineWidth:1.2,dash:[5,3]))
-                    context.draw(Text(L10n.tr("fe8af84b5fd4" , String(describing: (cameraBody.name)), String(describing: (bodyOrientation.rawValue)))).font(.system(size:9)).foregroundColor(.secondary),at:CGPoint(x:body.midX,y:body.minY-9))
-                }
-                for i in plan.sources.indices {
-                    let rect=layout.photos[i],color=colors[i%colors.count]
-                    let position=sensor.flatMap {reference?.position(of:i,in:plan,sensor:$0)}
-                    let outside=position.map {!cameraBody.travel(at:bodyOrientation).contains($0)} ?? false
-                    context.fill(Path(rect),with:.color(color.opacity(0.14)))
-                    context.stroke(Path(rect),with:.color(outside ? .orange:color),lineWidth:reference?.sourceIndex==i ? 2.5:1.2)
-                    context.draw(Text(plan.sources[i].url.lastPathComponent).font(.system(size:10,weight:.medium)).foregroundColor(.primary),at:CGPoint(x:rect.midX,y:rect.midY))
-                    if let sensor {
-                        let r=plan.sourceRect(i)
-                        let delta=CGPoint(x:(r.midX-plan.size.width/2)/r.width*sensor.width,y:(plan.size.height/2-r.midY)/r.height*sensor.height)
-                        let c=position ?? delta
-                        let coordinates=String(format:position == nil ? "Δ %+.1f, %+.1f mm":"X %+.1f · Y %+.1f mm",c.x,c.y)
-                        context.draw(Text(coordinates).font(.system(size:8)).foregroundColor(.secondary),at:CGPoint(x:rect.midX,y:rect.midY+13))
-                    }
-                }
-                if reference==nil {
-                    context.draw(Text(L10n.tr("00964853f102")).font(.system(size:8)).foregroundColor(.secondary),at:CGPoint(x:canvas.width/2,y:canvas.height-8))
-                }
-            }.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded {value in
-                guard sensor != nil else {return}
-                // In overlaps, choose the nearest frame center instead of a paint-order winner.
-                let choices=plan.sources.indices.filter {layout.photos[$0].contains(value.location)}
-                if let i=choices.min(by:{a,b in
-                    hypot(layout.photos[a].midX-value.location.x,layout.photos[a].midY-value.location.y)
-                    < hypot(layout.photos[b].midX-value.location.x,layout.photos[b].midY-value.location.y)
-                }) {onSelect(i)}
-            })
-        }
+    var body:some View {
+        CapturePositionDiagram(frames:plan.sources.indices.map {i in
+            let r=CGRect(origin:plan.origins[i],size:plan.sources[i].size)
+            let center=reference.flatMap {ref in sensor.map {ref.position(of:i,in:plan,sensor:$0)}}
+                ?? sensor.map {CGPoint(x:(r.midX-plan.size.width/2)*$0.width/r.width,y:(plan.size.height/2-r.midY)*$0.height/r.height)}
+                ?? CGPoint(x:r.midX,y:-r.midY)
+            return .init(name:plan.sources[i].url.lastPathComponent,center:center,
+                         sensor:sensor ?? SensorSize(width:r.width,height:r.height,source:"pixels"))
+        },cameraBody:cameraBody,orientation:bodyOrientation,absolute:reference != nil,
+           selected:reference?.sourceIndex,showsTravel:sensor != nil,onSelect:onSelect)
     }
 }

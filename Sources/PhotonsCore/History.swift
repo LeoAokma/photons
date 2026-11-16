@@ -631,6 +631,16 @@ public struct EditHistory: Sendable, Equatable, Codable {
         enforceDepth()
     }
 
+    /// Application preference changes must never move the current edit, even after an undo.
+    /// Keep a contiguous window containing the cursor, trimming distant redo states if needed.
+    public mutating func setMaxDepthPreservingCurrent(_ newValue: Int) {
+        maxDepth = max(1,newValue)
+        guard snapshots.count > maxDepth else { return }
+        let start = min(snapshots.count,max(maxDepth,cursor+1))-maxDepth
+        snapshots = Array(snapshots[start..<start+maxDepth])
+        cursor -= start
+    }
+
     private mutating func enforceDepth() {
         guard !snapshots.isEmpty else { cursor = 0; return }
         if snapshots.count > maxDepth {

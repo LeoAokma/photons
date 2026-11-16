@@ -160,6 +160,8 @@ public final class AssetContextMenu: NSObject, NSMenuDelegate {
     public var onRemove: (([String]) -> Void)?
     public var onRemoveAndDelete: (([String]) -> Void)?
     public var onFindLost: (([String]) -> Void)?
+    public var onReveal: (([String]) -> Void)?
+    public private(set) var revealItem = NSMenuItem()
     /// 相册动作。两个都拿「整批选中 id + 相册 id」：一次点击一次写入，不是每张一次。
     public var onAddToAlbum: (([String], String) -> Void)?
     public var onRemoveFromAlbum: (([String], String) -> Void)?
@@ -180,6 +182,11 @@ public final class AssetContextMenu: NSObject, NSMenuDelegate {
         super.init()
         menu.autoenablesItems = false
         menu.delegate = self
+        revealItem = NSMenuItem(title: L10n.tr("1280364b7f84"), action: #selector(revealPressed), keyEquivalent: "")
+        revealItem.target = self
+        revealItem.isEnabled = false
+        menu.addItem(revealItem)
+        menu.addItem(.separator())
 
         removeItem = NSMenuItem(title: MissingFileText.removeMenuTitle,
                                 action: #selector(removeSelectionPressed), keyEquivalent: "")
@@ -224,6 +231,7 @@ public final class AssetContextMenu: NSObject, NSMenuDelegate {
         selectedIDs = ids
         removeItem.isEnabled = state.canRemove
         removeAndDeleteItem.isEnabled = state.canRemoveAndDelete
+        revealItem.isEnabled = selected.count > Set(targets).count
         findItem.isEnabled = state.canFindLost
         return state
     }
@@ -279,6 +287,11 @@ public final class AssetContextMenu: NSObject, NSMenuDelegate {
     @objc private func removeAndDeletePressed() {
         guard !selectedIDs.isEmpty else { return }
         onRemoveAndDelete?(selectedIDs)
+    }
+
+    @objc private func revealPressed() {
+        guard revealItem.isEnabled else { return }
+        onReveal?(selectedIDs)
     }
 
     @objc private func findPressed() {

@@ -58,7 +58,7 @@ public final class PanoramaEngine {
             grays.append(PanoramaRaster(image:image,context:context,width:Int(image.extent.width),height:Int(image.extent.height)).gray)
             coarse.append(PanoramaRaster(image:image,context:context,width:Int(image.extent.width)/2,height:Int(image.extent.height)/2).gray)
         }
-        struct Edge { let a: Int; let b: Int; let offset: CGPoint; let score: Double }
+        struct Edge { let a: Int; let b: Int; let transform: PanoramaTransform; let score: Double; var probes: [CGPoint] = [] }
         var edges: [Edge] = []
         for a in 0..<sources.count-1 { for b in a+1..<sources.count {
             try cancellation.check(); progress(L10n.tr("ffa317474694" , String(describing: (a+1)), String(describing: (b+1))))
@@ -72,42 +72,67 @@ public final class PanoramaEngine {
             if let match {
                 let initial = CGPoint(x:match.offset.x*Double(grays[a].width)/Double(coarse[a].width),
                                       y:match.offset.y*Double(grays[a].height)/Double(coarse[a].height))
-                let refined = TranslationRegistration.refine(grays[a],grays[b],offset:initial,radius:2)
+                let anchors = match.anchors.map { CGPoint(x:$0.x*Double(grays[a].width)/Double(coarse[a].width),
+                                                          y:$0.y*Double(grays[a].height)/Double(coarse[a].height)) }
+                let refined = TranslationRegistration.refine(grays[a],grays[b],offset:initial,radius:2,anchors:anchors)
                 if refined.score > 0.7 {
-                    edges.append(Edge(a:a,b:b,offset:CGPoint(x:refined.offset.x/scale,y:refined.offset.y/scale),score:refined.score))
+                    edges.append(Edge(a:a,b:b,transform:.translation(CGPoint(x:refined.offset.x/scale,y:refined.offset.y/scale)),score:refined.score))
                 }
             }
         }}
+        func connected() -> Bool {
+            var reached:Set<Int>=[0]
+            for _ in sources.indices {for edge in edges where reached.contains(edge.a) || reached.contains(edge.b) {reached.insert(edge.a);reached.insert(edge.b)}}
+            return reached.count==sources.count
+        }
+        var projective=false
+        if !connected() {
+            for a in 0..<sources.count-1 {for b in a+1..<sources.count where !edges.contains(where:{$0.a==a && $0.b==b}) {
+                try cancellation.check()
+                progress(L10n.tr("panorama.geometry",String(a+1),String(b+1)))
+                guard let match=try ProjectiveRegistration.align(coarse[a],coarse[b],fineA:grays[a],fineB:grays[b],cancellation:cancellation) else {continue}
+                let h=PanoramaTransform.scale(1/scale,1/scale).multiplied(by:match.transform).multiplied(by:.scale(scale,scale))
+                if let pa=knownPositions[a],let pb=knownPositions[b],let sensor=sensorOverride ?? first.sensor {
+                    let center=CGPoint(x:first.size.width/2,y:first.size.height/2),mapped=h.point(center)
+                    let expected=CGPoint(x:(pb.x-pa.x)/sensor.width*first.size.width,y:-(pb.y-pa.y)/sensor.height*first.size.height)
+                    guard hypot(mapped.x-center.x-expected.x,mapped.y-center.y-expected.y)<max(first.size.width/sensor.width,first.size.height/sensor.height)*1.5 else {continue}
+                }
+                edges.append(Edge(a:a,b:b,transform:h,score:match.score,probes:match.pairs.map {CGPoint(x:$0.b.x/scale,y:$0.b.y/scale)}))
+                projective=true
+            }}
+        }
         // Maximum-confidence spanning tree: input filename order does not determine image layout.
-        var positions = [CGPoint?](repeating:nil,count:sources.count), scores = [Double](repeating:1,count:sources.count)
-        positions[0] = .zero
-        while positions.contains(where: { $0 == nil }) {
-            let choices = edges.filter { (positions[$0.a] == nil) != (positions[$0.b] == nil) }
-            guard let edge = choices.max(by: { $0.score < $1.score }) else {
-                let missing = sources.indices.filter { positions[$0] == nil }.map { sources[$0].url.lastPathComponent }.joined(separator:"、")
-                throw PanoramaFailure(L10n.tr("a89e2a702257" , String(describing: (missing))))
+        var poses=[PanoramaTransform?](repeating:nil,count:sources.count),scores=[Double](repeating:1,count:sources.count)
+        poses[0] = .identity
+        while poses.contains(where:{$0==nil}) {
+            let choices=edges.filter {(poses[$0.a]==nil) != (poses[$0.b]==nil)}
+            guard let edge=choices.max(by:{$0.score<$1.score}) else {
+                let missing=sources.indices.filter {poses[$0]==nil}.map {sources[$0].url.lastPathComponent}.joined(separator:"、")
+                throw PanoramaFailure(L10n.tr("a89e2a702257",missing))
             }
-            if let a = positions[edge.a] {
-                positions[edge.b] = CGPoint(x:a.x+edge.offset.x,y:a.y+edge.offset.y); scores[edge.b] = edge.score
-            } else if let b = positions[edge.b] {
-                positions[edge.a] = CGPoint(x:b.x-edge.offset.x,y:b.y-edge.offset.y); scores[edge.a] = edge.score
+            if let a=poses[edge.a] {poses[edge.b]=a.multiplied(by:edge.transform);scores[edge.b]=edge.score}
+            else if let b=poses[edge.b],let inverse=edge.transform.inverse {poses[edge.a]=b.multiplied(by:inverse);scores[edge.a]=edge.score}
+        }
+        var transforms=poses.map {$0!}
+        for edge in edges where edge.score>0.8 {
+            let probes=edge.probes.isEmpty ? [CGPoint(x:first.size.width/2,y:first.size.height/2)]:edge.probes
+            let residuals=probes.map {p -> Double in
+                let lhs=transforms[edge.a].point(edge.transform.point(p)),rhs=transforms[edge.b].point(p)
+                return hypot(lhs.x-rhs.x,lhs.y-rhs.y)*scale
             }
+            if median(residuals)>(projective ? 12:3) {throw PanoramaFailure(L10n.tr("8a5142e9f53e"))}
         }
-        var origins = positions.map { $0! }
-        // Reject contradictory loops instead of producing an apparently successful crooked stitch.
-        for edge in edges where edge.score > 0.8 {
-            let residual = hypot(origins[edge.b].x-origins[edge.a].x-edge.offset.x,
-                                 origins[edge.b].y-origins[edge.a].y-edge.offset.y)
-            if residual * scale > 3 { throw PanoramaFailure(L10n.tr("8a5142e9f53e")) }
-        }
-        let minX = floor(origins.map(\.x).min()!), minY = floor(origins.map(\.y).min()!)
-        origins = origins.map { CGPoint(x:$0.x-minX,y:$0.y-minY) }
-        let size = CGSize(width:ceil(origins.map(\.x).max()!+first.size.width),height:ceil(origins.map(\.y).max()!+first.size.height))
+        let boxes=transforms.enumerated().map {$0.element.bounds(sources[$0.offset].size)}
+        let minX=floor(boxes.map(\.minX).min()!),minY=floor(boxes.map(\.minY).min()!)
+        let size=CGSize(width:ceil(boxes.map(\.maxX).max()!-minX),height:ceil(boxes.map(\.maxY).max()!-minY))
+        transforms=transforms.map {PanoramaTransform.translation(CGPoint(x:-minX,y:-minY)).multiplied(by:$0)}
+        let origins=transforms.map {$0.point(.zero)}
         guard size.width*size.height < 600_000_000 else { throw PanoramaFailure(L10n.tr("04fcf0f7a641")) }
         var plan = PanoramaPlan(sources:sources,origins:origins,size:size,registrationScores:scores,whiteBalance:wb,
                                 gains:[Double](repeating:1,count:sources.count),ownership:[],maskWidth:0,maskHeight:0,
                                 optical:OpticalEstimate(center:nil,confidence:0,explanation:L10n.tr("bef4c76fe825"),occludedEdges:[]),
                                 options:options,previewScale:scale,previewImages:images,preview:nil)
+        if projective {plan.warps=transforms}
         plan = try update(plan,options:options,cancellation:cancellation,progress:progress)
         return plan
     }
@@ -173,10 +198,16 @@ public final class PanoramaEngine {
                 .transformed(by:CGAffineTransform(scaleX:plan.size.width*outputScale/Double(plan.maskWidth),
                                                   y:plan.size.height*outputScale/Double(plan.maskHeight)))
             let source=plan.photometricGains.indices.contains(i) ? applyGain(images[i],gain:plan.photometricGains[i],scale:imageScale):images[i]
-            let image = source.transformed(by:CGAffineTransform(scaleX:outputScale/imageScale,y:outputScale/imageScale))
-                .transformed(by:CGAffineTransform(translationX:plan.origins[i].x*outputScale,
-                                                  y:(plan.size.height-plan.origins[i].y-plan.sources[i].size.height)*outputScale))
-                .applyingFilter("CIExposureAdjust",parameters:["inputEV":log2(plan.gains[i])])
+            let placed:CIImage
+            if let warps=plan.warps {
+                let corners=warps[i].corners(plan.sources[i].size).map {CIVector(x:$0.x*outputScale,y:(plan.size.height-$0.y)*outputScale)}
+                placed=source.applyingFilter("CIPerspectiveTransform",parameters:["inputTopLeft":corners[0],"inputTopRight":corners[1],"inputBottomRight":corners[2],"inputBottomLeft":corners[3]])
+            } else {
+                placed=source.transformed(by:CGAffineTransform(scaleX:outputScale/imageScale,y:outputScale/imageScale))
+                    .transformed(by:CGAffineTransform(translationX:plan.origins[i].x*outputScale,
+                                                      y:(plan.size.height-plan.origins[i].y-plan.sources[i].size.height)*outputScale))
+            }
+            let image=placed.applyingFilter("CIExposureAdjust",parameters:["inputEV":log2(plan.gains[i])])
             let weighted = image.clampedToExtent().applyingFilter("CIBlendWithMask",parameters:[
                 "inputBackgroundImage":CIImage(color:.clear),"inputMaskImage":mask]).cropped(to:bounds)
             // The masks form a partition of unity. Add their premultiplied contributions;

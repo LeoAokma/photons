@@ -14,6 +14,16 @@ public final class EditorWindowController: NSWindowController {
     public private(set) var rootView: WorkspaceRootView!
     private var toolWindows: [NSWindowController] = []
 
+    @objc public func socialMediaSlicesAction(_ sender: Any?) {
+        let items = session.exportItems(for: session.exportableSelection)
+        guard !items.isEmpty else { return }
+        let controller = SocialMediaSliceWindowController(items: items)
+        controller.onClose = { [weak self, weak controller] in self?.toolWindows.removeAll { $0 === controller } }
+        toolWindows.append(controller)
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+    }
+
     public static func panoramaSelectionMessage(count: Int) -> String? {
         count == 0 ? L10n.tr("977f178f562a") : (count == 1 ? L10n.tr("2e0b7140c7cc") : nil)
     }
@@ -554,6 +564,8 @@ public final class EditorWindowController: NSWindowController {
 
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
+        case #selector(socialMediaSlicesAction(_:)):
+            return session.isOpen && !session.selection.isEmpty
         case #selector(undoAction(_:)):
             // Title carries the action being taken back ("撤销 Exposure"), and the item is grey
             // when there is nothing behind the cursor — a menu that lies about undo is a bug.

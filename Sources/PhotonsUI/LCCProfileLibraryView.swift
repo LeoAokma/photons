@@ -7,45 +7,61 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class LCCProfileLibraryModel: ObservableObject {
+    static let shared = LCCProfileLibraryModel()
+    let store: LCCProfileStore
+    private let installsBundledProfile: Bool
     @Published var profiles:[LCCProfileSummary]=[]
-    @Published var selected:UUID?
+    @Published var selected:UUID? {didSet {if oldValue != selected {readSelected()}}}
     @Published var profile:LCCLensProfile?
     @Published var status=""
     @Published var busy=false
     @Published var error:String?
+    @Published private(set) var loadingProfile = false
+    private var refreshGeneration = UUID()
+    private var readGeneration = UUID()
     private var creator:LCCProfileCreatorWindowController?
     private let queue=DispatchQueue(label:"Photons.lcc.profile.library",qos:.userInitiated)
+    init(store:LCCProfileStore = LCCProfileStore(), installBundledProfile:Bool = true) {
+        self.store=store;self.installsBundledProfile=installBundledProfile
+    }
+    func ensureLoaded() {if profiles.isEmpty && !busy {refresh()}}
     func refresh(select id:UUID? = nil) {
         busy=true
+        refreshGeneration=UUID()
+        let generation=refreshGeneration,store=self.store,install=installsBundledProfile
         queue.async { [weak self] in
             do {
-                let store=LCCProfileStore();try store.installBundledProfile();let catalog=store.catalog()
+                if install {try store.installBundledProfile()};let catalog=store.catalog()
                 DispatchQueue.main.async {
-                    guard let self else {return};self.profiles=catalog.profiles;self.busy=false
+                    guard let self,self.refreshGeneration==generation else {return};self.profiles=catalog.profiles;self.busy=false
                     self.status=L10n.tr("e88329a2fa97" , String(describing: (catalog.profiles.count)))
-                    if !catalog.issues.isEmpty {self.error=catalog.issues.joined(separator:"\n")}
-                    self.selected=id ?? self.selected ?? catalog.profiles.first?.id;self.readSelected()
+                    self.error=catalog.issues.isEmpty ? nil:catalog.issues.joined(separator:"\n")
+                    let wanted=id ?? self.selected
+                    let next=catalog.profiles.first(where:{$0.id==wanted})?.id ?? catalog.profiles.first?.id
+                    if self.selected==next {self.readSelected()} else {self.selected=next}
                 }
-            } catch {DispatchQueue.main.async {self?.busy=false;self?.error=error.localizedDescription}}
+            } catch {DispatchQueue.main.async {guard self?.refreshGeneration==generation else {return};self?.busy=false;self?.error=error.localizedDescription}}
         }
     }
     func readSelected() {
-        profile=nil
+        readGeneration=UUID();profile=nil;loadingProfile=false
         guard let id=selected else {return}
+        let generation=readGeneration,store=self.store
+        loadingProfile=true
         queue.async { [weak self] in
             do {
-                let p=try LCCProfileStore().load(id)
-                DispatchQueue.main.async {guard self?.selected==id else {return};self?.profile=p}
-            } catch {DispatchQueue.main.async {guard self?.selected==id else {return};self?.error=error.localizedDescription}}
+                let p=try store.load(id)
+                DispatchQueue.main.async {guard self?.readGeneration==generation else {return};self?.profile=p;self?.loadingProfile=false}
+            } catch {DispatchQueue.main.async {guard self?.readGeneration==generation else {return};self?.loadingProfile=false;self?.error=error.localizedDescription}}
         }
     }
     func create() {
         if let creator {creator.showWindow(nil);creator.window?.makeKeyAndOrderFront(nil);return}
-        let c=LCCProfileCreatorWindowController { [weak self] summary in self?.refresh(select:summary.id) }
+        let c=LCCProfileCreatorWindowController(store:store) { [weak self] summary in self?.refresh(select:summary.id) }
         c.onClose={ [weak self] in self?.creator=nil };creator=c;c.showWindow(nil);c.window?.makeKeyAndOrderFront(nil)
     }
     func reveal() {
-        if let id=selected {NSWorkspace.shared.activateFileViewerSelecting([LCCProfileStore().url(for:id)])}
+        if let id=selected {NSWorkspace.shared.activateFileViewerSelecting([store.url(for:id)])}
     }
     func importProfile() {
         let panel = NSOpenPanel()
@@ -65,17 +81,28 @@ final class LCCProfileLibraryModel: ObservableObject {
         }
     }
     private func confirmImport(_ imported: LCCLensProfile) {
-        let store = LCCProfileStore()
+        let store = self.store
+        var keepingBoth = false
         if FileManager.default.fileExists(atPath: store.url(for: imported.id).path) {
             let alert = NSAlert(); alert.messageText = L10n.tr("558c9f10c4c6")
             alert.informativeText = L10n.tr("86833a8f747b")
+            alert.addButton(withTitle: L10n.tr("lcc.profile.keepBoth"))
             alert.addButton(withTitle: L10n.tr("131b13aa2659")); alert.addButton(withTitle: L10n.tr("2cd0f3be8738"))
-            guard alert.runModal() == .alertFirstButtonReturn else { busy = false; status = L10n.tr("08d7a98d788a"); return }
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: keepingBoth = true
+            case .alertSecondButtonReturn: break
+            default: busy = false; status = L10n.tr("08d7a98d788a"); return
+            }
         }
+        saveImportedProfile(imported, keepingBoth: keepingBoth)
+    }
+    func saveImportedProfile(_ imported: LCCLensProfile, keepingBoth: Bool) {
+        busy = true
+        let store = self.store
         queue.async { [weak self] in
             do {
-                try store.save(imported)
-                DispatchQueue.main.async { self?.refresh(select: imported.id) }
+                let saved = try store.importProfile(imported, keepingBoth: keepingBoth)
+                DispatchQueue.main.async { self?.refresh(select: saved.id) }
             } catch { DispatchQueue.main.async { self?.busy = false; self?.error = error.localizedDescription } }
         }
     }
@@ -125,6 +152,7 @@ struct LCCProfileLibraryView: View {
                             Text(profile.name).font(.title2.bold())
                             Text(profile.camera).foregroundStyle(.secondary)
                             if let body=LCCProfileSummary(profile).calibrationBody {Text(L10n.tr("00f3f3fdc6a8" , String(describing: (body.name)))).font(.caption)}
+                            Text(L10n.tr("lcc.profile.compatibility")).font(.caption).foregroundStyle(.secondary)
                             if let aperture=profile.aperture {Text(L10n.tr("9ff1649978c3" , String(format: "%g", aperture)))}
                             Text(profile.notes).font(.callout).textSelection(.enabled)
                             ForEach(profile.orientations) { orientation in
@@ -139,7 +167,11 @@ struct LCCProfileLibraryView: View {
                             Text(L10n.tr("462dcac8baeb")).font(.caption).foregroundStyle(.secondary)
                             Text(L10n.tr("89e848ef8755")).font(.caption).foregroundStyle(.secondary)
                         }.padding(16)
-                    } else {ProgressView(L10n.tr("621708f1b63d")).frame(maxWidth:.infinity,minHeight:280)}
+                    } else if model.busy || model.loadingProfile {
+                        ProgressView(L10n.tr("621708f1b63d")).frame(maxWidth:.infinity,minHeight:280)
+                    } else {
+                        Text(L10n.tr("lensInfo.empty")).foregroundStyle(.secondary).frame(maxWidth:.infinity,minHeight:280)
+                    }
                 }.frame(minWidth:350)
             }
             HStack {
@@ -150,7 +182,7 @@ struct LCCProfileLibraryView: View {
                 Button(L10n.tr("643e7408e6a7")) {model.exportProfile()}.disabled(model.profile==nil || model.busy)
                 Button(L10n.tr("1280364b7f84")) {model.reveal()}.disabled(model.selected==nil)
             }
-        }.padding(22).onAppear {model.refresh()}.onChange(of:model.selected) {_,_ in model.readSelected()}
+        }.padding(22).onAppear {model.ensureLoaded()}
         .alert(L10n.tr("2eeb1676861b"),isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})) {Button(L10n.tr("f867f3417859")) {model.error=nil}} message: {Text(model.error ?? "")}
     }
 }

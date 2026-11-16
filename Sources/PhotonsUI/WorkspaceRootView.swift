@@ -357,6 +357,7 @@ public final class WorkspaceRootView: NSView {
     public let browserPane: BrowserPaneController
     public let gridController: AssetGridController
     public let loupeController: LoupeController
+    public private(set) var gridHistogramController: GridHistogramController?
     public let filmstripController: FilmstripController
     /// 303 — the one coalescer behind all three browsers' HD thumbnail refresh: an edit calls
     /// `noteEdit`, and 0.25 s after the last tick the edited photo's visible cells re-request.
@@ -584,6 +585,9 @@ public final class WorkspaceRootView: NSView {
         updateForwardCompatNotice()
         applyBrowserMode()
         observeModel()
+        gridHistogramController = GridHistogramController(session: session) { [weak loupe = loupeController] in
+            loupe?.readHeadroom().headroom ?? 1
+        }
 
         // 303 — weak on both sides: the session does not keep the workspace (or its refresher) alive.
         session.addEditObserver { [weak self, weak refresher = editThumbnailRefresher] assetID in
