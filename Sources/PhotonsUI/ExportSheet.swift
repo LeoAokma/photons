@@ -49,22 +49,25 @@ public enum UIExportError: LocalizedError {
 public enum UIExportRenderer {
 
     public static func render(item: ExportItem, preset: ExportPreset,
-                              native: ImageSize?) throws -> DisplayImage {
+                              native: ImageSize?, deferResampling: Bool = false) throws -> DisplayImage {
         guard let url = item.sourceURL else { throw UIExportError.noSourceFile(item.name) }
         let edit = item.edit ?? .neutral
         let decoder = try RAWDecoder()
+        let isRAW = UIExportSource.isRAW(url)
 
         let source: ImageSize
         if let native, native.width > 0, native.height > 0 {
             source = native
         } else {
-            let probe = try decoder.probe(url)
-            source = ImageSize(width: probe.nativeWidth, height: probe.nativeHeight)
+            source = try UIExportSource.size(at: url)
         }
 
         let content = edit.geometry.outputPixels(in: source)
         let scale = preset.renderScale(content: content)
         let decodeScale = decodeScaleLadder(scale)
+        // The social slicer owns the final resampling algorithm. Keep the decoded resolution
+        // for that caller instead of first shrinking through the graph's regular resize stage.
+        let renderScale = deferResampling ? 1 : scale / Double(decodeScale)
         // 194: the export is the **settled** picture, so it develops at the document's own balance —
         // the same development the loupe settles on — and the graph is told the buffer already carries
         // it (S1 identity below). Exporting the as-shot buffer with an S1 gain instead would ship the
@@ -76,10 +79,11 @@ public enum UIExportRenderer {
         // showed the adjusted ones. The export must ask for the document's development, not a subset.
         let inputs = edit.decodeInputs
         let exportWhiteBalance = inputs.whiteBalance
-        let decoded = try decoder.decode(url, options: DecodeOptions(decoderVersion: inputs.decoderVersion,
+        let decoded = try isRAW ? decoder.decode(url, options: DecodeOptions(decoderVersion: inputs.decoderVersion,
                                                                     scale: decodeScale,
                                                                     whiteBalance: exportWhiteBalance,
                                                                     detail: inputs.detail))
+            : UIExportSource.decodeRaster(url, scale: decodeScale)
 
         let identity = "export|\(item.id)|v\(decoded.decoderVersion)"
             + String(format: "|s%.4f", decodeScale)
@@ -95,7 +99,7 @@ public enum UIExportRenderer {
         //     20 × the export's own working set.
         let graph = try RenderGraph(input: RenderInput(image: decoded, identity: identity,
                                                       sourceURL: url,
-                                                      whiteBalance: exportWhiteBalance),
+                                                      whiteBalance: isRAW ? exportWhiteBalance : .asShot),
                                     textureRetention: .none)
         defer { graph.releaseAllTextures() }
         // 113 — HDR export is **one** render of the HDR frame; the SDR base is a projection of it.
@@ -106,7 +110,7 @@ public enum UIExportRenderer {
         // moment the SDR side grew a real tone map (112). Now both halves come from one frame.
         if preset.isHDR {
             let hdr = RenderOptions(canvas: nil,
-                                    scale: scale / Double(decodeScale),
+                                    scale: renderScale,
                                     display: DisplayOptions(primaries: preset.colorSpace,
                                                             bitDepth: preset.effectiveBitDepth,
                                                             headroom: 1,
@@ -126,7 +130,7 @@ public enum UIExportRenderer {
         // which is the byte-identical hard clamp.
         if preset.appliesSDRToneMap {
             let linearOptions = RenderOptions(canvas: nil,
-                                              scale: scale / Double(decodeScale),
+                                              scale: renderScale,
                                               display: DisplayOptions(primaries: preset.colorSpace,
                                                                       bitDepth: preset.effectiveBitDepth,
                                                                       headroom: 1,
@@ -140,7 +144,7 @@ public enum UIExportRenderer {
                                                   toneMap: preset.sdrToneMapping == .standard ? .standard:.global)
         }
         let options = RenderOptions(canvas: nil,
-                                    scale: scale / Double(decodeScale),
+                                    scale: renderScale,
                                     display: DisplayOptions(primaries: preset.colorSpace,
                                                             bitDepth: preset.effectiveBitDepth,
                                                             headroom: 1),
@@ -2044,7 +2048,7 @@ public struct ExportSheetView: View {
                 if let picker {
                     picker
                 } else if showsSlider {
-                    Slider(value: Binding(get: { value }, set: write), in: range)
+                    AdjustmentSlider(value: Binding(get: { value }, set: write), in: range)
                         .controlSize(.small)
                         .frame(minWidth: ExportRowGrid.sliderWidth, maxWidth: .infinity)
                         .background(ExportSliderRowProbeHost(kind: .slider, rowID: axID))

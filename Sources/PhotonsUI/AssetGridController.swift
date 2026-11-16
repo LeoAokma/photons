@@ -442,7 +442,7 @@ public final class AssetGridController: NSViewController, NSCollectionViewDataSo
     public let scrollView = NSScrollView()
     /// The filter strip: 星级 ≥ N / 旗标 / 色标 / 相机 + one chip per active facet.
     public let filterBar = FilterBarView()
-    public let thumbnailSizeSlider = NSSlider(value: 150, minValue: 100, maxValue: 420, target: nil, action: nil)
+    public let thumbnailSizeSlider: NSSlider = AdjustmentNSSlider(value: 150, minValue: 100, maxValue: 420, target: nil, action: nil)
     private let thumbnailSizeLabel = NSTextField(labelWithString: L10n.tr("grid.thumbnailSize"))
     private let gridFooter = FlippedView()
     private static let sizePreference = "photons.grid.thumbnailWidth"
@@ -1031,7 +1031,7 @@ public final class AssetGridController: NSViewController, NSCollectionViewDataSo
               cell.cardView.asset?.id == id else { return }
         // An in-flight request still carries the pre-edit key. Letting it land after the new one
         // would repaint the old frame, so it is cancelled before the re-request.
-        thumbRequests[index]?.cancel()
+        thumbRequests[index]?.cancel(preservingStartedWork: false)
         thumbRequests.removeValue(forKey: index)
         applyThumbnail(to: cell, index: index, asset: session.assets[index])
     }

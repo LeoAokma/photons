@@ -37,6 +37,8 @@ Photons 自己不带 RAW 解码器。去马赛克、镜头校正、机器学习�
 
 这些都走同一个 `RenderGraph` 批处理，所以屏幕上的图和导出的文件是同一套算术。同一份文档在两个进程里渲染两次，得到同样的字节，这条有测试守着。
 
+**社交媒体切片输出** 位于「工具」菜单，使用图库中选中的照片与当前显影设置，在独立窗口里显示整组画框、切片预览和输出参数。支持 3:4 / 4:3 三档分辨率、逐张画面占比、六种重采样选项、HDR / SDR JPEG 和批量取消；默认输出到原图旁的 `slice_原文件名` 文件夹，也可另选位置。整个功能用 Swift、Core Image 和 ImageIO 实现，不依赖 Python。HDR 的 SDR 底图先对整张照片做统一映射，缩放和锐化后再切片；各片共用白点、增益范围和色彩空间，白边固定为漫反射白。macOS 15+ 使用 ISO RGB 增益图，14.1–14.x 使用 Apple 增益图。替换输出时保留其他文件，并通过 `slices.json` 记录参数及清理旧切片。重采样与 JPEG 编码由系统框架实现，像素不承诺与原 Pillow 编码逐字节一致。
+
 ## 环境要求
 
 - macOS 14 或更新。最新的 `RawCamera` 解码版本要求最新的 macOS；本仓库在 macOS 27 / Xcode 27 / Swift 6 上构建和测量。
@@ -53,7 +55,7 @@ open .build/Photons.app
 
 `make app` 跑 release 构建、打包、ad-hoc 签名，产物落在 `.build/Photons.app`。
 
-首次启动走 文件 ▸ 打开库… 新建一个 `.photonslibrary`，再用 ⇧⌘I 导入文件夹。缓存（解码后的线性缓冲、缩略图）按库分开，放在 `~/Library/Caches/Photons/<library-hash>/`。
+首次启动走 文件 ▸ 打开库… 新建一个 `.photonslibrary`，再用 ⇧⌘I 导入文件夹。缓存（解码后的线性缓冲、缩略图）按库分开，放在 `~/Library/Caches/Photons/<library-hash>/`。设置 ▸ 缓存可查看预览占用、打开目录，并按图库或全部删除缩略图与直方图缓存；原片与调整保留。预览会跨启动复用，照片调整后按新版本更新。工具 ▸ LCC矫正… 的快捷键为 Control+L。
 
 ## 验收门
 

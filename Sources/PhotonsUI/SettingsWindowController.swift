@@ -28,16 +28,17 @@ public final class SettingsWindowController: NSWindowController {
 }
 
 private enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, workspace, hdr, performance, libraries
+    case general, workspace, hdr, performance, libraries, cache
     var id: String { rawValue }
     var title: String {
-        switch self { case .general: return L10n.tr("835b700e028c"); case .libraries: return L10n.tr("df3be042e1cf"); case .workspace: return L10n.tr("37979829426b"); case .hdr: return L10n.tr("f02381de45eb"); case .performance: return L10n.tr("58d26314335d") }
+        switch self { case .cache: return L10n.tr("cache.title"); case .general: return L10n.tr("835b700e028c"); case .libraries: return L10n.tr("df3be042e1cf"); case .workspace: return L10n.tr("37979829426b"); case .hdr: return L10n.tr("f02381de45eb"); case .performance: return L10n.tr("58d26314335d") }
     }
     var symbol: String {
-        switch self { case .general: return "gearshape"; case .libraries: return "photo.stack"; case .workspace: return "rectangle.3.group"; case .hdr: return "sun.max"; case .performance: return "cpu" }
+        switch self { case .cache: return "internaldrive"; case .general: return "gearshape"; case .libraries: return "photo.stack"; case .workspace: return "rectangle.3.group"; case .hdr: return "sun.max"; case .performance: return "cpu" }
     }
     var subtitle: String {
         switch self {
+        case .cache: return L10n.tr("cache.subtitle")
         case .general: return L10n.tr("acb3664262f1")
         case .libraries: return L10n.tr("74ff79c4bef3")
         case .workspace: return L10n.tr("886ed0494986")
@@ -90,6 +91,7 @@ private struct SettingsView: View {
                         case .workspace: workspace
                         case .hdr: hdr
                         case .performance: performance
+                        case .cache: PreviewCacheSettingsView()
                         }
                     }.padding(.top, 20).padding(.bottom, 16)
                 }

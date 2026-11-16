@@ -132,8 +132,8 @@ private struct LCCAlignmentView:View {
                 }.onEnded {_ in dragOrigin=nil})
             }
             VStack(spacing:8) {
-                HStack {Text(L10n.tr("98ab61de3e93")).frame(width:60);Slider(value:$model.x,in:-100...100);TextField("mm",value:$model.x,format:.number.precision(.fractionLength(2))).frame(width:85);Text("mm")}
-                HStack {Text(L10n.tr("5e9009b476b1")).frame(width:60);Slider(value:$model.y,in:-100...100);TextField("mm",value:$model.y,format:.number.precision(.fractionLength(2))).frame(width:85);Text("mm")}
+                HStack {Text(L10n.tr("98ab61de3e93")).frame(width:60);AdjustmentSlider(value:$model.x,in:-100...100);TextField("mm",value:$model.x,format:.number.precision(.fractionLength(2))).frame(width:85);Text("mm")}
+                HStack {Text(L10n.tr("5e9009b476b1")).frame(width:60);AdjustmentSlider(value:$model.y,in:-100...100);TextField("mm",value:$model.y,format:.number.precision(.fractionLength(2))).frame(width:85);Text("mm")}
             }.textFieldStyle(.roundedBorder).disabled(model.committing)
             HStack {
                 VStack(alignment:.leading,spacing:4) {

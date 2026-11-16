@@ -200,7 +200,9 @@ public enum MainMenu {
         toolsItem.submenu = tools
         let panorama = tools.addItem(withTitle: L10n.tr("8311512f9cab"), action: #selector(EditorWindowController.panoramaAction(_:)), keyEquivalent: "m")
         panorama.keyEquivalentModifierMask = [.control]
-        tools.addItem(withTitle: L10n.tr("486f04a981bd"), action: #selector(EditorWindowController.lccAction(_:)), keyEquivalent: "")
+        let lcc = tools.addItem(withTitle: L10n.tr("486f04a981bd"), action: #selector(EditorWindowController.lccAction(_:)), keyEquivalent: "l")
+        lcc.keyEquivalentModifierMask = [.control]
+        tools.addItem(withTitle: L10n.tr("slices.title"), action: #selector(EditorWindowController.socialMediaSlicesAction(_:)), keyEquivalent: "")
 
         // View
         let viewItem = NSMenuItem()

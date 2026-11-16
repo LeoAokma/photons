@@ -36,6 +36,14 @@ public final class HistogramCache: @unchecked Sendable {
     private let memory = NSCache<NSString, Box>()
     private let lock = NSLock()
     private var counters = Stats()
+    private var memoryGeneration: UInt64 = 0
+    public var generation: UInt64 { PreviewCacheStorage.generation(in: root.deletingLastPathComponent()) }
+
+    private func synchronizeMemory() {
+        let current = generation
+        lock.lock(); defer { lock.unlock() }
+        if current != memoryGeneration { memory.removeAllObjects(); memoryGeneration = current }
+    }
     public var stats: Stats { lock.lock(); defer { lock.unlock() }; return counters }
 
     public init(root: URL) {
@@ -43,7 +51,8 @@ public final class HistogramCache: @unchecked Sendable {
         memory.countLimit = 512
     }
     public func cached(_ key: HistogramCacheKey) -> HistogramSnapshot? {
-        memory.object(forKey: key.recipe as NSString)?.snapshot
+        synchronizeMemory()
+        return memory.object(forKey: key.recipe as NSString)?.snapshot
     }
     public func url(for key: HistogramCacheKey) -> URL {
         root.appendingPathComponent(String(key.fileName.prefix(2)), isDirectory: true)
@@ -51,18 +60,28 @@ public final class HistogramCache: @unchecked Sendable {
     }
     /// Worker queues only. A corrupt/outdated file is a miss, never a broken library.
     public func load(_ key: HistogramCacheKey) -> HistogramSnapshot? {
-        if let value = cached(key) { return value }
-        lock.lock(); defer { lock.unlock() }
-        let path = url(for: key)
-        guard let size = try? path.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size <= 128 * 1024, let data = try? Data(contentsOf: path),
-              let entry = try? PropertyListDecoder().decode(Entry.self, from: data),
-              entry.key == key, entry.snapshot.isValid else { return nil }
-        counters.diskHits += 1
-        memory.setObject(Box(entry.snapshot), forKey: key.recipe as NSString)
-        return entry.snapshot
+        let currentGeneration = generation
+        return PreviewCacheStorage.publish(in: root.deletingLastPathComponent(), generation: currentGeneration) {
+            if let value = cached(key) { return value }
+            lock.lock(); defer { lock.unlock() }
+            let path = url(for: key)
+            guard let size = try? path.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+                  size <= 128 * 1024, let data = try? Data(contentsOf: path),
+                  let entry = try? PropertyListDecoder().decode(Entry.self, from: data),
+                  entry.key == key, entry.snapshot.isValid else { return nil }
+            counters.diskHits += 1
+            memory.setObject(Box(entry.snapshot), forKey: key.recipe as NSString)
+            return entry.snapshot
+        } ?? nil
     }
-    public func store(_ value: HistogramSnapshot, for key: HistogramCacheKey, fromPreview: Bool = false) {
+    public func store(_ value: HistogramSnapshot, for key: HistogramCacheKey, fromPreview: Bool = false,
+                      generation: UInt64? = nil) {
+        PreviewCacheStorage.publish(in: root.deletingLastPathComponent(), generation: generation) {
+            synchronizeMemory()
+            storeSnapshot(value, for: key, fromPreview: fromPreview)
+        }
+    }
+    private func storeSnapshot(_ value: HistogramSnapshot, for key: HistogramCacheKey, fromPreview: Bool) {
         guard value.isValid else { return }
         lock.lock()
         if fromPreview, memory.object(forKey: key.recipe as NSString) != nil {

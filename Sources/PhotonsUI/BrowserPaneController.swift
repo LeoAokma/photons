@@ -994,7 +994,7 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
               cell.assetID == id else { return }
         // An in-flight request still carries the pre-edit key; cancel it so it cannot repaint the
         // old frame after the new one arrives.
-        thumbRequests[row]?.cancel()
+        thumbRequests[row]?.cancel(preservingStartedWork: false)
         thumbRequests.removeValue(forKey: row)
         applyThumbnail(to: cell, row: row, asset: session.assets[row])
     }

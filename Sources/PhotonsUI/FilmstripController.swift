@@ -693,7 +693,7 @@ public final class FilmstripController: NSViewController, NSCollectionViewDataSo
               cell.cardView.asset?.id == id else { return }
         // The in-flight request still carries the pre-edit key; cancel it so it cannot repaint the
         // old frame after the new one arrives.
-        thumbRequests[index]?.cancel()
+        thumbRequests[index]?.cancel(preservingStartedWork: false)
         thumbRequests.removeValue(forKey: index)
         applyThumbnail(to: cell, index: index, asset: session.assets[index])
     }

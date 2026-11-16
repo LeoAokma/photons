@@ -622,18 +622,18 @@ private final class ZoomGlassSliderTrack: NSView {
 
         // Thumb: 14 pt, white, hairline, a shadow just heavy enough to lift it off the glass.
         let size = ZoomGlassSliderGeometry.Metrics.thumbDiameter
-        let rect = CGRect(x: thumbX - size / 2, y: midY - size / 2, width: size, height: size)
+        let rect = CGRect(x: thumbX - size / 2, y: midY - 5, width: size, height: 10)
         let shadow = NSShadow()
         shadow.shadowBlurRadius = 2
         shadow.shadowOffset = CGSize(width: 0, height: -1)
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
         shadow.set()
         NSColor.white.setFill()
-        NSBezierPath(ovalIn: rect).fill()
+        NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
 
         NSGraphicsContext.saveGraphicsState()
         NSColor.white.withAlphaComponent(0.55).setStroke()
-        let outline = NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5))
+        let outline = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 1.5, yRadius: 1.5)
         outline.lineWidth = 1
         outline.stroke()
         NSGraphicsContext.restoreGraphicsState()

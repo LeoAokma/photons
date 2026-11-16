@@ -2229,26 +2229,16 @@ public struct InspectorView: View {
                   })
     }
 
-    /// 060: the panel's **only** slider view — `.mini`, 16 pt high, and the accent colour that says
-    /// which domain a parameter lives in: `.bar` → yellow (raw/decode), `.linear` → `#FF375F`
-    /// (linear-domain arithmetic, 071), `.knob` → no tint at all (the system accent, blue unless the
-    /// user changed it). The colours themselves are `SliderShape.accent` — one definition, in one
-    /// place, so a third category could not grow a second palette.
-    ///
-    /// It is a function, not a copy-pasted modifier chain, because the colour test has to render **this
-    /// view** to sample a pixel: a test that re-declares `.tint(…)` on its own copy would keep passing
-    /// after the panel's tint was deleted, which is exactly the counter-proof 060 asks for.
-    ///
-    /// No `step:` — SwiftUI draws tick marks the moment it is handed one (046), on all three shapes.
+    /// The panel's shared slider: a rounded rectangular handle, 16 pt high, with processing-domain
+    /// colors from SliderShape.accent. Readouts, reset and edit transactions stay in SliderRow.
     static func shapeSlider(_ value: Binding<Double>,
                             in range: ClosedRange<Double>,
                             shape: SliderShape,
                             controlSize: ControlSize = .mini,
                             onEditingChanged: @escaping (Bool) -> Void) -> some View {
-        Slider(value: value, in: range, onEditingChanged: onEditingChanged)
+        AdjustmentSlider(value: value, in: range, accent: shape.accent, onEditingChanged: onEditingChanged)
             .controlSize(controlSize)
             .frame(height: SliderValueMap.rowHeight)
-            .tint(shape.accent)
     }
 
     /// One slider's readout, with the negative zero taken out.

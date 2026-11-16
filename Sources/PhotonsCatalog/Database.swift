@@ -58,11 +58,15 @@ public struct LibraryLayout: Sendable {
     }
 
     /// `~/Library/Caches/Photons/<sha1(package path)>/` — decoded buffers, thumbnails (M3).
-    public var cacheDirectory: URL {
+    public static var cacheBaseDirectory: URL {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return base.appendingPathComponent("Photons", isDirectory: true)
+    }
+
+    public var cacheDirectory: URL {
         let key = Self.digest(packageURL.path).prefix(16)
-        return base.appendingPathComponent("Photons/\(key)", isDirectory: true)
+        return Self.cacheBaseDirectory.appendingPathComponent(String(key), isDirectory: true)
     }
 
     static func digest(_ s: String) -> String {

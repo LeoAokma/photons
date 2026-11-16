@@ -453,7 +453,7 @@ private struct PanoramaWorkspace: View {
                 Button(L10n.tr("45d14f0c4f3d")) {model.solvePosition()}.disabled(model.positionReference != nil)
                 Text(L10n.tr("3b0da2de91ba")).font(.caption)
                 HStack {Text(L10n.tr("4626a2810ff9"));Spacer();Text(String(format:"%+.2f EV",model.exposureEV)).monospacedDigit()}
-                Slider(value:$model.exposureEV,in:-4...4,step:0.05,onEditingChanged:{editing in if !editing {model.changeLCC()}})
+                AdjustmentSlider(value:$model.exposureEV,in:-4...4,step:0.05,onEditingChanged:{editing in if !editing {model.changeLCC()}})
                 Toggle(L10n.tr("fa9bce35de33"),isOn:$model.automaticLCCWB).toggleStyle(.checkbox)
                     .onChange(of:model.automaticLCCWB) {_,value in
                         if !value,let wb=model.plan?.lccState?.whiteBalance {model.lccTemperature=Double(wb.0);model.lccTint=Double(wb.1)}
@@ -481,7 +481,7 @@ private struct PanoramaWorkspace: View {
             Toggle(L10n.tr("dcc5dc5e40cb"),isOn:$model.options.avoidMotion).onChange(of:model.options.avoidMotion) { _,_ in model.refresh() }
             Toggle(L10n.tr("f332d17f7e09"),isOn:$model.options.matchExposure).onChange(of:model.options.matchExposure) { _,_ in model.refresh() }
             Text(L10n.tr("802a18c71f09")).font(.callout)
-            Slider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })
+            AdjustmentSlider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })
             Picker(L10n.tr("f55043412c64"),selection:$model.options.preferredSource) {
                 Text(L10n.tr("db9773faa309")).tag(-1)
                 ForEach(Array(model.urls.enumerated()),id:\.offset) { i,url in Text(url.lastPathComponent).tag(i) }
