@@ -2,7 +2,7 @@
 
 ## Scope
 
-This revision adds an iPadOS 18+ development preview using the existing Swift/Metal, catalog, panorama, LCC and export modules. It is not desktop feature parity or an iPad TestFlight submission. Development guidance is advisory: [Mac/iPad suggestions](../mac-ipad-development.md).
+The initial revision adds an iPadOS 18+ development preview using the existing Swift/Metal, catalog, panorama, LCC and export modules. The functional checks below do not establish desktop feature parity. Subsequent private-beta packaging and Apple submission status are recorded in [iPad TestFlight](../ipad-testflight.md). Development guidance is advisory: [Mac/iPad suggestions](../mac-ipad-development.md).
 
 ## Builds and checks
 

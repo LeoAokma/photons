@@ -1,6 +1,6 @@
 # iPadOS development preview
 
-This is an experimental, independently buildable iPad app. Its purpose is to exercise the existing Photons editing, LCC and panorama engines on iPadOS. It is not yet a feature-complete desktop replacement or a TestFlight distribution build.
+This is an experimental, independently buildable iPad app. Its purpose is to exercise the existing Photons editing, LCC and panorama engines on iPadOS. It is not yet a feature-complete desktop replacement. Private beta distribution uses the separate **Photons Studio Preview** App Store Connect record; see [iPad TestFlight](ipad-testflight.md) for signing, upload and current status.
 
 See [Mac / iPad development suggestions](mac-ipad-development.md) for the **advisory**, revisable development approach.
 
@@ -8,7 +8,7 @@ See [Mac / iPad development suggestions](mac-ipad-development.md) for the **advi
 
 - Xcode with an iOS 18+ SDK and an installed iPad simulator runtime; deployment target: iPadOS 18.
 - Open `Apps/iPad/PhotonsIPad.xcodeproj`, select **Photons iPad Preview**, choose an iPad, and Run.
-- For a physical iPad, select your development team in Signing & Capabilities. The preview uses a separate bundle identifier, `com.leoaokma.photons.ipad-preview`, and does not replace the Mac/TestFlight app.
+- For development on a physical iPad, select your development team in Signing & Capabilities. The preview uses a separate bundle identifier, `com.leoaokma.photons.ipad-preview`, and does not replace the Mac/TestFlight app. Invited TestFlight testers do not need Xcode or a development provisioning profile.
 - Command-line builds and tests: `python3 scripts/ipad-preview.py build` / `python3 scripts/ipad-preview.py test` / `python3 scripts/ipad-preview.py run`.
 - `make app` remains the Mac build. It does not package or publish an iPad app.
 
