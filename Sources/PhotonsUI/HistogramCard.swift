@@ -868,18 +868,13 @@ public final class HistogramCardView: NSView {
         lastDrawnHDRBins = 0
         if let histogram {
             let bins = histogram.binCount
+            let series: [(channel: Histogram.Channel, color: NSColor)] = [
+                (.red, NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)),
+                (.green, NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)),
+                (.blue, NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)),
+            ]
             if let context = NSGraphicsContext.current {
                 let cg = context.cgContext
-                // 406b — **the primaries are the destination's, not sRGB's.** See
-                // `additivePrimaries(in:)`: `plusLighter` adds the encoded components of the space it
-                // draws into, so only the destination's own axes make the sum `(1,1,1)` exactly and
-                // make a component above 1.0 impossible.
-                let primaries = Self.additivePrimaries(in: cg)
-                let series: [(channel: Histogram.Channel, color: NSColor)] = [
-                    (.red, primaries[0]),
-                    (.green, primaries[1]),
-                    (.blue, primaries[2]),
-                ]
                 cg.saveGState()
                 cg.beginTransparencyLayer(auxiliaryInfo: nil)
                 context.compositingOperation = .plusLighter
@@ -1008,41 +1003,6 @@ public final class HistogramCardView: NSView {
     /// The `+1 … +4` stop numbers and the ceiling chip: fixed light ink, never a `labelColor` tint.
     static let plotLabelColor = NSColor.white.withAlphaComponent(0.55)
     static let plotChipColor = NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.35)
-
-    /// **The three additive primaries, built in the destination's own colour space** (406b).
-    ///
-    /// 403 hard-coded `NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)` and added the three with
-    /// `plusLighter`. That is only safe on a surface that cannot hold more than white. `plusLighter`
-    /// adds the **encoded components of the space it is drawing into** — it does not add light — so an
-    /// sRGB primary inside a Display P3 context is `(0.9176, 0.2003, 0.1386)`, and three of them sum to
-    /// `(1.3759, 1.1856, 1.3964)`. An 8-bit surface clamps that to white, which is why 403's own
-    /// measurements were all correct and all blind to this; a float/extended-range surface (what the
-    /// window server composites on an EDR display — this machine reports 3.20 built-in, 4.08 external)
-    /// keeps it, and `(1.376, 1.186, 1.396)` normalises to a pale magenta. That is the owner's 「淡粉色」.
-    ///
-    /// The fix is not to clamp afterwards — `plusLighter` has no such switch, and painting an opaque bed
-    /// inside the layer makes the overflow *larger*, not smaller (measured: `(1.4661, 1.2756, 1.4955)`).
-    /// It is to make the sum structurally impossible: the destination's own primaries are axis-aligned in
-    /// the destination's own encoding, so R + G + B is exactly `(1, 1, 1)` there and no component can
-    /// pass 1.0 no matter how many series are added.
-    ///
-    /// Falls back to sRGB primaries when the context has no space at all (a plain 8-bit backing store,
-    /// where every value is clamped on write anyway, so the fallback is not observable).
-    static func additivePrimaries(in cg: CGContext) -> [NSColor] {
-        let fallback = [NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1),
-                        NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1),
-                        NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)]
-        guard let space = cg.colorSpace, space.numberOfComponents >= 3 else { return fallback }
-        return (0..<3).map { i in
-            var components = [CGFloat](repeating: 0, count: space.numberOfComponents + 1)
-            components[i] = 1
-            components[space.numberOfComponents] = 1
-            guard let color = CGColor(colorSpace: space, components: components) else {
-                return fallback[i]
-            }
-            return NSColor(cgColor: color) ?? fallback[i]
-        }
-    }
 
     /// `+1 … +4` along the top of the tail: what the 30 pt steps mean. Skipped when the card is too
     /// narrow for the numbers to be legible (they would collide with each other).
