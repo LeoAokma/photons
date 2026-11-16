@@ -208,16 +208,7 @@ private final class PanoramaWindowModel: ObservableObject {
     }
     func refreshLCC() {
         lccCount = LCCPairingStore().records().filter { urls.contains($0.scene) }.count
-        queue.async { [weak self] in
-            do {
-                let store=LCCProfileStore();try store.installBundledProfile();let catalog=store.catalog()
-                DispatchQueue.main.async {
-                    self?.lensProfiles=catalog.profiles
-                    self?.profileStatus=catalog.issues.isEmpty ? L10n.tr("5af8232321e0") : catalog.issues.joined(separator:"\n")
-                    self?.selectLensProfile()
-                }
-            } catch { DispatchQueue.main.async { self?.profileStatus=error.localizedDescription } }
-        }
+        LCCProfileLibraryModel.shared.refresh()
     }
     func selectLensProfile() {
         UserDefaults.standard.set(selectedLensProfileID,forKey:"Photons.panorama.lensProfileID")
@@ -235,7 +226,11 @@ private final class PanoramaWindowModel: ObservableObject {
         self.plan=plan
     }
     func manageLCC(showProfiles:Bool = false) {
-        let controller = LCCWindowController(urls:urls,showProfiles:showProfiles)
+        if showProfiles {
+            LCCProfileLibraryWindowController.shared.open(select:UUID(uuidString:selectedLensProfileID))
+            return
+        }
+        let controller = LCCWindowController(urls:urls)
         controller.onClose = { [weak self] in self?.refreshLCC(); self?.lccWindow = nil }
         lccWindow = controller; controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
     }
@@ -306,10 +301,17 @@ private final class PanoramaWindowModel: ObservableObject {
 
 private struct PanoramaWorkspace: View {
     @ObservedObject var model: PanoramaWindowModel
+    @ObservedObject private var profileLibrary = LCCProfileLibraryModel.shared
     var body: some View {
         Group {
             if model.choosingMode { modeSelection }
             else { workspace }
+        }
+        .onReceive(profileLibrary.$profiles) { profiles in
+            model.lensProfiles=profiles;model.selectLensProfile()
+        }
+        .onReceive(profileLibrary.$error) { error in
+            model.profileStatus=error ?? L10n.tr("5af8232321e0")
         }
         .alert(L10n.tr("8b92765d86d0"),isPresented:Binding(get:{ model.error != nil },set:{ if !$0 { model.error = nil } })) {
             Button(L10n.tr("f867f3417859"),role:.cancel) { model.error = nil }

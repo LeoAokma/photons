@@ -48,18 +48,23 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
     }
 }
 
+enum GeneralSettingsTab { case preferences, cameraBodies, lenses }
+
 struct SettingsView: View {
     @State private var page: SettingsPage = .general
-    @State private var cameraBodyTab = false
+    @State private var generalTab: GeneralSettingsTab
     @Bindable private var preferences = ApplicationPreferences.shared
     @State private var backdrop = CanvasBackdrop.current
     @State private var concurrency = ProcessingPreferences.thumbnailConcurrency
     private let deviceName = MTLCreateSystemDefaultDevice()?.name
     private let cameraBodyLibrary: CameraBodyLibrary
+    private let lensLibrary: LCCProfileLibraryModel
 
-    init(cameraBodyTab: Bool = false, cameraBodyLibrary: CameraBodyLibrary = .shared) {
-        _cameraBodyTab = State(initialValue: cameraBodyTab)
+    init(generalTab: GeneralSettingsTab = .preferences, cameraBodyLibrary: CameraBodyLibrary = .shared,
+         lensLibrary: LCCProfileLibraryModel = .shared) {
+        _generalTab = State(initialValue: generalTab)
         self.cameraBodyLibrary = cameraBodyLibrary
+        self.lensLibrary = lensLibrary
     }
 
     var body: some View {
@@ -116,11 +121,16 @@ struct SettingsView: View {
     @AppStorage("photons.language") private var language = "zh-Hans"
     private var general:some View {
         VStack(alignment: .leading, spacing: 20) {
-            Picker(L10n.tr("835b700e028c"), selection: $cameraBodyTab) {
-                Text(L10n.tr("cameraBodies.generalTab")).tag(false)
-                Text(L10n.tr("cameraBodies.title")).tag(true)
+            Picker(L10n.tr("835b700e028c"), selection: $generalTab) {
+                Text(L10n.tr("cameraBodies.generalTab")).tag(GeneralSettingsTab.preferences)
+                Text(L10n.tr("cameraBodies.title")).tag(GeneralSettingsTab.cameraBodies)
+                Text(L10n.tr("lensInfo.title")).tag(GeneralSettingsTab.lenses)
             }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("settings.general.tabs")
-            if cameraBodyTab { CameraBodySettingsView(library: cameraBodyLibrary) } else { generalOptions }
+            switch generalTab {
+            case .preferences: generalOptions
+            case .cameraBodies: CameraBodySettingsView(library: cameraBodyLibrary)
+            case .lenses: LensInfoSettingsView(model: lensLibrary)
+            }
         }
     }
     private var generalOptions:some View {

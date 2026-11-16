@@ -458,7 +458,7 @@
   "37979829426b": "工作区",
   "f02381de45eb": "HDR 与预览",
   "58d26314335d": "性能与降噪",
-  "acb3664262f1": "语言与应用偏好。",
+  "acb3664262f1": "语言、应用偏好与设备配置。",
   "74ff79c4bef3": "管理所有曾经打开的照片库。",
   "886ed0494986": "让界面适合你的看图与编辑习惯。",
   "3c98d56527cc": "管理屏幕上的高光显示。",
@@ -1440,5 +1440,16 @@
   "cameraBodies.duplicateName": "已有同名机身，请使用不同的名称。",
   "cameraBodies.invalidFile": "机身配置文件无效。",
   "cameraBodies.deleteQuestion": "删除此自建机身配置？",
-  "cameraBodies.deleteHint": "删除后不会再出现在新任务的选择列表中。已保存的标定和拼接记录仍保留原机身信息。"
+  "cameraBodies.deleteHint": "删除后不会再出现在新任务的选择列表中。已保存的标定和拼接记录仍保留原机身信息。",
+  "lensInfo.title": "镜头信息",
+  "lensInfo.sharedList": "与 LCC 校正和拼接共用同一份镜头配置列表。",
+  "lensInfo.configureLCC": "配置 LCC",
+  "lensInfo.configureDistortion": "配置畸变修正",
+  "lensInfo.inDevelopment": "开发中",
+  "lensInfo.distortionHint": "畸变配置接口已预留，目前尚无畸变数据；上传和网格标定功能仍在开发中。",
+  "lensInfo.empty": "暂无镜头配置。可新建标定或导入已有配置文件。",
+  "lensInfo.camera": "标定相机 / 后背",
+  "lensInfo.aperture": "标定光圈",
+  "lensInfo.captureCount": "{0} 张标定照片",
+  "lensInfo.distortion": "畸变信息"
 }

@@ -6,9 +6,10 @@ import PhotonsPanorama
 
 @MainActor
 final class LCCProfileCreatorWindowController: NSWindowController, NSWindowDelegate {
-    private let model=LCCProfileCreatorModel()
+    private let model:LCCProfileCreatorModel
     var onClose:(()->Void)?
-    init(onCreated:@escaping (LCCProfileSummary)->Void) {
+    init(store:LCCProfileStore = LCCProfileStore(),onCreated:@escaping (LCCProfileSummary)->Void) {
+        model=LCCProfileCreatorModel(store:store)
         let w=NSWindow(contentRect:NSRect(x:0,y:0,width:1060,height:780),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
         w.title=L10n.tr("386d3917a3af");w.minSize=NSSize(width:900,height:680);w.isReleasedWhenClosed=false
         super.init(window:w);w.delegate=self;model.window=w;model.onCreated=onCreated
@@ -23,6 +24,8 @@ final class LCCProfileCreatorWindowController: NSWindowController, NSWindowDeleg
 
 @MainActor
 private final class LCCProfileCreatorModel: ObservableObject {
+    private let store:LCCProfileStore
+    init(store:LCCProfileStore) {self.store=store}
     weak var window:NSWindow?
     var onCreated:((LCCProfileSummary)->Void)?
     private var sourceAccess: [FileAccess] = []
@@ -101,7 +104,8 @@ private final class LCCProfileCreatorModel: ObservableObject {
         else if let n=Double(apertureText),n.isFinite,n>0,n<=128 { aperture=n }
         else { error=L10n.tr("95069b4fdd7d");return }
         busy=true;status=L10n.tr("b764a9e30559");token=PanoramaCancellation()
-        let token=self.token,frames=self.frames,name=self.name,notes=self.notes,long=self.sensorLong,short=self.sensorShort,body=self.cameraBody
+        let token=self.token,frames=self.frames,name=self.name,notes=self.notes,long=self.sensorLong,short=self.sensorShort,body=self.cameraBody,store=self.store
+        let onCreated=self.onCreated
         queue.async { [weak self] in
             do {
                 let profile=try LCCProfileBuilder.create(name:name,aperture:aperture,notes:notes,frames:frames,
@@ -109,13 +113,13 @@ private final class LCCProfileCreatorModel: ObservableObject {
                         DispatchQueue.main.async { self?.status=message }
                     }
                 try token.check()
-                let url=try LCCProfileStore().save(profile)
+                let url=try store.save(profile)
                 let bytes=(try? url.resourceValues(forKeys:[.fileSizeKey]).fileSize) ?? 0
                 DispatchQueue.main.async {
+                    onCreated?(LCCProfileSummary(profile))
                     guard let self,!self.closed else { return }
                     self.busy=false;self.savedURL=url
                     self.status=L10n.tr("ab05f387f60b" , String(describing: (ByteCountFormatter.string(fromByteCount:Int64(bytes),countStyle:.file))))
-                    self.onCreated?(LCCProfileSummary(profile))
                 }
             } catch { DispatchQueue.main.async { self?.finish(error) } }
         }

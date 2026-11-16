@@ -458,7 +458,7 @@
   "37979829426b": "Workspace",
   "f02381de45eb": "HDR & Preview",
   "58d26314335d": "Performance & Denoise",
-  "acb3664262f1": "Language and application preferences.",
+  "acb3664262f1": "Language, application preferences and equipment profiles.",
   "74ff79c4bef3": "Manage every library you have opened.",
   "886ed0494986": "Adapt the interface to your browsing and editing habits.",
   "3c98d56527cc": "Control highlight display on your screen.",
@@ -1440,5 +1440,16 @@
   "cameraBodies.duplicateName": "A body with this name already exists. Choose a different name.",
   "cameraBodies.invalidFile": "Invalid camera body file.",
   "cameraBodies.deleteQuestion": "Delete this custom camera body?",
-  "cameraBodies.deleteHint": "It will no longer appear in the selection list for new tasks. Saved calibrations and panoramas keep their original body information."
+  "cameraBodies.deleteHint": "It will no longer appear in the selection list for new tasks. Saved calibrations and panoramas keep their original body information.",
+  "lensInfo.title": "Lens Information",
+  "lensInfo.sharedList": "Shared lens profiles for LCC correction and panorama stitching.",
+  "lensInfo.configureLCC": "Configure LCC",
+  "lensInfo.configureDistortion": "Configure Distortion",
+  "lensInfo.inDevelopment": "In development",
+  "lensInfo.distortionHint": "Distortion configuration is reserved for a future release. No distortion data is available yet; import and grid calibration are in development.",
+  "lensInfo.empty": "No lens profiles yet. Create a calibration or import an existing profile.",
+  "lensInfo.camera": "Calibration camera / back",
+  "lensInfo.aperture": "Calibration aperture",
+  "lensInfo.captureCount": "{0} calibration photos",
+  "lensInfo.distortion": "Distortion information"
 }

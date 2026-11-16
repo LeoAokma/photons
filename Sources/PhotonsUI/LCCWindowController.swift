@@ -12,12 +12,12 @@ public final class LCCWindowController: NSWindowController, NSWindowDelegate {
         get { model.onExported }
         set { model.onExported = newValue }
     }
-    public init(urls: [URL], showProfiles: Bool = false) {
+    public init(urls: [URL]) {
         model = LCCWindowModel(urls:urls)
         let window = NSWindow(contentRect:NSRect(x:0,y:0,width:1240,height:820),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
         window.title = L10n.tr("4070f55d9a88"); window.minSize = NSSize(width:1000,height:650); window.isReleasedWhenClosed = false
         super.init(window:window); window.delegate = self; model.window = window
-        window.contentView = NSHostingView(rootView:LCCWorkspaceView(model:model,showProfiles:showProfiles || urls.isEmpty)); window.center(); model.load()
+        window.contentView = NSHostingView(rootView:LCCWorkspaceView(model:model)); window.center(); model.load()
     }
     public required init?(coder:NSCoder) { fatalError("no nib") }
     public func windowWillClose(_ notification:Notification) { model.closed = true; model.cancelCorrection(); onClose?() }
@@ -39,7 +39,7 @@ final class LCCWindowModel: ObservableObject {
     @Published var cameraBody=PanoramaCameraBody.alpa12Max
     @Published var bodyOrientation=PanoramaBodyOrientation.degrees0
     @Published var profileID = LCCLensProfile.builtInID.uuidString
-    @Published var profiles:[LCCProfileSummary] = []
+    private var pendingRecordedProfileID: UUID?
     @Published var shiftX = 0.0
     @Published var shiftY = 0.0
     @Published var positionConfirmed = false
@@ -72,8 +72,6 @@ final class LCCWindowModel: ObservableObject {
                 let scenes = try urls.map { try PanoramaSource(url:$0) }
                 var manifests:[Int:PanoramaManifest]=[:]
                 for (i,url) in urls.enumerated() {if let manifest=try PanoramaManifest.read(from:url) {manifests[i]=manifest}}
-                let store=LCCProfileStore();try store.installBundledProfile()
-                let profiles=store.catalog().profiles
                 let records = LCCPairingStore().records().filter { urls.contains($0.scene) }
                 let flatURLs = Array(Set(records.map(\.flat))).sorted { $0.lastPathComponent < $1.lastPathComponent }
                 let flatAccess = flatURLs.map { FileAccessStore.shared.access(to: $0) }
@@ -82,7 +80,7 @@ final class LCCWindowModel: ObservableObject {
                 DispatchQueue.main.async {
                     guard let self, !self.closed else { return }
                     self.sourceAccess += flatAccess
-                    self.manifests=manifests;self.profiles=profiles
+                    self.manifests=manifests
                     self.scenes = scenes; self.selected=0; self.flats = flats; self.assignments = assignments; self.busy = false
                     self.saved = !scenes.isEmpty && assignments.allSatisfy { $0 >= 0 }
                     self.status = self.saved ? L10n.tr("cd392f12e4da") : L10n.tr("f3a2a43f5215")
@@ -205,6 +203,17 @@ final class LCCWindowModel: ObservableObject {
             positionExplanation=L10n.tr(resolvedOffset == nil ? "lcc.position.relative":"lcc.position.recorded")
         }
     }
+    func selectProfile(_ id: String) {
+        pendingRecordedProfileID=nil;profileID=id;invalidateCorrection()
+    }
+    func useRecordedProfile(_ id: UUID?) {
+        pendingRecordedProfileID=id
+        resolveRecordedProfile(in:LCCProfileLibraryModel.shared.profiles)
+    }
+    func resolveRecordedProfile(in profiles: [LCCProfileSummary]) {
+        guard let id=pendingRecordedProfileID,profiles.contains(where:{$0.id==id}) else {return}
+        pendingRecordedProfileID=nil;profileID=id.uuidString;invalidateCorrection()
+    }
     func selectReference(_ index:Int) {
         referenceFrame=index;usePictureCenter=false
         updateReferencePosition()
@@ -231,9 +240,9 @@ final class LCCWindowModel: ObservableObject {
         let source=scenes[selected],manifest=manifests[selected]
         profilePreview=nil;uncorrectedPreview=nil;correctedManifest=nil;referenceFrame=0;positionConfirmed=false;usePictureCenter=false
         resolvedOffset=manifest?.profileOffsetMM
+        useRecordedProfile(manifest?.profileID)
         if let manifest {
             bodyOrientation=manifest.bodyOrientation
-            if let id=manifest.profileID,profiles.contains(where:{$0.id==id}) {profileID=id.uuidString}
             if let body=manifest.cameraBody {cameraBody=body}
             if resolvedOffset == nil,let i=manifest.frames.firstIndex(where:{$0.shiftMM != nil}),let shift=manifest.frames[i].shiftMM {
                 resolvedOffset=manifest.offset(reference:i,position:shift)
@@ -347,16 +356,21 @@ private struct LCCPairingView: View {
 
 private struct LCCWorkspaceView: View {
     @ObservedObject var model:LCCWindowModel
-    @State private var selection:Int
-    @StateObject private var libraryModel=LCCProfileLibraryModel()
-    init(model:LCCWindowModel,showProfiles:Bool) {self.model=model;_selection=State(initialValue:showProfiles ? 2:0)}
+    @State private var selection = 0
     var body:some View {
         VStack(spacing:0) {
-            Picker(L10n.tr("2028834f2b6b"),selection:$selection) {
-                Text(L10n.tr("17b409bc4ecb")).tag(0);Text(L10n.tr("36be15abd92b")).tag(1);Text(L10n.tr("bba6488b8640")).tag(2)
-            }.pickerStyle(.segmented).frame(width:510).padding(.top,16)
-            if selection==0 {LCCPairingView(model:model)} else if selection==1 {LCCProfileCorrectionView(model:model)} else {LCCProfileLibraryView(model:libraryModel)}
+            HStack {
+                Picker(L10n.tr("2028834f2b6b"),selection:$selection) {
+                    Text(L10n.tr("17b409bc4ecb")).tag(0);Text(L10n.tr("36be15abd92b")).tag(1)
+                }.pickerStyle(.segmented).frame(width:380)
+                Spacer()
+                Button(L10n.tr("bba6488b8640")) {
+                    LCCProfileLibraryWindowController.shared.open(select:UUID(uuidString:model.profileID))
+                }.accessibilityIdentifier("lcc.manageProfiles")
+            }.padding(.horizontal,24).padding(.top,16)
+            if selection==0 {LCCPairingView(model:model)} else {LCCProfileCorrectionView(model:model)}
         }.onChange(of:model.manifests.count) {_,count in if count>0 {selection=1}}
+            .onAppear { LCCProfileLibraryModel.shared.ensureLoaded() }
 
     }
 }
@@ -381,6 +395,7 @@ private struct LCCResultView:View {
 }
 struct LCCProfileCorrectionView:View {
     @ObservedObject var model:LCCWindowModel
+    @ObservedObject private var library = LCCProfileLibraryModel.shared
     var body:some View {
         VStack(spacing:0) {
             HStack(spacing:0) {
@@ -399,8 +414,8 @@ struct LCCProfileCorrectionView:View {
                         Picker(L10n.tr("7b50017ae47e"),selection:$model.selected) {
                             ForEach(model.scenes.indices,id:\.self) {Text(model.scenes[$0].url.lastPathComponent).tag($0)}
                         }.disabled(model.busy)
-                        Picker(L10n.tr("5c30b533510f"),selection:Binding(get:{model.profileID},set:{model.profileID=$0;model.invalidateCorrection()})) {
-                            ForEach(model.profiles) {Text($0.name).tag($0.id.uuidString)}
+                        Picker(L10n.tr("5c30b533510f"),selection:Binding(get:{model.profileID},set:{model.selectProfile($0)})) {
+                            ForEach(library.profiles) {Text($0.name).tag($0.id.uuidString)}
                         }.disabled(model.busy)
                         Divider()
                         CameraBodyPicker(selection:Binding(get:{model.cameraBody},set:{
@@ -455,6 +470,7 @@ struct LCCProfileCorrectionView:View {
             }.padding(16)
         }
         .onAppear {model.loadProfilePreview()}
+        .onReceive(library.$profiles) { model.resolveRecordedProfile(in: $0) }
         .onChange(of:model.selected) {_,_ in model.loadProfilePreview()}
         .onChange(of:model.scenes.map(\.url)) {_,_ in model.loadProfilePreview()}
         .alert(L10n.tr("91a5d44e3599"),isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})) {Button(L10n.tr("f867f3417859")) {model.error=nil}} message:{Text(model.error ?? "")}

@@ -59,7 +59,7 @@ final class CameraBodySettingsTests: XCTestCase {
         let profile = try CameraBodyProfile(name: "我的移轴机身", travel: .init(left: 12, right: 18, up: 25, down: 0))
         try library.save(.custom(profile))
         let views: [(String, AnyView, CGFloat)] = [
-            ("settings-window", AnyView(SettingsView(cameraBodyTab: true, cameraBodyLibrary: library)), 760),
+            ("settings-window", AnyView(SettingsView(generalTab: .cameraBodies, cameraBodyLibrary: library)), 760),
             ("settings", AnyView(CameraBodySettingsView(library: library).padding(24)), 531),
             ("editor", AnyView(CameraBodyEditor(draft: .init(profile: profile), library: library, saved: { _ in })), 448),
             ("picker", AnyView(VStack {
