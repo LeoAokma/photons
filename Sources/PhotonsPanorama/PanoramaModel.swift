@@ -70,7 +70,7 @@ public struct PanoramaSource: Codable {
     public let isRAW:Bool
     private let fileSize: Int?
     private let modified: Date?
-    public init(url: URL) throws {
+    public init(url: URL, sensorOverride: SensorSize? = nil) throws {
         let identity = try url.resourceValues(forKeys:[.fileSizeKey,.contentModificationDateKey])
         fileSize = identity.fileSize; modified = identity.contentModificationDate
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -95,7 +95,7 @@ public struct PanoramaSource: Codable {
         if orientation >= 5, let s = identified {
             identified = SensorSize(width: s.height, height: s.width, source: s.source)
         }
-        sensor = identified
+        sensor = sensorOverride ?? identified
     }
     public func checkUnchanged() throws {
         var fresh = url; fresh.removeAllCachedResourceValues()
@@ -104,6 +104,11 @@ public struct PanoramaSource: Codable {
             throw PanoramaFailure(L10n.tr("7e0e69f9c09a" , String(describing: (url.lastPathComponent))))
         }
     }
+}
+
+public enum PanoramaRegistrationMode: String, Codable, Sendable {
+    case shift, perspective
+    public static let perspectiveLCCNotice = "Apply LCC to individual photographs before perspective stitching. A rotated-camera layout does not describe physical lens-shift positions."
 }
 
 public struct PanoramaOptions: Codable, Equatable {
@@ -146,6 +151,7 @@ public struct OpticalEstimate {
 /// renderers. Export cannot call registration. Stored coordinates use an upper-left origin;
 /// only the Core Image compositor converts them to lower-left coordinates.
 public struct PanoramaPlan {
+    public var registrationMode: PanoramaRegistrationMode = .shift
     public var isRegistered = true
     public var warps: [PanoramaTransform]? = nil
     public let sources: [PanoramaSource]

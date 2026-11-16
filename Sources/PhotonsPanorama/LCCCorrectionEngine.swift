@@ -42,6 +42,7 @@ public enum LCCCorrectionEngine {
                                    offset:CGPoint? = nil,cameraBody:PanoramaCameraBody = .alpa12Max,cancellation:PanoramaCancellation = .init(),
                                    progress:PanoramaEngine.Progress = {_ in}) throws->(plan:PanoramaPlan,manifest:PanoramaManifest) {
         try original.validate()
+        guard original.registrationMode != .perspective else { throw PanoramaFailure(PanoramaRegistrationMode.perspectiveLCCNotice) }
         guard original.geometryUnrecoverable != true else {throw PanoramaFailure(L10n.tr("fc7ac1c0b0ab"))}
         guard !original.correctionApplied else {throw PanoramaFailure(L10n.tr("edbde7a1e03c"))}
         var rendered=profile

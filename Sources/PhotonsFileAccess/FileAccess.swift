@@ -36,10 +36,14 @@ public final class FileAccess: @unchecked Sendable {
 
 public enum SandboxEnvironment {
     public static var isSandboxed: Bool {
+        #if os(iOS)
+        return true
+        #else
         guard let task = SecTaskCreateFromSelf(nil),
               let value = SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, nil)
         else { return false }
         return (value as? Bool) == true
+        #endif
     }
 }
 
@@ -63,7 +67,11 @@ public final class FileAccessStore: @unchecked Sendable {
         let access = FileAccess(url)
         return try withExtendedLifetime(access) {
             do {
+                #if os(iOS)
+                return try url.bookmarkData(options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil)
+                #else
                 return try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+                #endif
             } catch {
                 // CLI / unsigned unit tests can still use ordinary bookmarks. A sandboxed app
                 // must surface failure, rather than pretend it saved persistent permission.
@@ -87,7 +95,12 @@ public final class FileAccessStore: @unchecked Sendable {
 
     public static func resolve(_ bookmark: Data) throws -> (access: FileAccess, stale: Bool) {
         var stale = false
-        let url = try URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope, .withoutUI, .withoutMounting],
+        #if os(iOS)
+        let options: URL.BookmarkResolutionOptions = [.withoutUI]
+        #else
+        let options: URL.BookmarkResolutionOptions = [.withSecurityScope, .withoutUI, .withoutMounting]
+        #endif
+        let url = try URL(resolvingBookmarkData: bookmark, options: options,
                           relativeTo: nil, bookmarkDataIsStale: &stale)
         return (FileAccess(url), stale)
     }

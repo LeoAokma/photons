@@ -1813,34 +1813,21 @@ public struct InspectorView: View {
     /// 052: 曝光 is the one row that prints decimals (`%.2f EV`) and stores on a 0.01 grid; the other
     /// six read as whole numbers rounded away from zero and store what was typed (their 1 step is 1,
     /// so a drag is already whole).
-    public static let lightRows: [ToneRow] = [
-        ToneRow(title: L10n.tr("bc7dacff87db"), range: -4 ... 8, format: "%.2f EV", shape: .knob, keyPath: \.light.exposure,
-                decimals: 2, rounding: .asIs, quantum: 0.01),
-        ToneRow(title: L10n.tr("bc4b2dbbb77b"), range: -100 ... 100, format: "%.0f", shape: .knob, keyPath: \.light.contrast,
-                decimals: 1),
-        ToneRow(title: L10n.tr("f799c2308083"), range: -100 ... 100, format: "%.0f", shape: .knob, keyPath: \.light.highlights,
-                decimals: 1),
-        ToneRow(title: L10n.tr("280d2d14de93"), range: -100 ... 100, format: "%.0f", shape: .knob, keyPath: \.light.midtones,
-                decimals: 1),
-        ToneRow(title: L10n.tr("a0fb1c62d0e8"), range: -100 ... 100, format: "%.0f", shape: .knob, keyPath: \.light.shadows,
-                decimals: 1),
-        ToneRow(title: L10n.tr("f56e7eff58bf"), range: -100 ... 100, format: "%.0f", shape: .knob, keyPath: \.light.whites,
-                decimals: 1),
-        ToneRow(title: L10n.tr("ed7d2c54184b"), range: -100 ... 100, format: "%.0f", shape: .knob, keyPath: \.light.blacks,
-                decimals: 1),
-    ]
+    private static func sharedRows(_ rows: [DevelopControl]) -> [ToneRow] {
+        rows.map { ToneRow(title: $0.title, range: $0.range, format: $0.format,
+                          shape: $0.linear ? .linear : .knob, keyPath: $0.keyPath,
+                          decimals: $0.decimals, rounding: $0.precise ? .asIs : .outward,
+                          quantum: $0.quantum) }
+    }
+
+    public static let lightRows: [ToneRow] = sharedRows(DevelopControls.lightRows)
 
     /// 自然饱和 / 饱和 — the Color card's two rows, the same table shape as Light.
     ///
     /// 047 put them in a table for the same reason 046 did with Light's: the card's behaviour (shape,
     /// typeable number, per-parameter reset) is then a value a test can hold, and the two cards cannot
     /// drift apart. Both are render parameters, so both are `.knob`.
-    public static let colorRows: [ToneRow] = [
-        ToneRow(title: L10n.tr("ea9f8caa4ed3"), range: -100 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.color.vibrance, decimals: 1),
-        ToneRow(title: L10n.tr("1394938c0161"), range: -100 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.color.saturation, decimals: 1),
-    ]
+    public static let colorRows: [ToneRow] = sharedRows(DevelopControls.colorRows)
 
     /// 2026-10-28 — the 校正 card's 暗角 block: **S3c's three uniforms, in the kernel's own order**
     /// (`s3_vignette.metal`: amount, midpoint, feather), with the kernel's own travels.
@@ -1854,14 +1841,7 @@ public struct InspectorView: View {
     ///
     /// All three are `.linear`: S3c runs in the scene-linear chain (116), so 060's yellow would claim
     /// a decode parameter and 071's red a scene-linear one; the card paints them red.
-    public static let vignetteRows: [ToneRow] = [
-        ToneRow(title: L10n.tr("da89443e202b"), range: -100 ... 100, format: "%.0f", shape: .linear,
-                keyPath: \.effects.vignetteAmount),
-        ToneRow(title: L10n.tr("6d0d9fcc7f37"), range: 0 ... 100, format: "%.0f", shape: .linear,
-                keyPath: \.effects.vignetteMidpoint),
-        ToneRow(title: L10n.tr("a3382c24d9e9"), range: 0 ... 100, format: "%.0f", shape: .linear,
-                keyPath: \.effects.vignetteFeather),
-    ]
+    public static let vignetteRows: [ToneRow] = sharedRows(DevelopControls.vignetteRows)
 
     /// 2026-10-28 — the 效果 card's 颗粒 block: S3.7's four numbers (`s3_7_grain.metal`).
     ///
@@ -1870,16 +1850,7 @@ public struct InspectorView: View {
     /// **whole-number grid** (`quantum: 1`) because the kernel hashes `grainSeedValue`, the rounded
     /// integer — a document holding 3.7 hashes 4, and letting the field store 3.7 would be a number the
     /// key and the pixels both silently disagree with.
-    public static let grainRows: [ToneRow] = [
-        ToneRow(title: L10n.tr("a08cd6ad31a2"), range: 0 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.effects.grain),
-        ToneRow(title: L10n.tr("b5d27bfa565b"), range: 0 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.effects.grainSize),
-        ToneRow(title: L10n.tr("4208ff3a2c8b"), range: 0 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.effects.grainRoughness),
-        ToneRow(title: L10n.tr("5e20fc223736"), range: 0 ... 999, format: "%.0f", shape: .knob,
-                keyPath: \.effects.grainSeed, quantum: 1),
-    ]
+    public static let grainRows: [ToneRow] = sharedRows(DevelopControls.grainRows)
 
     /// 2026-10-28 (P0-6), 164 — the **开发** card's four decoder rows are drawn from
     /// `DetailAxis.panelOrder` (031 / 040 / 042); 去摩尔纹 is the fifth decoder amount and has its
@@ -1888,38 +1859,19 @@ public struct InspectorView: View {
     ///
     /// 164 moved the old 纹理 / 清晰度 / 去雾 block out of this table: 纹理 / 清晰度 are the new
     /// **细节** card's first block, 去雾 is the **效果** card's first block.
-    public static let textureClarityRows: [ToneRow] = [
-        ToneRow(title: L10n.tr("262348fa5f3e"), range: -100 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.effects.texture),
-        ToneRow(title: L10n.tr("0e22652107f5"), range: -100 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.effects.clarity),
-    ]
+    public static let textureClarityRows: [ToneRow] = sharedRows(DevelopControls.textureClarityRows)
 
     /// 164 — the new 细节 card's two **denoise** rows: S3.9's display-referred luminance and
     /// chroma noise reduction. 0 is the pre-164 frame byte for byte (the stage is not encoded when
     /// everything is 0), and the rows are `.knob` because they act on the decoded/render frame,
     /// not in the scene-linear or decoder domains.
-    public static let nonBayerRows: [ToneRow] = [
-        ToneRow(title: L10n.tr("da6c0db97b87"), range: 0 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.effects.nonBayerLuminanceNR),
-        ToneRow(title: L10n.tr("ad51d63abfc2"), range: 0 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.effects.nonBayerColorNR),
-    ]
+    public static let nonBayerRows: [ToneRow] = sharedRows(DevelopControls.nonBayerRows)
 
     /// 185 — the 细节 card's third block: S3.10's four numbers.
     ///
     /// The card's title resets all of them with the block above it (`PanelResets.group(.detailFX)`
     /// walks `rows.map(\.keyPath)`), so the four new rows need no reset of their own.
-    public static let sharpenRows: [ToneRow] = [
-        ToneRow(title: L10n.tr("b0dbdc47bcc2"), range: 0 ... 150, format: "%.0f", shape: .knob,
-                keyPath: \.sharpen.amount),
-        ToneRow(title: L10n.tr("e9c8b36e09c7"), range: 0.5 ... 3.0, format: "%.1f", shape: .knob,
-                keyPath: \.sharpen.radius),
-        ToneRow(title: L10n.tr("ca1caeef1733"), range: 0 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.sharpen.detail),
-        ToneRow(title: L10n.tr("4b16c5d8dbf4"), range: 0 ... 100, format: "%.0f", shape: .knob,
-                keyPath: \.sharpen.masking),
-    ]
+    public static let sharpenRows: [ToneRow] = sharedRows(DevelopControls.sharpenRows)
 
     /// The new 细节 card's rows in draw order: 纹理 / 清晰度, then the two denoises.
     public static var detailFXRows: [ToneRow] { textureClarityRows + nonBayerRows }
@@ -1929,12 +1881,7 @@ public struct InspectorView: View {
     ///
     /// The travel is the kernel's: −100…100. 0 means the veil is not touched — and then S1.9 is not
     /// encoded at all, so the frame is the pre-117 frame byte for byte.
-    public static let dehazeRows: [ToneRow] = [
-        // 117: 去雾 runs in the scene-linear chain (S1.9), so its row carries the linear-domain red
-        // (071's class) like the vignette rows in 校正.
-        ToneRow(title: L10n.tr("0665cca26772"), range: -100 ... 100, format: "%.0f", shape: .linear,
-                keyPath: \.effects.dehaze),
-    ]
+    public static let dehazeRows: [ToneRow] = sharedRows(DevelopControls.dehazeRows)
 
     /// The 效果 card's rows in draw order — 164 leaves it two blocks and **no detail rows**:
     /// 去雾 (S1.9) then 颗粒 (S3.7).

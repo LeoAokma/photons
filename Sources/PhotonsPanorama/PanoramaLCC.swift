@@ -253,6 +253,7 @@ extension PanoramaEngine {
                            offsetMM:CGPoint,sensor:SensorSize,crop:Bool,cancellation:PanoramaCancellation = .init(),
                            rebuildSeams:Bool=true,exposureEV:Double=0,protectHighlights:Bool=true,whiteBalanceOverride:(Float,Float)?=nil,
                            cameraBody:PanoramaCameraBody?=nil,bodyOrientation:PanoramaBodyOrientation = .degrees0) throws -> PanoramaPlan {
+        guard original.registrationMode != .perspective else { throw PanoramaFailure(PanoramaRegistrationMode.perspectiveLCCNotice) }
         guard offsetMM.x.isFinite,offsetMM.y.isFinite,sensor.width>0,sensor.height>0 else {throw PanoramaFailure(L10n.tr("ff85097641dd"))}
         guard exposureEV.isFinite,(-8...8).contains(exposureEV) else {throw PanoramaFailure(L10n.tr("0d2075dd3f5d"))}
         if let wb=whiteBalanceOverride {

@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Photons",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v18)],
     products: [
         .library(name: "PhotonsCore", targets: ["PhotonsCore"]),
         .library(name: "PhotonsFileAccess", targets: ["PhotonsFileAccess"]),
@@ -17,6 +17,7 @@ let package = Package(
         // `PhotonsApp` is the thin `@main` + `AppDelegate`/menu/bundle shim; a test target can depend on
         // a library, not on an executable, which is the other reason the shell lives here.
         .library(name: "PhotonsUI", targets: ["PhotonsUI"]),
+        .library(name: "PhotonsMobile", targets: ["PhotonsMobile"]),
         .executable(name: "photonsctl", targets: ["photonsctl"]),
         .executable(name: "Photons", targets: ["PhotonsApp"]),
         .executable(name: "photons-panorama-worker", targets:["PhotonsPanoramaWorker"]),
@@ -46,6 +47,7 @@ let package = Package(
             .product(name: "GRDB", package: "GRDB.swift"),
         ]),
         .executableTarget(name: "photonsctl", dependencies: ["PhotonsCore", "PhotonsExport", "PhotonsCatalog"]),
+        .target(name: "PhotonsMobile", dependencies: ["PhotonsCore", "PhotonsCatalog", "PhotonsPanorama", "PhotonsExport", "PhotonsJobs", "PhotonsFileAccess", "PhotonsLocalization"]),
         // `PhotonsExport` is here because the export sheet (M5) drives `BatchExporter` from the
         // window: the engine is the only implementation of "render + name + encode + report", and a
         // second copy inside the UI would be the beginning of two exports that disagree.

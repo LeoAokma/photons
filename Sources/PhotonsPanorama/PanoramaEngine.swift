@@ -36,11 +36,12 @@ public final class PanoramaEngine {
     }
 
     public func analyze(urls: [URL], options: PanoramaOptions = .init(),knownPositions:[Int:CGPoint]=[:],sensorOverride:SensorSize?=nil,
+                        registrationMode:PanoramaRegistrationMode = .shift,
                         cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws -> PanoramaPlan {
         guard urls.count >= 2 else { throw PanoramaFailure(urls.isEmpty ? L10n.tr("977f178f562a") : L10n.tr("2e0b7140c7cc")) }
         guard urls.count <= 16 else { throw PanoramaFailure(L10n.tr("fc6d0bd57867")) }
         var sources: [PanoramaSource] = []
-        for url in urls { try cancellation.check(); sources.append(try PanoramaSource(url:url)) }
+        for url in urls { try cancellation.check(); sources.append(try PanoramaSource(url:url, sensorOverride:sensorOverride)) }
         guard let first = sources.first else { throw PanoramaFailure(L10n.tr("2208e0978c6a")) }
         guard sources.allSatisfy({ abs($0.size.width-first.size.width)<2 && abs($0.size.height-first.size.height)<2 && $0.orientation == first.orientation }) else {
             throw PanoramaFailure(L10n.tr("ff9aa3d63f3f"))
@@ -60,6 +61,7 @@ public final class PanoramaEngine {
         }
         struct Edge { let a: Int; let b: Int; let transform: PanoramaTransform; let score: Double; var probes: [CGPoint] = [] }
         var edges: [Edge] = []
+        if registrationMode == .shift {
         for a in 0..<sources.count-1 { for b in a+1..<sources.count {
             try cancellation.check(); progress(L10n.tr("ffa317474694" , String(describing: (a+1)), String(describing: (b+1))))
             let match:TranslationRegistration.Match?
@@ -80,19 +82,20 @@ public final class PanoramaEngine {
                 }
             }
         }}
+        }
         func connected() -> Bool {
             var reached:Set<Int>=[0]
             for _ in sources.indices {for edge in edges where reached.contains(edge.a) || reached.contains(edge.b) {reached.insert(edge.a);reached.insert(edge.b)}}
             return reached.count==sources.count
         }
         var projective=false
-        if !connected() {
+        if registrationMode == .perspective || !connected() {
             for a in 0..<sources.count-1 {for b in a+1..<sources.count where !edges.contains(where:{$0.a==a && $0.b==b}) {
                 try cancellation.check()
                 progress(L10n.tr("panorama.geometry",String(a+1),String(b+1)))
                 guard let match=try ProjectiveRegistration.align(coarse[a],coarse[b],fineA:grays[a],fineB:grays[b],cancellation:cancellation) else {continue}
                 let h=PanoramaTransform.scale(1/scale,1/scale).multiplied(by:match.transform).multiplied(by:.scale(scale,scale))
-                if let pa=knownPositions[a],let pb=knownPositions[b],let sensor=sensorOverride ?? first.sensor {
+                if registrationMode == .shift, let pa=knownPositions[a],let pb=knownPositions[b],let sensor=sensorOverride ?? first.sensor {
                     let center=CGPoint(x:first.size.width/2,y:first.size.height/2),mapped=h.point(center)
                     let expected=CGPoint(x:(pb.x-pa.x)/sensor.width*first.size.width,y:-(pb.y-pa.y)/sensor.height*first.size.height)
                     guard hypot(mapped.x-center.x-expected.x,mapped.y-center.y-expected.y)<max(first.size.width/sensor.width,first.size.height/sensor.height)*1.5 else {continue}
@@ -132,6 +135,7 @@ public final class PanoramaEngine {
                                 gains:[Double](repeating:1,count:sources.count),ownership:[],maskWidth:0,maskHeight:0,
                                 optical:OpticalEstimate(center:nil,confidence:0,explanation:L10n.tr("bef4c76fe825"),occludedEdges:[]),
                                 options:options,previewScale:scale,previewImages:images,preview:nil)
+        plan.registrationMode = registrationMode
         if projective {plan.warps=transforms}
         plan = try update(plan,options:options,cancellation:cancellation,progress:progress)
         return plan
@@ -227,11 +231,14 @@ public final class PanoramaEngine {
     /// Frozen registration, masks, LCC and exposure shared by native HDR export and DNG.
     /// The UI adapts these linear pixels to PhotonsExport; this module has no Core/UI dependency.
     public func renderComposite(_ plan: PanoramaPlan, cancellation: PanoramaCancellation = .init(),
+                                outputLongEdge: Int? = nil,
                                 progress: Progress = { _ in }) throws -> CIImage {
         guard plan.isRegistered else {throw PanoramaFailure(L10n.tr("57119ed82d7a"))}
+        if let edge = outputLongEdge, edge <= 0 { throw PanoramaFailure("Output long edge must be positive.") }
+        let scale = outputLongEdge.map { min(1, Double($0) / max(plan.outputSize.width, plan.outputSize.height)) } ?? 1
         // Materialize one decode per source, rather than re-decoding a 100 MP RAW for every tile.
         // Half-float storage is 8 bytes/pixel; enforce a memory bound before starting the job.
-        let bytes = plan.sources.reduce(0.0) { $0+$1.size.width*$1.size.height*8 }
+        let bytes = plan.sources.reduce(0.0) { $0+$1.size.width*$1.size.height*scale*scale*8 }
         guard bytes < Double(ProcessInfo.processInfo.physicalMemory)*0.45 else {
             throw PanoramaFailure(L10n.tr("c732647ded62"))
         }
@@ -241,15 +248,15 @@ public final class PanoramaEngine {
             if let lcc=plan.lccState,lcc.usesFixedDecode[i] {
                 if lcc.cameraGains.indices.contains(i),let map=lcc.cameraGains[i] {
                     let raw=try LCCCameraPipeline.read(source)
-                    images.append(try materialize(LCCCameraPipeline.develop(raw,gain:map,whiteBalance:lcc.whiteBalance,highlightNeutral:lcc.highlightNeutral,size:source.size,scale:1,cancellation:cancellation)))
+                    images.append(try materialize(LCCCameraPipeline.develop(raw,gain:map,whiteBalance:lcc.whiteBalance,highlightNeutral:lcc.highlightNeutral,size:source.size,scale:scale,cancellation:cancellation)))
                 } else {
-                    let image=try LCCProfileBuilder.linearImage(source:source,scale:1)
-                    images.append(materialize(applyGain(image,gain:lcc.gainImages[i],scale:1)))
+                    let image=try LCCProfileBuilder.linearImage(source:source,scale:scale)
+                    images.append(materialize(applyGain(image,gain:lcc.gainImages[i],scale:scale)))
                 }
-            } else {images.append(try materialize(decoded(source,scale:1,whiteBalance:plan.whiteBalance)))}
+            } else {images.append(try materialize(decoded(source,scale:scale,whiteBalance:plan.whiteBalance)))}
         }
         try cancellation.check()
-        return composite(plan,images:images,imageScale:1,outputScale:1)
+        return composite(plan,images:images,imageScale:scale,outputScale:scale)
     }
 
     public enum OutputFormat: String, CaseIterable { case dng, tiff }

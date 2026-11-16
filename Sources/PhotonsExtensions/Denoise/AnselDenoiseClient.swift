@@ -359,6 +359,7 @@ public struct AnselDenoiseClient: Sendable {
     }
 
     private func runJSON(arguments: [String]) throws -> [String: Any] {
+        #if os(macOS)
         var env = ProcessInfo.processInfo.environment
         env["LC_ALL"] = "C"
 
@@ -415,5 +416,8 @@ public struct AnselDenoiseClient: Sendable {
                                       exitCode: 0)
         }
         return obj
+        #else
+        throw AnselDenoiseFailure(code: "platform_unavailable", message: "This external helper is available on macOS only.", exitCode: nil)
+        #endif
     }
 }

@@ -42,6 +42,8 @@ public struct PanoramaManifest: Codable {
     }
     public var version = 1
     public var projection = "translation"
+    /// Missing in legacy manifests, whose physical model remains the shift workflow.
+    public var registrationMode: PanoramaRegistrationMode? = nil
     public var canvas: CGSize
     public var crop: CGRect
     public var frames: [Frame]
@@ -67,6 +69,7 @@ public struct PanoramaManifest: Codable {
                 offsetMM: CGPoint? = nil, sensor: SensorSize? = nil,
                 bodyOrientation: PanoramaBodyOrientation = .degrees0, cameraBody: PanoramaCameraBody? = nil) {
         canvas=plan.size
+        registrationMode=plan.registrationMode
         version=plan.warps == nil ? 1:2
         projection=plan.warps == nil ? "translation":"projective"
         whiteBalance=plan.whiteBalance.map {[$0.0,$0.1]}

@@ -59,6 +59,7 @@ public extension LCCCorrectionEngine {
                                           cancellation:PanoramaCancellation = .init(),
                                           progress:PanoramaEngine.Progress = {_ in}) throws -> LCCPositionSolution {
         try manifest.validate()
+        guard manifest.registrationMode != .perspective else { throw PanoramaFailure(PanoramaRegistrationMode.perspectiveLCCNotice) }
         guard manifest.geometryUnrecoverable != true else {throw PanoramaFailure(L10n.tr("fc7ac1c0b0ab"))}
         if let offset=manifest.profileOffsetMM,offset.x.isFinite,offset.y.isFinite {
             return .init(offsetMM:offset,explanation:L10n.tr("lcc.position.recorded"),flatCount:0)

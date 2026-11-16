@@ -254,6 +254,7 @@ public struct HDRMergeClient: Sendable {
     private func runJSON(arguments: [String],
                          progress: (@Sendable (HDRMergeProgress) -> Void)? = nil,
                          isCancelled: (@Sendable () -> Bool)? = nil) throws -> [String: Any] {
+        #if os(macOS)
         let grants = SandboxEnvironment.isSandboxed ? try HelperFileAccess(arguments: arguments) : nil
         defer { withExtendedLifetime(grants) {} }
         let process = Process()
@@ -338,6 +339,9 @@ public struct HDRMergeClient: Sendable {
                                  exitCode: exit)
         }
         return obj
+        #else
+        throw HDRMergeFailure(code: "platform_unavailable", message: "This external helper is available on macOS only.", exitCode: nil)
+        #endif
     }
 
     private func emitProgress(_ line: Data, to sink: @Sendable (HDRMergeProgress) -> Void) {
