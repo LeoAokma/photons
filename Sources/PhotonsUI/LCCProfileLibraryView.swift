@@ -125,7 +125,7 @@ struct LCCProfileLibraryView: View {
                             Text(profile.name).font(.title2.bold())
                             Text(profile.camera).foregroundStyle(.secondary)
                             if let body=LCCProfileSummary(profile).calibrationBody {Text(L10n.tr("00f3f3fdc6a8" , String(describing: (body.name)))).font(.caption)}
-                            if let aperture=profile.aperture {Text(L10n.tr("9ff1649978c3" , String(describing: (aperture,specifier:"%g"))))}
+                            if let aperture=profile.aperture {Text(L10n.tr("9ff1649978c3" , String(format: "%g", aperture)))}
                             Text(profile.notes).font(.callout).textSelection(.enabled)
                             ForEach(profile.orientations) { orientation in
                                 let frames=profile.captures(for:orientation)

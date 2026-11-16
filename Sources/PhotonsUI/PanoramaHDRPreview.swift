@@ -21,7 +21,7 @@ struct PanoramaHDRPreview: View {
                     .accessibilityIdentifier("panorama.dynamicRange")
             }
             .overlay(alignment: .topTrailing) {
-                PanoramaPreviewHistogram(image:image,hdr:preferences.hdrPreview)
+                PanoramaPreviewHistogram(image:image,hdr:preferences.hdrPreview,headroom:headroom.headroom)
                     .frame(width:230,height:126).padding(6)
                     .background(.regularMaterial,in:RoundedRectangle(cornerRadius:8)).padding(12)
             }
@@ -125,6 +125,7 @@ final class PanoramaHDRPreviewView: NSView {
 private struct PanoramaPreviewHistogram:NSViewRepresentable {
     let image:CGImage
     let hdr:Bool
+    let headroom:Double
     func makeNSView(context:Context)->HistogramCardView {HistogramCardView()}
     func updateNSView(_ view:HistogramCardView,context:Context) {
         if context.coordinator.source !== image {
@@ -137,7 +138,7 @@ private struct PanoramaPreviewHistogram:NSViewRepresentable {
             context.coordinator.source=image
         }
         if let sample=context.coordinator.sample {
-            view.histogram=hdr ? Histogram.compute(sample):SDRProjection.histogram(sample,bins:256,rect:nil,primaries:.displayP3)
+            view.histogram=hdr ? Histogram.compute(sample,headroom:headroom):SDRProjection.histogram(sample,bins:256,rect:nil,primaries:.displayP3)
         }
         view.needsDisplay=true
     }

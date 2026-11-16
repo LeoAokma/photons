@@ -364,7 +364,7 @@ private struct PanoramaWorkspace: View {
             HStack {
                 VStack(alignment:.leading,spacing:3) {
                     Text(model.status).lineLimit(1)
-                    if let plan = model.plan { Text(L10n.tr("f423e12e53c9" , String(describing: (Int(plan.outputSize.width))), String(describing: (Int(plan.outputSize.height))), String(describing: (plan.outputSize.width*plan.outputSize.height/1_000_000,specifier:"%.1f")), String(describing: (plan.sources.count))))
+                    if let plan = model.plan { Text(L10n.tr("f423e12e53c9" , String(describing: (Int(plan.outputSize.width))), String(describing: (Int(plan.outputSize.height))), String(format: "%.1f", plan.outputSize.width*plan.outputSize.height/1_000_000), String(describing: (plan.sources.count))))
                         .font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
@@ -410,11 +410,11 @@ private struct PanoramaWorkspace: View {
             Text(L10n.tr("7702014ae81a")).font(.headline)
             Text(model.positionReference == nil ? (model.plan?.optical.explanation ?? L10n.tr("9f661eaa4c1a")) : L10n.tr("93fa020baa18")).font(.caption).foregroundStyle(.secondary)
             if model.positionReference == nil,let plan = model.plan, let center = plan.optical.center, let sensor = model.sensor {
-                Text(L10n.tr("73281fd9d6f5" , String(describing: ((center.x-plan.origins[0].x-plan.sources[0].size.width/2)*sensor.width/plan.sources[0].size.width,specifier:"%.1f")), String(describing: ((center.y-plan.origins[0].y-plan.sources[0].size.height/2)*sensor.height/plan.sources[0].size.height,specifier:"%.1f"))))
+                Text(L10n.tr("73281fd9d6f5" , String(format: "%.1f", (center.x-plan.origins[0].x-plan.sources[0].size.width/2)*sensor.width/plan.sources[0].size.width), String(format: "%.1f", (center.y-plan.origins[0].y-plan.sources[0].size.height/2)*sensor.height/plan.sources[0].size.height)))
                     .font(.caption)
             }
             if let reference=model.positionReference,let plan=model.plan {
-                Text(L10n.tr("a6805c058eaa" , String(describing: (plan.sources[reference.sourceIndex].url.lastPathComponent)), String(describing: (reference.positionMM.x,specifier:"%+.1f")), String(describing: (reference.positionMM.y,specifier:"%+.1f")))).font(.caption)
+                Text(L10n.tr("a6805c058eaa" , String(describing: (plan.sources[reference.sourceIndex].url.lastPathComponent)), String(format: "%+.1f", reference.positionMM.x), String(format: "%+.1f", reference.positionMM.y))).font(.caption)
                 Button(L10n.tr("47966d105fad")) {model.positionReference=nil;model.estimatedReference=nil;model.lccOffset = .zero;model.changeLCC()}
             } else if model.estimatedReference != nil {
                 Text(model.positionExplanation).font(.caption).foregroundStyle(.secondary)
@@ -460,7 +460,7 @@ private struct PanoramaWorkspace: View {
                         model.changeLCC()
                     }
                 if let wb=model.plan?.lccState?.whiteBalance {
-                    Text(L10n.tr("de9d8ad34ef8" , String(describing: (model.plan?.lccState?.whiteBalanceSource ?? "")), String(describing: (Int(wb.0.rounded()))), String(describing: (wb.1,specifier:"%.1f")))).font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.tr("de9d8ad34ef8" , String(describing: (model.plan?.lccState?.whiteBalanceSource ?? "")), String(describing: (Int(wb.0.rounded()))), String(format: "%.1f", wb.1))).font(.caption).foregroundStyle(.secondary)
                 }
                 if !model.automaticLCCWB {
                     HStack {
@@ -472,7 +472,7 @@ private struct PanoramaWorkspace: View {
                 Toggle(L10n.tr("2444feb8c1fc"),isOn:$model.protectHighlights).toggleStyle(.checkbox)
                     .onChange(of:model.protectHighlights) {_,_ in model.changeLCC()}
                 if model.protectHighlights,let ev=model.plan?.lccState?.highlightEV {
-                    Text(L10n.tr("b1df88bb7bb6" , String(describing: (ev,specifier:"%.2f")))).font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.tr("b1df88bb7bb6" , String(format: "%.2f", ev))).font(.caption).foregroundStyle(.secondary)
                 }
                 Text(model.positionReference == nil ? L10n.tr("571a6cd6f748") : L10n.tr("531e654e1a1e")).font(.caption).foregroundStyle(.secondary)
             }

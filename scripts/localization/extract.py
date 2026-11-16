@@ -10,6 +10,9 @@ skipped=[]
 def has_zh(s):return bool(re.search('[\u3400-\u9fff]',s))
 def escaped(s):
  return json.dumps(s,ensure_ascii=False)
+def argument(a):
+ m=re.fullmatch(r'(.+),\s*specifier:\s*("(?:\\.|[^"\\])*")',a,re.S)
+ return 'String(format: '+m[2]+', '+m[1]+')' if m else 'String(describing: ('+a+'))'
 def scan(text,path,base=0):
  out=[];i=0
  while i<len(text):
@@ -63,7 +66,7 @@ def scan(text,path,base=0):
   key=hashlib.sha256(template.encode()).hexdigest()[:12]
   entry=catalog.setdefault(key,{'zh':template,'files':[]})
   if str(path) not in entry['files']:entry['files'].append(str(path))
-  out.append('L10n.tr("'+key+'"'+(' , '+', '.join('String(describing: ('+a+'))' for a in args) if args else '')+')')
+  out.append('L10n.tr("'+key+'"'+(' , '+', '.join(argument(a) for a in args) if args else '')+')')
  return ''.join(out)
 for folder in ['PhotonsUI','PhotonsCore','PhotonsExport','PhotonsPanorama','PhotonsCatalog','PhotonsExtensions','PhotonsApp','PhotonsJobs','PhotonsPanoramaWorker']:
  for p in Path('Sources',folder).glob('*.swift'):
