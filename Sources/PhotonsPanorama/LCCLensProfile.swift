@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import CoreGraphics
 
@@ -14,10 +15,10 @@ public enum LCCCaptureOrientation: Int, Codable, CaseIterable, Identifiable {
     }
     public var title: String {
         switch self {
-        case .landscape: return "横向"
-        case .inverted: return "横向 · 倒置"
-        case .portraitLeft: return "竖向 · 向左 90°"
-        case .portraitRight: return "竖向 · 向右 90°"
+        case .landscape: return L10n.tr("d95352f4e044")
+        case .inverted: return L10n.tr("b37dadee1b92")
+        case .portraitLeft: return L10n.tr("8336178d7b2b")
+        case .portraitRight: return L10n.tr("705571773f83")
         }
     }
 }
@@ -56,10 +57,10 @@ public struct LCCMeasurementGrid: Codable, Equatable {
               zip(y,y.dropFirst()).allSatisfy({ $0 > $1 }),
               floats.allSatisfy(\.isFinite),
               ["camera-cfa-black-subtracted-v1","camera-cfa-normalized-v2","apple-linear-srgb-6500K-v1"].contains(space) else {
-            throw PanoramaFailure("镜头 profile 的测量网格无效或版本不受支持。")
+            throw PanoramaFailure(L10n.tr("b9d6d42dc0bf"))
         }
         if let standardError, !Self.unpack(standardError).allSatisfy({ $0.isFinite && $0 >= 0 }) {
-            throw PanoramaFailure("镜头 profile 的测量误差数据无效。")
+            throw PanoramaFailure(L10n.tr("d02204483a8c"))
         }
     }
 }
@@ -112,7 +113,7 @@ public struct LCCLensProfile: Codable, Equatable, Identifiable {
               Set(captures.map(\.id)).count == captures.count,
               Set(captures.map { $0.grid.space }).count == 1,
               aperture == nil || (aperture!.isFinite && aperture! > 0 && aperture! <= 128) else {
-            throw PanoramaFailure("镜头 profile 内容无效或版本不受支持。")
+            throw PanoramaFailure(L10n.tr("922f6b22f998"))
         }
         for c in captures {
             guard c.shiftX.isFinite, c.shiftY.isFinite, abs(c.shiftX)<=150, abs(c.shiftY)<=150,
@@ -120,13 +121,13 @@ public struct LCCLensProfile: Codable, Equatable, Identifiable {
                   c.pixelWidth>0, c.pixelHeight>0,
                   c.iso == nil || (c.iso!.isFinite && c.iso!>0),
                   c.exposureSeconds == nil || (c.exposureSeconds!.isFinite && c.exposureSeconds!>0) else {
-                throw PanoramaFailure("镜头 profile 中的传感器、曝光或移轴数据无效。")
+                throw PanoramaFailure(L10n.tr("a2dbc7bae4dd"))
             }
             try c.grid.validate()
-            if let render=c.renderGrid { try render.validate(); guard render.space=="apple-linear-srgb-6500K-v1" else {throw PanoramaFailure("渲染标定的色彩空间不受支持。")} }
+            if let render=c.renderGrid { try render.validate(); guard render.space=="apple-linear-srgb-6500K-v1" else {throw PanoramaFailure(L10n.tr("6a7590d81df0"))} }
             guard c.grid.x.allSatisfy({ abs($0)<=c.sensorWidth/2+0.001 }),
                   c.grid.y.allSatisfy({ abs($0)<=c.sensorHeight/2+0.001 }) else {
-                throw PanoramaFailure("测量网格超出了传感器范围。")
+                throw PanoramaFailure(L10n.tr("5a13415f2912"))
             }
         }
     }

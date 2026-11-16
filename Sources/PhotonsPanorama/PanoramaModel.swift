@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import CoreGraphics
 import CoreImage
@@ -24,7 +25,7 @@ public final class PanoramaCancellation: @unchecked Sendable {
     }
 }
 
-public struct SensorSize: Equatable, Sendable {
+public struct SensorSize: Codable, Equatable, Sendable {
     public var width: Double
     public var height: Double
     public var source: String
@@ -45,19 +46,19 @@ public struct SensorSize: Equatable, Sendable {
            let h = (exif[kCGImagePropertyExifPixelYDimension as String] as? NSNumber)?.doubleValue, xr > 0, yr > 0 {
             let sw = w / xr * mm, sh = h / yr * mm
             if (10...70).contains(sw), (10...60).contains(sh) {
-                return SensorSize(width: sw, height: sh, source: "RAW 焦平面像素密度")
+                return SensorSize(width: sw, height: sh, source: L10n.tr("6470bc680f74"))
             }
         }
         // Hasselblad's CFV 100C data sheet: 43.8 × 32.9 mm. The actual 3FR model string also
         // contains '/Electronic Shutter'; match the back, not the attached camera or lens.
         if model.contains("CFV 100C") || model.contains("X2D 100C") {
-            return SensorSize(width: 43.8, height: 32.9, source: "\(model) 型号规格")
+            return SensorSize(width: 43.8, height: 32.9, source: L10n.tr("803071841b91" , String(describing: (model))))
         }
         return nil
     }
 }
 
-public struct PanoramaSource {
+public struct PanoramaSource: Codable {
     public let url: URL
     public let size: CGSize
     public let sensor: SensorSize?
@@ -73,22 +74,22 @@ public struct PanoramaSource {
         fileSize = identity.fileSize; modified = identity.contentModificationDate
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [String: Any] else {
-            throw PanoramaFailure("无法读取图片：\(url.lastPathComponent)")
+            throw PanoramaFailure(L10n.tr("dbf58361c2d4" , String(describing: (url.lastPathComponent))))
         }
         self.url = url
         isRAW=CGImageSourceGetType(src).flatMap {UTType($0 as String)}?.conforms(to:.rawImage) == true
         orientation = (props[kCGImagePropertyOrientation as String] as? NSNumber)?.intValue ?? 1
         let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
-        camera = tiff[kCGImagePropertyTIFFModel as String] as? String ?? "未知机身"
+        camera = tiff[kCGImagePropertyTIFFModel as String] as? String ?? L10n.tr("1e3818fd0c54")
         var identified = SensorSize.identify(properties: props)
         if isRAW, let f = CIRAWFilter(imageURL: url) {
             f.isLensCorrectionEnabled = false
-            guard let image = f.outputImage else { throw PanoramaFailure("RAW 解码失败：\(url.lastPathComponent)") }
+            guard let image = f.outputImage else { throw PanoramaFailure(L10n.tr("ae0e8fc37498" , String(describing: (url.lastPathComponent)))) }
             size = image.extent.size
             temperature = f.neutralTemperature; tint = f.neutralTint
         } else if let image = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) {
             size = image.extent.size; temperature = nil; tint = nil
-        } else { throw PanoramaFailure("不支持这张图片：\(url.lastPathComponent)") }
+        } else { throw PanoramaFailure(L10n.tr("30fe5a21c7fe" , String(describing: (url.lastPathComponent)))) }
         if orientation >= 5, let s = identified {
             identified = SensorSize(width: s.height, height: s.width, source: s.source)
         }
@@ -98,12 +99,12 @@ public struct PanoramaSource {
         var fresh = url; fresh.removeAllCachedResourceValues()
         let identity = try fresh.resourceValues(forKeys:[.fileSizeKey,.contentModificationDateKey])
         guard identity.fileSize == fileSize, identity.contentModificationDate == modified else {
-            throw PanoramaFailure("原片已变更，请重新生成预览：\(url.lastPathComponent)")
+            throw PanoramaFailure(L10n.tr("7e0e69f9c09a" , String(describing: (url.lastPathComponent))))
         }
     }
 }
 
-public struct PanoramaOptions: Equatable {
+public struct PanoramaOptions: Codable, Equatable {
     public var avoidMotion = true
     public var matchExposure = true
     public var seamSoftness = 6.0

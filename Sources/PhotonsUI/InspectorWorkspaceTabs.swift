@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import AppKit
 import SwiftUI
 import PhotonsCore
@@ -45,11 +46,11 @@ public enum InspectorWorkspace: String, CaseIterable, Identifiable, Hashable, Se
     /// The button's accessibility label and its tooltip's stem — the user's own words.
     public var title: String {
         switch self {
-        case .adjust: return "调整"
-        case .transform: return "变换"
-        case .colour: return "色彩"
-        case .masks: return "蒙版"
-        case .history: return "历史记录"
+        case .adjust: return L10n.tr("f65c42a2540b")
+        case .transform: return L10n.tr("ca4842bc9e80")
+        case .colour: return L10n.tr("e40fffdb9798")
+        case .masks: return L10n.tr("e7c802f4a183")
+        case .history: return L10n.tr("5467922dce50")
         }
     }
 
@@ -135,7 +136,7 @@ public enum InspectorWorkspace: String, CaseIterable, Identifiable, Hashable, Se
         switch self {
         case .transform: return []
         case .colour: return []
-        case .history: return ["历史记录"]
+        case .history: return [L10n.tr("5467922dce50")]
         case .adjust, .masks: return []
         }
     }
@@ -145,7 +146,7 @@ public enum InspectorWorkspace: String, CaseIterable, Identifiable, Hashable, Se
         guard hasCards else {
             let planned = plannedControls
             let body = planned.isEmpty ? "" : "：\(planned.joined(separator: "、"))"
-            return "\(title)\(body)（尚未实现，暂无卡片）"
+            return L10n.tr("52dc4b577116" , String(describing: (title)), String(describing: (body)))
         }
         return "\(title)：\(cards.map(\.title).joined(separator: "、"))"
     }

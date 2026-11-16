@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import AppKit
 import PhotonsFileAccess
 import SwiftUI
@@ -22,7 +23,7 @@ public enum ForwardCompatNotice {
     /// `该文件来自更新的版本 v14，未知设置已原样保留` — or `nil` when there is nothing to say.
     public static func text(for version: Int?) -> String? {
         guard let version else { return nil }
-        return "该文件来自更新的版本 v\(version)，未知设置已原样保留"
+        return L10n.tr("8eed626f0186" , String(describing: (version)))
     }
 }
 
@@ -112,12 +113,13 @@ public final class TopBarView: NSView {
     /// 排序按钮（`新→旧 / 旧→新`）。One click flips the order the grid, the browser and the strip read.
     public var onToggleSort: (() -> Void)?
 
-    private let openButton = ToolButton(title: "打开", symbol: "folder")
-    private let importButton = ToolButton(title: "导入", symbol: "square.and.arrow.down")
-    private let exportButton = ToolButton(title: "导出", symbol: "square.and.arrow.up")
-    private let modeControl = NSSegmentedControl(labels: ["网格", "单图"],
+    private let tasksButton = BackgroundTaskButton()
+    private let openButton = ToolButton(title: L10n.tr("c771248e511f"), symbol: "folder")
+    private let importButton = ToolButton(title: L10n.tr("576d81bb0631"), symbol: "square.and.arrow.down")
+    private let exportButton = ToolButton(title: L10n.tr("76420433f22d"), symbol: "square.and.arrow.up")
+    private let modeControl = NSSegmentedControl(labels: [L10n.tr("e41ecc67ca28"), L10n.tr("e71b76b45a24")],
                                                  trackingMode: .selectOne, target: nil, action: nil)
-    private let stripButton = ToolButton(title: "胶片条", symbol: "rectangle.split.1x2")
+    private let stripButton = ToolButton(title: L10n.tr("38559373577e"), symbol: "rectangle.split.1x2")
     /// 胶片条按钮右边那一个：同款 `ToolButton`、同高、10 pt 间距。
     ///
     /// 文字是**当前顺序**（`新→旧` / `旧→新`），图标是通用的 `arrow.up.arrow.down` 且不随方向变——
@@ -138,7 +140,7 @@ public final class TopBarView: NSView {
     /// 顶栏最后一个可交互控件的右边缘。公开给测试：簇的左边缘永远在它右边
     /// （`TopBarStatusCluster.Metrics.minimumGapFromControls` 之外），再长的库名也压不到按钮上。
     /// 排序按钮排在胶片条按钮后面，所以它是这一行最右的一个。
-    public var controlsTrailingEdge: CGFloat { sortButton.frame.maxX }
+    public var controlsTrailingEdge: CGFloat { tasksButton.frame.maxX }
 
     public override var isFlipped: Bool { true }
 
@@ -148,14 +150,14 @@ public final class TopBarView: NSView {
 
         openButton.target = self
         openButton.action = #selector(openTapped)
-        openButton.toolTip = "打开照片库 · ⌘O"
+        openButton.toolTip = L10n.tr("4422e24b23e8")
         importButton.target = nil
         importButton.action = #selector(EditorWindowController.importAction(_:))
-        importButton.toolTip = "导入照片 · ⇧⌘I"
+        importButton.toolTip = L10n.tr("fad39b265c7a")
         importButton.setAccessibilityIdentifier("toolbar.import")
         exportButton.target = nil
         exportButton.action = #selector(EditorWindowController.exportAction(_:))
-        exportButton.toolTip = "导出所选照片 · ⇧⌘E"
+        exportButton.toolTip = L10n.tr("1c8f057e276d")
         exportButton.setAccessibilityIdentifier("toolbar.export")
         stripButton.target = self
         stripButton.action = #selector(stripTapped)
@@ -170,7 +172,7 @@ public final class TopBarView: NSView {
         modeControl.controlSize = .small
         modeControl.selectedSegment = 0
 
-        for v: NSView in [openButton, importButton, exportButton, modeControl, stripButton, sortButton, statusCluster] {
+        for v: NSView in [openButton, importButton, exportButton, modeControl, stripButton, sortButton, tasksButton, statusCluster] {
             addSubview(v)
         }
         addSeparator()
@@ -255,7 +257,7 @@ public final class TopBarView: NSView {
         separators[0].frame = NSRect(x: x, y: (h - WorkspaceLayout.toolSeparatorHeight) / 2,
                                      width: 1, height: WorkspaceLayout.toolSeparatorHeight)
         x += 11
-        place(modeControl, width: 112)
+        place(modeControl, width: max(112,modeControl.intrinsicContentSize.width))
         x += 10
         separators[1].frame = NSRect(x: x, y: (h - WorkspaceLayout.toolSeparatorHeight) / 2,
                                      width: 1, height: WorkspaceLayout.toolSeparatorHeight)
@@ -265,6 +267,8 @@ public final class TopBarView: NSView {
         // 分段控件↔胶片条用的是同一个数），顶栏里排在最后，所以不压住右上角的状态簇。
         x += 10
         place(sortButton, width: sortButton.intrinsicContentSize.width)
+        x += 10
+        place(tasksButton, width: 86)
 
         // 状态四段：整块右对齐，右边缘 = 顶栏右边距（= 检查器列的右边），整块落在检查器列上方。
         //
@@ -834,7 +838,7 @@ public final class WorkspaceRootView: NSView {
         coordinator.onError = { [weak self] _ in
             // The only throw here is "the folder is gone"; a whole-import failure is one word, not
             // a paragraph.
-            self?.importProgressBar.show("导入失败")
+            self?.importProgressBar.show(L10n.tr("01aaebc96af1"))
         }
         importProgressBar.onCancel = { [weak coordinator] in coordinator?.cancel() }
 
@@ -848,8 +852,8 @@ public final class WorkspaceRootView: NSView {
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        panel.message = "打开 .photonslibrary"
-        panel.prompt = "打开"
+        panel.message = L10n.tr("fd913946f0df")
+        panel.prompt = L10n.tr("c771248e511f")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try FileAccessStore.shared.rememberSelection(url)

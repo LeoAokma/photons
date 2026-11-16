@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import CryptoKit
 import Compression
@@ -13,7 +14,7 @@ public enum LCCProfileCodec {
         try profile.validate()
         let e=PropertyListEncoder();e.outputFormat = .binary
         let payload=try e.encode(transformed(profile,decode:false)), header=try JSONEncoder().encode(LCCProfileSummary(profile))
-        guard payload.count<=maximumBytes,header.count<=65536 else { throw PanoramaFailure("镜头 profile 过大。") }
+        guard payload.count<=maximumBytes,header.count<=65536 else { throw PanoramaFailure(L10n.tr("1a2fca964681")) }
         let compressed=try (payload as NSData).compressed(using:.lzfse) as Data
         var result=magic
         for size in [header.count,payload.count] { var n=UInt32(size).littleEndian;withUnsafeBytes(of:&n) { result.append(contentsOf:$0) } }
@@ -56,15 +57,15 @@ public enum LCCProfileCodec {
         return result
     }
     private static func lengths(_ data:Data) throws -> (header:Int,payload:Int) {
-        guard data.count>=48,(data.prefix(8)==magic || data.prefix(8)==oldMagic) else { throw PanoramaFailure("不是受支持的镜头 profile 文件。") }
+        guard data.count>=48,(data.prefix(8)==magic || data.prefix(8)==oldMagic) else { throw PanoramaFailure(L10n.tr("2bf1caca5511")) }
         let h=data.withUnsafeBytes { Int(UInt32(littleEndian:$0.loadUnaligned(fromByteOffset:8,as:UInt32.self))) }
         let n=data.withUnsafeBytes { Int(UInt32(littleEndian:$0.loadUnaligned(fromByteOffset:12,as:UInt32.self))) }
-        guard (1...65536).contains(h),(1...maximumBytes).contains(n) else { throw PanoramaFailure("镜头 profile 文件头无效。") }
+        guard (1...65536).contains(h),(1...maximumBytes).contains(n) else { throw PanoramaFailure(L10n.tr("d11ed0770c8f")) }
         return (h,n)
     }
     public static func decode(_ data:Data) throws -> LCCLensProfile {
         let l=try lengths(data)
-        guard data.count>48+l.header,data.count<=maximumBytes+65584 else { throw PanoramaFailure("镜头 profile 文件不完整。") }
+        guard data.count>48+l.header,data.count<=maximumBytes+65584 else { throw PanoramaFailure(L10n.tr("38a335e41104")) }
         let header=data.subdata(in:48..<48+l.header), compressed=data.subdata(in:48+l.header..<data.count)
         var payload=Data(count:l.payload)
         let count=payload.withUnsafeMutableBytes { dst in compressed.withUnsafeBytes { src in
@@ -72,23 +73,23 @@ public enum LCCProfileCodec {
                                       src.bindMemory(to:UInt8.self).baseAddress!,compressed.count,nil,COMPRESSION_LZFSE)
         }}
         guard count==l.payload,Data(SHA256.hash(data:header+payload))==data.subdata(in:16..<48) else {
-            throw PanoramaFailure("镜头 profile 校验失败，文件可能已损坏。")
+            throw PanoramaFailure(L10n.tr("968cb9104ff5"))
         }
         var profile=try PropertyListDecoder().decode(LCCLensProfile.self,from:payload)
         if data.prefix(8)==magic {profile=transformed(profile,decode:true)}
         try profile.validate()
         guard try JSONDecoder().decode(LCCProfileSummary.self,from:header)==LCCProfileSummary(profile) else {
-            throw PanoramaFailure("镜头 profile 索引与测量数据不一致。")
+            throw PanoramaFailure(L10n.tr("8615cf543f0a"))
         }
         return profile
     }
     public static func summary(at url:URL) throws -> LCCProfileSummary {
         let handle=try FileHandle(forReadingFrom:url);defer { try? handle.close() }
-        guard let prefix=try handle.read(upToCount:48) else { throw PanoramaFailure("无法读取镜头 profile。") }
+        guard let prefix=try handle.read(upToCount:48) else { throw PanoramaFailure(L10n.tr("4fb3133ed0ee")) }
         let l=try lengths(prefix)
-        guard let header=try handle.read(upToCount:l.header),header.count==l.header else { throw PanoramaFailure("镜头 profile 索引不完整。") }
+        guard let header=try handle.read(upToCount:l.header),header.count==l.header else { throw PanoramaFailure(L10n.tr("05bc388feca5")) }
         let summary=try JSONDecoder().decode(LCCProfileSummary.self,from:header)
-        guard !summary.name.isEmpty,!summary.variants.isEmpty,summary.captureCount<=256 else { throw PanoramaFailure("镜头 profile 索引无效。") }
+        guard !summary.name.isEmpty,!summary.variants.isEmpty,summary.captureCount<=256 else { throw PanoramaFailure(L10n.tr("93604323ed6f")) }
         return summary
     }
 }
@@ -110,11 +111,11 @@ public struct LCCProfileStore {
         // the user's file owns this ID: application updates must never overwrite their edits.
         if FileManager.default.fileExists(atPath:target.path) { return }
         guard let source=Bundle.module.url(forResource:"43xl-iiic-cfv100c",withExtension:"photonslcc",subdirectory:"Profiles") else {
-            throw PanoramaFailure("应用内缺少 43XL 镜头标定数据，请重新安装完整应用。")
+            throw PanoramaFailure(L10n.tr("a76334bd19b7"))
         }
         let bytes=try Data(contentsOf:source)
         let profile=try LCCProfileCodec.decode(bytes)
-        guard profile.id==LCCLensProfile.builtInID else { throw PanoramaFailure("43XL 镜头 profile 标识不正确。") }
+        guard profile.id==LCCLensProfile.builtInID else { throw PanoramaFailure(L10n.tr("5b744aed063f")) }
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         try bytes.write(to:target,options:.atomic)
     }
@@ -127,7 +128,7 @@ public struct LCCProfileStore {
             for file in files {
                 do {
                     let p=try LCCProfileCodec.summary(at:file)
-                    guard file.lastPathComponent==url(for:p.id).lastPathComponent else { throw PanoramaFailure("文件名与标识不一致") }
+                    guard file.lastPathComponent==url(for:p.id).lastPathComponent else { throw PanoramaFailure(L10n.tr("0c807b983a78")) }
                     profiles.append(p)
                 } catch { issues.append("\(file.lastPathComponent)：\(error.localizedDescription)") }
             }
@@ -138,9 +139,9 @@ public struct LCCProfileStore {
     public func load(_ id:UUID) throws -> LCCLensProfile {
         let u=url(for:id)
         let size=try u.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0
-        guard size>0,size<=256*1024*1024+65584 else { throw PanoramaFailure("镜头 profile 大小无效。") }
+        guard size>0,size<=256*1024*1024+65584 else { throw PanoramaFailure(L10n.tr("8c7ee4e7adb6")) }
         let profile=try LCCProfileCodec.decode(Data(contentsOf:u))
-        guard profile.id==id else { throw PanoramaFailure("镜头 profile 标识不一致。") }
+        guard profile.id==id else { throw PanoramaFailure(L10n.tr("848d4385ac80")) }
         return profile
     }
     @discardableResult public func save(_ profile:LCCLensProfile) throws -> URL {

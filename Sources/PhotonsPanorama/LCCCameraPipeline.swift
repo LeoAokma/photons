@@ -1,10 +1,12 @@
+import PhotonsLocalization
 import Foundation
 import CoreImage
 import PhotonsExtensions
 
 /// A four-channel map in unrotated sensor coordinates. Exactly the same normalized positions
 /// drive the interactive proxy and full-resolution CFA, independently of the preview size.
-public struct LCCCameraGainMap {
+public struct LCCCameraGainMap: Codable {
+    enum CodingKeys:String,CodingKey { case width,height,values }
     let width:Int,height:Int
     let values:[SIMD4<Float>]
     fileprivate var clippedColors:LCCClippedColorMap?
@@ -87,7 +89,7 @@ enum LCCCameraPipeline {
                 r.append(c.x/green);b.append(c.z/green);greens.append(green)
             }
         }
-        guard r.count>20 else {throw PanoramaFailure("校正后的 RAW 无足够信号估计白平衡。")}
+        guard r.count>20 else {throw PanoramaFailure(L10n.tr("ac13861872e3"))}
         if !whitePlate {
             // Estimate illumination only after spatial shading removal. Bright neutral candidates
             // are less dominated by foliage/shadows than an unweighted scene grey-world average.
@@ -97,7 +99,7 @@ enum LCCCameraPipeline {
         }
         let neutral=[median(r),1,median(b)]
         let dng=raw.dng(neutral:neutral)
-        guard let filter=CIRAWFilter(imageData:dng.data,identifierHint:"com.adobe.raw-image") else {throw PanoramaFailure("无法读取 RAW 白平衡标定。")}
+        guard let filter=CIRAWFilter(imageData:dng.data,identifierHint:"com.adobe.raw-image") else {throw PanoramaFailure(L10n.tr("05cb7d84c9df"))}
         return LCCWhiteBalanceReading(temperature:filter.neutralTemperature,tint:filter.neutralTint,neutral:SIMD3(neutral[0],1,neutral[2]))
     }
     /// Sensor clipping is different from post-LCC overexposure. Reconstruct only saturated
@@ -142,12 +144,12 @@ enum LCCCameraPipeline {
         }
         let normalization=max(1,peak*4)
         let dng=raw.dng(samples:prepared,gainOpcode:gain.opcode(for:raw,normalization:normalization))
-        guard let filter=CIRAWFilter(imageData:dng.data,identifierHint:"com.adobe.raw-image") else {throw PanoramaFailure("无法显影校正后的 RAW。")}
+        guard let filter=CIRAWFilter(imageData:dng.data,identifierHint:"com.adobe.raw-image") else {throw PanoramaFailure(L10n.tr("a0c9e40082d3"))}
         filter.isLensCorrectionEnabled=false;filter.isGamutMappingEnabled=false
         filter.boostAmount=0;filter.boostShadowAmount=0;filter.localToneMapAmount=0;filter.exposure=0;filter.baselineExposure=0;filter.shadowBias=0
         filter.sharpnessAmount=0;filter.luminanceNoiseReductionAmount=0;filter.colorNoiseReductionAmount=0
         if let wb=whiteBalance {filter.neutralTemperature=wb.0;filter.neutralTint=wb.1}
-        guard let result=filter.outputImage else {throw PanoramaFailure("校正后的 RAW 显影失败。")}
+        guard let result=filter.outputImage else {throw PanoramaFailure(L10n.tr("804fd97215e0"))}
         let normalized=result.transformed(by:CGAffineTransform(translationX:-result.extent.minX,y:-result.extent.minY))
         return normalized.transformed(by:CGAffineTransform(scaleX:size.width*scale/normalized.extent.width,y:size.height*scale/normalized.extent.height))
             .applyingFilter("CIExposureAdjust",parameters:["inputEV":dng.exposure+log2(normalization)])

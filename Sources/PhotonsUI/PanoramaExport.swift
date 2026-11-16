@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import AppKit
 import PhotonsFileAccess
 import SwiftUI
@@ -5,6 +6,7 @@ import CoreImage
 import PhotonsCore
 import PhotonsExport
 import PhotonsPanorama
+import PhotonsJobs
 
 enum PanoramaExportKind: Hashable { case standard, losslessDNG }
 
@@ -20,27 +22,7 @@ enum PanoramaExportRenderer {
     }
 
     static func render(scene: CIImage, preset: ExportPreset) throws -> DisplayImage {
-        let content = ImageSize(width: Int(scene.extent.width), height: Int(scene.extent.height))
-        // BatchExporter applies percentages to the returned pixels. Only pre-size an
-        // absolute long edge here, otherwise 50% would be applied twice (25% output).
-        let scale = preset.sizingMode == .longEdge ? preset.renderScale(content: content) : 1
-        let size = ExportSizing.outputSize(content: content, scale: scale)
-        let space = HDREncoding.linearColorSpace(for: preset.colorSpace)!
-        let context = CIContext(options: [.workingColorSpace: space, .workingFormat: CIFormat.RGBAh,
-                                          .cacheIntermediates: false])
-        defer { context.clearCaches() }
-        let image = scene.transformed(by: CGAffineTransform(translationX: -scene.extent.minX, y: -scene.extent.minY))
-            .transformed(by: CGAffineTransform(scaleX: CGFloat(size.width) / scene.extent.width,
-                                               y: CGFloat(size.height) / scene.extent.height))
-        // CI bitmap rows already start at the top (unlike its Metal texture readback).
-        var pixels = [Float16](repeating: 0, count: size.width * size.height * 4)
-        pixels.withUnsafeMutableBytes { bytes in
-            context.render(image, toBitmap: bytes.baseAddress!, rowBytes: size.width * 8,
-                bounds: CGRect(x: 0, y: 0, width: size.width, height: size.height), format: .RGBAh, colorSpace: space)
-        }
-        let linear = LinearPixels(width: size.width, height: size.height, rgba: pixels, primaries: preset.colorSpace)
-        return linear.displaySDR(bitDepth: preset.effectiveBitDepth,
-                                 toneMap: preset.isHDR || preset.appliesSDRToneMap ? .global : nil)
+        try PanoramaPixelRenderer.render(scene:scene,preset:preset)
     }
 }
 
@@ -51,9 +33,15 @@ final class PanoramaExportController {
     let model = ExportSheetModel()
     private var window: NSWindow?
     private let plan: PanoramaPlan
+    private let manifest: PanoramaManifest
+    var onQueued: (() -> Void)?
+    var onExported: (URL,@escaping(String?)->Void)->Void = {_,done in done(nil)}
 
-    init(plan: PanoramaPlan) {
+    init(plan: PanoramaPlan, manifest: PanoramaManifest? = nil) {
         self.plan = plan
+        self.manifest = manifest ?? PanoramaManifest(plan:plan)
+        model.allowsLinearDNG = true
+        model.preset.nameTemplate = "{name}"
         let size = ImageSize(width: Int(plan.outputSize.width), height: Int(plan.outputSize.height))
         model.selectionCount = 1
         model.selectionNatives = [size]; model.selectionContents = [size]
@@ -64,11 +52,12 @@ final class PanoramaExportController {
     }
 
     func present(in parent: NSWindow) {
+        model.selectOutputTab(hdr:ProcessingPreferences.hdrPreview)
         let hosting = NSHostingController(rootView: ExportSheetView(model: model))
         hosting.sizingOptions = []
         let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: ExportRowGrid.panelWidth,
             height: ExportRowGrid.contentMaxHeight), styleMask: [.titled], backing: .buffered, defer: false)
-        sheet.title = "导出拼接图"
+        sheet.title = L10n.tr("229063af0cdc")
         sheet.contentViewController = hosting
         sheet.setContentSize(NSSize(width: ExportRowGrid.panelWidth, height: ExportRowGrid.contentMaxHeight))
         sheet.isReleasedWhenClosed = false
@@ -87,7 +76,9 @@ final class PanoramaExportController {
         guard let window else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.canCreateDirectories = true; panel.directoryURL = model.outputDirectory
+        panel.canCreateDirectories = true
+        panel.directoryURL = model.preset.destination == .sourceFolder
+            ? plan.sources.first?.url.deletingLastPathComponent() : model.outputDirectory
         panel.beginSheetModal(for: window) { [weak self] response in
             if response == .OK, let url = panel.url {
                 self?.model.chooseOutputDirectory(url)
@@ -96,13 +87,21 @@ final class PanoramaExportController {
     }
 
     private func run() {
-        // No sourceURL: the composite has its own dimensions/orientation, so copying a single
-        // RAW's crop/orientation metadata would misdescribe the exported panorama.
-        let name = (plan.sources.first?.url.deletingPathExtension().lastPathComponent ?? "全景") + "_Panorama"
-        let item = ExportItem(id: "panorama", name: name, cameraKey: plan.sources.first?.camera)
-        let frozen = plan
-        model.run(items: [item]) { _, preset, token in
-            try PanoramaExportRenderer.render(plan: frozen, preset: preset, cancel: token)
+        do {
+            _ = try model.preset.validated()
+            let source=plan.sources.map(\.url).sorted {$0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending}.first
+            let root=model.preset.destination == .sourceFolder ? (source?.deletingLastPathComponent() ?? model.outputDirectory):model.outputDirectory
+            let access=FileAccessStore.shared.access(to:root)
+            guard FileManager.default.isWritableFile(atPath:access.url.path) else {
+                throw PanoramaFailure(L10n.tr("e8183b25e9ba"))
+            }
+            try BackgroundTasks.shared.submit(plan:plan,manifest:manifest,preset:model.effectivePreset,
+                dng:model.usesLinearDNG,directory:model.outputDirectory,completion:onExported)
+            dismiss()
+            onQueued?()
+        } catch {
+            let alert=NSAlert();alert.messageText=error.localizedDescription
+            if let window {alert.beginSheetModal(for:window)}
         }
     }
 }

@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import CoreImage
 import CoreGraphics
@@ -23,15 +24,26 @@ public final class PanoramaEngine {
         return CIImage(bitmapData:data,bytesPerRow:w*8,size:CGSize(width:w,height:h),format:.RGBAh,colorSpace:Self.linearSpace)
     }
 
+    /// A single photo uses the same physical coordinate convention as a panorama.
+    public func singlePhoto(_ source:PanoramaSource, cancellation:PanoramaCancellation = .init()) throws -> PanoramaPlan {
+        let scale=min(1,1600/max(source.size.width,source.size.height))
+        let wb:(Float,Float)?=source.temperature.flatMap {t in source.tint.map {(t,$0)}}
+        let image=try materialize(decoded(source,scale:scale,whiteBalance:wb))
+        var plan=PanoramaPlan(sources:[source],origins:[.zero],size:source.size,registrationScores:[1],whiteBalance:wb,
+            gains:[1],ownership:[0],maskWidth:1,maskHeight:1,
+            optical:OpticalEstimate(center:nil,confidence:0,explanation:"",occludedEdges:[]),options:.init(),previewScale:scale,previewImages:[image],preview:nil)
+        renderPreview(&plan);return plan
+    }
+
     public func analyze(urls: [URL], options: PanoramaOptions = .init(),knownPositions:[Int:CGPoint]=[:],sensorOverride:SensorSize?=nil,
                         cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws -> PanoramaPlan {
-        guard urls.count >= 2 else { throw PanoramaFailure(urls.isEmpty ? "请先选中需要拼接的图片" : "请至少选中两张需要拼接的图片") }
-        guard urls.count <= 16 else { throw PanoramaFailure("第一版一次最多支持 16 张图片，请分组拼接。") }
+        guard urls.count >= 2 else { throw PanoramaFailure(urls.isEmpty ? L10n.tr("977f178f562a") : L10n.tr("2e0b7140c7cc")) }
+        guard urls.count <= 16 else { throw PanoramaFailure(L10n.tr("fc6d0bd57867")) }
         var sources: [PanoramaSource] = []
         for url in urls { try cancellation.check(); sources.append(try PanoramaSource(url:url)) }
-        guard let first = sources.first else { throw PanoramaFailure("没有输入图片") }
+        guard let first = sources.first else { throw PanoramaFailure(L10n.tr("2208e0978c6a")) }
         guard sources.allSatisfy({ abs($0.size.width-first.size.width)<2 && abs($0.size.height-first.size.height)<2 && $0.orientation == first.orientation }) else {
-            throw PanoramaFailure("移轴接片要求各张照片尺寸和方向一致；请使用同一后背、同一朝向的原始图片。")
+            throw PanoramaFailure(L10n.tr("ff9aa3d63f3f"))
         }
         let readings=sources.compactMap {s->(Float,Float)? in
             guard let temperature=s.temperature,let tint=s.tint,temperature.isFinite,tint.isFinite else {return nil}
@@ -41,7 +53,7 @@ public final class PanoramaEngine {
         let scale = min(1,2048/max(first.size.width,first.size.height))
         var images: [CIImage] = [], grays: [GrayRaster] = [], coarse: [GrayRaster] = []
         for (i,source) in sources.enumerated() {
-            try cancellation.check(); progress("读取 RAW \(i+1)/\(sources.count)：\(source.url.lastPathComponent)")
+            try cancellation.check(); progress(L10n.tr("f0f5a708b21d" , String(describing: (i+1)), String(describing: (sources.count)), String(describing: (source.url.lastPathComponent))))
             let image = try materialize(decoded(source,scale:scale,whiteBalance:wb)); images.append(image)
             grays.append(PanoramaRaster(image:image,context:context,width:Int(image.extent.width),height:Int(image.extent.height)).gray)
             coarse.append(PanoramaRaster(image:image,context:context,width:Int(image.extent.width)/2,height:Int(image.extent.height)/2).gray)
@@ -49,10 +61,10 @@ public final class PanoramaEngine {
         struct Edge { let a: Int; let b: Int; let offset: CGPoint; let score: Double }
         var edges: [Edge] = []
         for a in 0..<sources.count-1 { for b in a+1..<sources.count {
-            try cancellation.check(); progress("匹配重叠区域 \(a+1) ↔ \(b+1)")
+            try cancellation.check(); progress(L10n.tr("ffa317474694" , String(describing: (a+1)), String(describing: (b+1))))
             let match:TranslationRegistration.Match?
             if let pa=knownPositions[a],let pb=knownPositions[b],let sensor=sensorOverride ?? first.sensor {
-                progress("依据移轴读数搜索 \(a+1) ↔ \(b+1)")
+                progress(L10n.tr("421e14fe1c2b" , String(describing: (a+1)), String(describing: (b+1))))
                 let expected=CGPoint(x:(pb.x-pa.x)/sensor.width*Double(coarse[a].width),y:-(pb.y-pa.y)/sensor.height*Double(coarse[a].height))
                 match=try TranslationRegistration.align(coarse[a],coarse[b],near:expected,
                     radius:max(Double(coarse[a].width)/sensor.width,Double(coarse[a].height)/sensor.height)*1.5,cancellation:cancellation)
@@ -73,7 +85,7 @@ public final class PanoramaEngine {
             let choices = edges.filter { (positions[$0.a] == nil) != (positions[$0.b] == nil) }
             guard let edge = choices.max(by: { $0.score < $1.score }) else {
                 let missing = sources.indices.filter { positions[$0] == nil }.map { sources[$0].url.lastPathComponent }.joined(separator:"、")
-                throw PanoramaFailure("未找到可靠的平移重叠：\(missing)。可点击示意图，输入这些照片和一张基准照片的移轴量，再点击“按移轴信息重新匹配”。")
+                throw PanoramaFailure(L10n.tr("a89e2a702257" , String(describing: (missing))))
             }
             if let a = positions[edge.a] {
                 positions[edge.b] = CGPoint(x:a.x+edge.offset.x,y:a.y+edge.offset.y); scores[edge.b] = edge.score
@@ -86,15 +98,15 @@ public final class PanoramaEngine {
         for edge in edges where edge.score > 0.8 {
             let residual = hypot(origins[edge.b].x-origins[edge.a].x-edge.offset.x,
                                  origins[edge.b].y-origins[edge.a].y-edge.offset.y)
-            if residual * scale > 3 { throw PanoramaFailure("照片间的平移关系不一致，可能存在视差或机位旋转。请减少选图并检查拍摄方式。") }
+            if residual * scale > 3 { throw PanoramaFailure(L10n.tr("8a5142e9f53e")) }
         }
         let minX = floor(origins.map(\.x).min()!), minY = floor(origins.map(\.y).min()!)
         origins = origins.map { CGPoint(x:$0.x-minX,y:$0.y-minY) }
         let size = CGSize(width:ceil(origins.map(\.x).max()!+first.size.width),height:ceil(origins.map(\.y).max()!+first.size.height))
-        guard size.width*size.height < 600_000_000 else { throw PanoramaFailure("拼接结果超过 6 亿像素，请减少输入图片。") }
+        guard size.width*size.height < 600_000_000 else { throw PanoramaFailure(L10n.tr("04fcf0f7a641")) }
         var plan = PanoramaPlan(sources:sources,origins:origins,size:size,registrationScores:scores,whiteBalance:wb,
                                 gains:[Double](repeating:1,count:sources.count),ownership:[],maskWidth:0,maskHeight:0,
-                                optical:OpticalEstimate(center:nil,confidence:0,explanation:"尚未估计",occludedEdges:[]),
+                                optical:OpticalEstimate(center:nil,confidence:0,explanation:L10n.tr("bef4c76fe825"),occludedEdges:[]),
                                 options:options,previewScale:scale,previewImages:images,preview:nil)
         plan = try update(plan,options:options,cancellation:cancellation,progress:progress)
         return plan
@@ -102,11 +114,11 @@ public final class PanoramaEngine {
 
     public func update(_ original: PanoramaPlan, options: PanoramaOptions,
                        cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws -> PanoramaPlan {
-        guard original.isRegistered else {throw PanoramaFailure("请先完成照片配准。")}
+        guard original.isRegistered else {throw PanoramaFailure(L10n.tr("c31363b407bf"))}
         var plan = original; plan.options = options
-        progress("分析暗角、红移和重叠冲突")
+        progress(L10n.tr("0c65de60079d"))
         try PanoramaSeams.prepare(&plan,context:context,cancellation:cancellation)
-        try cancellation.check(); progress("生成拼接预览")
+        try cancellation.check(); progress(L10n.tr("b087e27f78f6"))
         renderPreview(&plan)
         return plan
     }
@@ -185,16 +197,16 @@ public final class PanoramaEngine {
     /// The UI adapts these linear pixels to PhotonsExport; this module has no Core/UI dependency.
     public func renderComposite(_ plan: PanoramaPlan, cancellation: PanoramaCancellation = .init(),
                                 progress: Progress = { _ in }) throws -> CIImage {
-        guard plan.isRegistered else {throw PanoramaFailure("尚未完成配准，不能导出。")}
+        guard plan.isRegistered else {throw PanoramaFailure(L10n.tr("57119ed82d7a"))}
         // Materialize one decode per source, rather than re-decoding a 100 MP RAW for every tile.
         // Half-float storage is 8 bytes/pixel; enforce a memory bound before starting the job.
         let bytes = plan.sources.reduce(0.0) { $0+$1.size.width*$1.size.height*8 }
         guard bytes < Double(ProcessInfo.processInfo.physicalMemory)*0.45 else {
-            throw PanoramaFailure("这组图片超出当前内存预算，请减少拼接张数。")
+            throw PanoramaFailure(L10n.tr("c732647ded62"))
         }
         var images: [CIImage] = []
         for (i,source) in plan.sources.enumerated() {
-            try cancellation.check(); progress("全分辨率解码 \(i+1)/\(plan.sources.count)")
+            try cancellation.check(); progress(L10n.tr("dcc5db9b7e00" , String(describing: (i+1)), String(describing: (plan.sources.count))))
             if let lcc=plan.lccState,lcc.usesFixedDecode[i] {
                 if lcc.cameraGains.indices.contains(i),let map=lcc.cameraGains[i] {
                     let raw=try LCCCameraPipeline.read(source)
@@ -213,24 +225,25 @@ public final class PanoramaEngine {
     public func export(_ plan: PanoramaPlan, to destination: URL, format: OutputFormat,
                        cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws {
         guard !plan.sources.contains(where: { $0.url.standardizedFileURL == destination.standardizedFileURL }) else {
-            throw PanoramaFailure("不能覆盖输入图片。")
+            throw PanoramaFailure(L10n.tr("dfcc7af61de8"))
         }
         defer { context.clearCaches() }
         let scene = try renderComposite(plan,cancellation:cancellation,progress:progress)
+        let manifest=PanoramaManifest(plan:plan)
         let temp = destination.deletingLastPathComponent().appendingPathComponent(".photons-\(UUID().uuidString).\(format.rawValue)")
         defer { try? FileManager.default.removeItem(at:temp) }
         if format == .dng {
-            try LinearDNGWriter.write(image:scene,context:context,to:temp,cancellation:cancellation,progress:progress)
+            try LinearDNGWriter.write(image:scene,context:context,to:temp,manifest:try manifest.encoded(),cancellation:cancellation,progress:progress)
         } else {
-            progress("写入 16 位 TIFF（LZW）")
+            progress(L10n.tr("2c1ef19b2f8f"))
             let display=plan.lccState?.protectHighlights == true ? Self.protectedDisplay(scene):scene
             guard let cg = context.createCGImage(display,from:display.extent,format:.RGBA16,
                                                  colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!),
                   let destination = CGImageDestinationCreateWithURL(temp as CFURL,"public.tiff" as CFString,1,nil) else {
-                throw PanoramaFailure("无法创建 16 位 TIFF")
+                throw PanoramaFailure(L10n.tr("b4cd18cf7cdc"))
             }
-            CGImageDestinationAddImage(destination,cg,[kCGImagePropertyTIFFDictionary:[kCGImagePropertyTIFFCompression:5]] as CFDictionary)
-            guard CGImageDestinationFinalize(destination) else { throw PanoramaFailure("TIFF 写入失败，请检查剩余磁盘空间。") }
+            CGImageDestinationAddImageAndMetadata(destination,cg,try manifest.metadata(),[kCGImagePropertyTIFFDictionary:[kCGImagePropertyTIFFCompression:5]] as CFDictionary)
+            guard CGImageDestinationFinalize(destination) else { throw PanoramaFailure(L10n.tr("8f86e5986392")) }
         }
         try cancellation.check()
         if FileManager.default.fileExists(atPath:destination.path) {

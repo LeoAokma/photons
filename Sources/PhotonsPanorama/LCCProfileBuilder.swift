@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import CoreImage
 import ImageIO
@@ -21,7 +22,7 @@ public struct LCCCreationFrame: Identifiable, @unchecked Sendable {
     public init(url:URL) throws {
         let source=try PanoramaSource(url:url);self.source=source
         guard let orientation=LCCCaptureOrientation(rawValue:source.orientation) else {
-            throw PanoramaFailure("\(url.lastPathComponent)：镜像方向暂不支持，请使用未镜像的 LCC 原片。")
+            throw PanoramaFailure(L10n.tr("76eaacfe87d2" , String(describing: (url.lastPathComponent))))
         }
         self.orientation=orientation
         if let suggestion=LCCShiftFilename.parse(url.lastPathComponent) { shiftX=suggestion.x;shiftY=suggestion.y }
@@ -43,7 +44,7 @@ public enum LCCProfileBuilder {
         for key in [\LCCCreationFrame.iso,\LCCCreationFrame.exposureSeconds] {
             let values=frames.compactMap { $0[keyPath:key] }
             if let first=values.first, values.contains(where: { abs($0-first)>max(0.000001,first*0.01) }) {
-                return "这组白板的 ISO 或快门时间不一致。请使用相同曝光拍摄的 LCC 创建 profile。"
+                return L10n.tr("5fbddcf57213")
             }
         }
         return nil
@@ -55,23 +56,23 @@ public enum LCCProfileBuilder {
         guard !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,(1...256).contains(frames.count),
               (5...100).contains(sensorShortEdge),(sensorShortEdge...100).contains(sensorLongEdge),
               frames.allSatisfy(\.shiftConfirmed) else {
-            throw PanoramaFailure("请填写镜头名称、传感器尺寸，并确认每张白板的移轴量。")
+            throw PanoramaFailure(L10n.tr("a5a786d39ada"))
         }
         if let issue=exposureIssue(frames) { throw PanoramaFailure(issue) }
         guard Set(frames.map { LCCProfileSummary.cameraKey($0.source.camera) }).count==1 else {
-            throw PanoramaFailure("同一个 profile 请使用同一型号后背拍摄的白板。")
+            throw PanoramaFailure(L10n.tr("cc1009f86e6a"))
         }
         // Metadata dimensions must agree with the user's physical sensor dimensions when available.
         for frame in frames {
             if let s=frame.source.sensor,
                abs(max(s.width,s.height)-sensorLongEdge)>0.3 || abs(min(s.width,s.height)-sensorShortEdge)>0.3 {
-                throw PanoramaFailure("传感器尺寸与 \(frame.source.url.lastPathComponent) 的 RAW 信息不一致。")
+                throw PanoramaFailure(L10n.tr("8431ceaff69a" , String(describing: (frame.source.url.lastPathComponent))))
             }
         }
         var captures:[LCCProfileCapture]=[]
         for (index,frame) in frames.enumerated() {
             try cancellation.check();try frame.source.checkUnchanged()
-            progress("分析 LCC \(index+1)/\(frames.count)：\(frame.source.url.lastPathComponent)")
+            progress(L10n.tr("2822ec9e0922" , String(describing: (index+1)), String(describing: (frames.count)), String(describing: (frame.source.url.lastPathComponent))))
             let source=frame.source
             let raw=try LCCCameraPipeline.read(source)
             let orientation=frame.relativeOrientation,portrait=orientation.isPortrait
@@ -117,6 +118,15 @@ public enum LCCProfileBuilder {
                 pixelWidth:portrait ? fullShort:fullLong,pixelHeight:portrait ? fullLong:fullShort,
                 iso:frame.iso,exposureSeconds:frame.exposureSeconds,capturedAt:frame.capturedAt,grid:grid,thumbnail:frame.jpeg,bodyOrientation:frame.bodyOrientation))
             try source.checkUnchanged()
+            let decoded=try linearImage(source:source,scale:min(1,512/max(source.size.width,source.size.height)))
+            let rotated=decoded.transformed(by:CGAffineTransform(rotationAngle:-Double(frame.bodyOrientation.rawValue)*Double.pi/180))
+            let renderImage=rotated.transformed(by:CGAffineTransform(translationX:-rotated.extent.minX,y:-rotated.extent.minY))
+            let renderRaster=PanoramaRaster(image:renderImage,context:CIContext(options:[.workingColorSpace:PanoramaEngine.linearSpace]),width:gw,height:gh)
+            var rgb:[Float]=[]
+            for i in 0..<gw*gh {rgb += Array(renderRaster.rgba[i*4..<i*4+3])}
+            captures[captures.count-1].renderGrid=LCCMeasurementGrid(x:grid.x,y:grid.y,channels:["R","G","B"],
+                values:LCCMeasurementGrid.pack(rgb),space:"apple-linear-srgb-6500K-v1")
+
         }
         let profile=LCCLensProfile(schemaVersion:2,id:UUID(),name:name.trimmingCharacters(in:.whitespacesAndNewlines),camera:frames[0].source.camera,
                                    aperture:aperture,notes:notes,createdAt:Date(),captures:captures,cameraBody:cameraBody)
@@ -128,12 +138,12 @@ public enum LCCProfileBuilder {
         if source.isRAW,let raw=CIRAWFilter(imageURL:source.url) {
             raw.isLensCorrectionEnabled=false;raw.isGamutMappingEnabled=false
             raw.boostAmount=0;raw.boostShadowAmount=0;raw.localToneMapAmount=0
-            raw.exposure=0;raw.baselineExposure=0;raw.shadowBias=0;raw.sharpnessAmount=0
+            raw.exposure=0;if !source.camera.hasPrefix("Photons Linear") {raw.baselineExposure=0};raw.shadowBias=0;raw.sharpnessAmount=0
             raw.luminanceNoiseReductionAmount=0;raw.colorNoiseReductionAmount=0
-            raw.neutralTemperature=whiteBalance?.0 ?? 6500;raw.neutralTint=whiteBalance?.1 ?? 0;raw.scaleFactor=Float(scale)
-            guard let image=raw.outputImage else {throw PanoramaFailure("无法解码 \(source.url.lastPathComponent)")};output=image
+            if !source.camera.hasPrefix("Photons Linear") {raw.neutralTemperature=whiteBalance?.0 ?? 6500;raw.neutralTint=whiteBalance?.1 ?? 0};raw.scaleFactor=Float(scale)
+            guard let image=raw.outputImage else {throw PanoramaFailure(L10n.tr("12edd19f4454" , String(describing: (source.url.lastPathComponent))))};output=image
         } else if let image=CIImage(contentsOf:source.url,options:[.applyOrientationProperty:true]) {output=image}
-        else {throw PanoramaFailure("无法解码 \(source.url.lastPathComponent)")}
+        else {throw PanoramaFailure(L10n.tr("12edd19f4454" , String(describing: (source.url.lastPathComponent))))}
         let normal=output.transformed(by:CGAffineTransform(translationX:-output.extent.minX,y:-output.extent.minY))
         return normal.transformed(by:CGAffineTransform(scaleX:source.size.width*scale/normal.extent.width,y:source.size.height*scale/normal.extent.height))
     }

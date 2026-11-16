@@ -77,7 +77,12 @@ final class ThumbnailMetalRenderer {
             constexpr sampler smp(coord::normalized, address::clamp_to_edge, filter::linear);
             float2 uv = p.uv.xy + in.uv * p.uv.zw;
             float3 rgb = src.sample(smp, uv).rgb;
-            return float4(hdr != 0 ? rgb : min(rgb, float3(1.0)), 1.0);
+            if (hdr == 0) {
+                rgb=max(rgb,0.0);
+                float peak=max(rgb.r,max(rgb.g,rgb.b));
+                if (peak>0.8) {rgb *= (0.8+0.2*(peak-0.8)/(peak-0.6))/peak;}
+            }
+            return float4(rgb,1.0);
         }
         """
         guard let library = try? device.makeLibrary(source: source, options: nil),

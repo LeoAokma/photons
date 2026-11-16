@@ -18,7 +18,7 @@ fi
 /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.leoaokma.photons.sandbox' "$PHOTONS_SANDBOX_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleName Photons Sandbox' "$PHOTONS_SANDBOX_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Photons Sandbox' "$PHOTONS_SANDBOX_APP/Contents/Info.plist"
-for PHOTONS_HELPER in ansel-denoise-swift hdrmerge-swift; do
+for PHOTONS_HELPER in ansel-denoise-swift hdrmerge-swift photons-panorama-worker; do
     PHOTONS_BINARY="$PHOTONS_SANDBOX_APP/Contents/Resources/bin/$PHOTONS_HELPER"
     test -x "$PHOTONS_BINARY"
     codesign --force --sign "$PHOTONS_SIGN_IDENTITY" --timestamp=none \

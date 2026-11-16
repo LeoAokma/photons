@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import AppKit
 import PhotonsFileAccess
 import PhotonsCatalog
@@ -67,11 +68,11 @@ public final class ImportCoordinator {
     public func start(_ request: ImportRequest, completion: ((ImportSummary) -> Void)? = nil) {
         guard !isImporting else { return }
         guard let service = session.makeImportService() else {
-            lastError = "未打开库"
+            lastError = L10n.tr("a306ecabb07b")
             return
         }
         do { for url in request.sources { try FileAccessStore.shared.rememberSelection(url) } }
-        catch { lastError = "无法保存文件夹访问权限：\(error.localizedDescription)"; onError?(lastError!); return }
+        catch { lastError = L10n.tr("29b1acd9fb6e" , String(describing: (error.localizedDescription))); onError?(lastError!); return }
         isImporting = true
         runCount += 1
         lastError = nil

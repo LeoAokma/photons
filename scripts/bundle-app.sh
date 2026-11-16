@@ -25,6 +25,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BUILD_DIR/Photons" "$APP/Contents/MacOS/Photons"
+mkdir -p "$APP/Contents/Resources/bin"
+cp "$BUILD_DIR/photons-panorama-worker" "$APP/Contents/Resources/bin/photons-panorama-worker"
+codesign --force --sign - --timestamp=none "$APP/Contents/Resources/bin/photons-panorama-worker"
 cp "$ROOT/scripts/App-Info.plist" "$APP/Contents/Info.plist"
 
 # 应用图标：**先用 actool 编译 Resources/AppIcon.icon**，它会把 Icon Composer 的分层文档烘成
@@ -82,6 +85,9 @@ printf 'revision    %s\n' "$REVISION"
 for bundle in "$BUILD_DIR"/*.bundle; do
     [ -e "$bundle" ] || continue
     cp -R "$bundle" "$APP/Contents/Resources/"
+    # SwiftPM command-line helpers resolve Bundle.module beside their executable. Relative links
+    # keep a single signed resource copy inside the app and work under inherited App Sandbox.
+    ln -s "../$(basename "$bundle")" "$APP/Contents/Resources/bin/$(basename "$bundle")"
 done
 
 # 387 — the denoise module rides inside the bundle in **two pieces that belong together**:

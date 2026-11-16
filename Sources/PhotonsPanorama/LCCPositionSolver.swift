@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import PhotonsFileAccess
 import CoreImage
@@ -6,6 +7,8 @@ public struct LCCPositionSolution {
     public let offsetMM:CGPoint
     public let explanation:String
     public let flatCount:Int
+    public var residual:Double = 0
+    public var requiresManualSeed:Bool = false
 }
 
 public enum LCCPositionSolver {
@@ -17,17 +20,23 @@ public enum LCCPositionSolver {
     }
     public static func solve(plan:PanoramaPlan,fields:[LCCCaptureOrientation:LCCCorrectionField],sensor:SensorSize,
                              cameraBody:PanoramaCameraBody = .alpa12Max,bodyOrientation:PanoramaBodyOrientation = .degrees0,
+                             allowPairedFlats:Bool = true, approximateOffset:CGPoint? = nil, searchRadius:Double = 3,
                              cancellation:PanoramaCancellation = .init(),progress:PanoramaEngine.Progress = {_ in}) throws -> LCCPositionSolution {
-        let engine=PanoramaEngine(),records=LCCPairingStore().records()
+        let engine=PanoramaEngine(),records=allowPairedFlats ? LCCPairingStore().records():[]
         var observations:[Observation]=[],flats=0
         let w=plan.sources[0].size.width,h=plan.sources[0].size.height
         let centers=plan.sources.indices.map {i in CGPoint(x:(plan.sourceRect(i).midX-plan.size.width/2)*sensor.width/w,
             y:(plan.size.height/2-plan.sourceRect(i).midY)*sensor.height/h)}
         let travel=cameraBody.travel(at:bodyOrientation)
         guard let bounds=travel.opticalOriginBounds(centers:centers) else {
-            throw PanoramaFailure("拼接范围超过 \(cameraBody.name)（\(bodyOrientation.rawValue)°）行程，请检查机身方向或手动输入位置。")
+            throw PanoramaFailure(L10n.tr("cd505be730c2" , String(describing: (cameraBody.name)), String(describing: (bodyOrientation.rawValue))))
         }
-        let x0=bounds.minX,x1=bounds.maxX,y0=bounds.minY,y1=bounds.maxY
+        let x0=max(bounds.minX,approximateOffset.map {$0.x-searchRadius} ?? bounds.minX)
+        let x1=min(bounds.maxX,approximateOffset.map {$0.x+searchRadius} ?? bounds.maxX)
+        let y0=max(bounds.minY,approximateOffset.map {$0.y-searchRadius} ?? bounds.minY)
+        let y1=min(bounds.maxY,approximateOffset.map {$0.y+searchRadius} ?? bounds.maxY)
+        guard x0<=x1,y0<=y1 else {throw PanoramaFailure(L10n.tr("3735a180c3c7"))}
+
         let flatRecords=plan.sources.map {source in records.first {$0.scene.standardizedFileURL==source.url.standardizedFileURL}}
         let useFlats=flatRecords.contains {$0 != nil}
         for i in plan.sources.indices {
@@ -40,14 +49,14 @@ public enum LCCPositionSolver {
             let image:CIImage
             if useFlats {
                 guard let pair=flatRecords[i] else {continue}
-                progress("读取已配对白板 \(flats+1)…")
+                progress(L10n.tr("409ec3974901" , String(describing: (flats+1))))
                 let flatAccess=FileAccessStore.shared.access(to:pair.flat)
                         defer {withExtendedLifetime(flatAccess) {}}
                         let source=try PanoramaSource(url:flatAccess.url)
                 guard LCCInspector.incompatibility(scene:plan.sources[i],flat:source)==nil else {continue}
                 image=field.isCameraSpace ? LCCCameraPipeline.cameraImage(try LCCCameraPipeline.read(source,maxDimension:512)):try LCCProfileBuilder.linearImage(source:source,scale:256/source.size.width);flats += 1
             } else {
-                guard let images=plan.lccLinearPreviewImages else {throw PanoramaFailure("请先准备 LCC 预览。")}
+                guard let images=plan.lccLinearPreviewImages else {throw PanoramaFailure(L10n.tr("4f3510d3b9ac"))}
                 image=images[i]
             }
             let raster=PanoramaRaster(image:image,context:engine.context,width:48,height:36)
@@ -58,16 +67,16 @@ public enum LCCPositionSolver {
                 observations.append(.init(frame:i,point:p,logRGB:SIMD3(log(c.x),log(c.y),log(c.z)),field:field))
             }}
         }
-        guard observations.count>100 else {throw PanoramaFailure("可用于位置解算的有效标定与图像不足。请检查方向匹配或手动指定位置。")}
-        progress(useFlats ? "用配对白板的红移、暗角匹配镜头 Profile…":"从场景红移、暗角估计中心（低置信度）…")
+        guard observations.count>100 else {throw PanoramaFailure(L10n.tr("fb4baac95a8f"))}
+        progress(useFlats ? L10n.tr("3e9dec9a63e9"):L10n.tr("2fdf398a243c"))
         let result=try search(observations:observations,xRange:x0...x1,yRange:y0...y1,flat:useFlats,cancellation:cancellation)
         var explanation=useFlats
-            ? String(format:"依据 %d 张已配对白板解算；匹配残差 %.1f%%。仍请预览核对。白板用于定位与校正后的白平衡测量，空间增益来自镜头 Profile。",flats,result.error*100)
-            : "仅依据场景红移与暗角估计，可信度较低：天空、建筑颜色与照明可能干扰，请预览核对，已知机身读数优先。"
+            ? String(format:L10n.tr("d44d22cbc3ea"),flats,result.error*100)
+            : L10n.tr("32579e8b19fb")
         if min(result.point.x-x0,x1-result.point.x,result.point.y-y0,y1-result.point.y)<0.2 {
-            explanation += " 候选接近机身行程边界，请以实际读数核对。"
+            explanation += L10n.tr("6cb863df7b95")
         }
-        return LCCPositionSolution(offsetMM:result.point,explanation:explanation,flatCount:flats)
+        return LCCPositionSolution(offsetMM:result.point,explanation:explanation,flatCount:flats,residual:result.error,requiresManualSeed:!useFlats && approximateOffset == nil)
     }
     static func search(observations:[Observation],xRange:ClosedRange<Double>,yRange:ClosedRange<Double>,flat:Bool,
                        cancellation:PanoramaCancellation) throws -> (point:CGPoint,error:Double) {
@@ -108,7 +117,7 @@ public enum LCCPositionSolver {
                 }
             }
         }
-        guard error.isFinite else {throw PanoramaFailure("Profile 的实测覆盖不足以自动解算当前拼接图，请手动对齐。")}
+        guard error.isFinite else {throw PanoramaFailure(L10n.tr("bab9d5b8d021"))}
         return (best,error)
     }
 }

@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import AppKit
 import SwiftUI
 import PhotonsCatalog
@@ -22,41 +23,41 @@ import PhotonsCatalog
 /// Every string this feature shows, in one place.
 public enum MissingFileText {
     /// The badge on a card, a strip cell, a list row and the line in the inspector.
-    public static let moved = "原文件已移动"
+    public static let moved = L10n.tr("468d36ca4456")
 
     /// 「移出照片库」: the entry and its modification records go, the file stays.
-    public static let removeMenuTitle = "移出照片库"
+    public static let removeMenuTitle = L10n.tr("a47ac7c53334")
     /// 「移出并删除…」: the entry goes **and** the original is moved to the Trash.
-    public static let removeAndDeleteMenuTitle = "移出并删除…"
-    public static let findMenuTitle = "查找丢失的文件…"
+    public static let removeAndDeleteMenuTitle = L10n.tr("c97a160dd1d9")
+    public static let findMenuTitle = L10n.tr("a1af92e74dba")
 
     /// The sheet's title. A question, because it is one.
-    public static let removeAndDeleteConfirmTitle = "移出并删除？"
-    public static let removeAndDeleteConfirmButton = "移出并删除"
-    public static let cancelButton = "取消"
+    public static let removeAndDeleteConfirmTitle = L10n.tr("c189d87c3bcd")
+    public static let removeAndDeleteConfirmButton = L10n.tr("612ac51e03d7")
+    public static let cancelButton = L10n.tr("2cd0f3be8738")
 
     /// The sentence the user asked for, counts included: the entries go, and the originals that are
     /// still on disk go to the Trash (recoverable), not away for good.
     public static func removeAndDeleteConfirmMessage(count: Int, files: Int) -> String {
-        "将从库中移出 \(count) 个条目，并把其中 \(files) 个原文件移到废纸篓（可在废纸篓中还原）。"
+        L10n.tr("1247b9f2ed1b" , String(describing: (count)), String(describing: (files)))
     }
 
-    public static let findPanelTitle = "查找丢失的文件"
-    public static let findPanelMessage = "选择一个文件夹，按其子文件夹中与条目同名的文件重新链接。"
-    public static let findPanelButton = "搜索"
+    public static let findPanelTitle = L10n.tr("8e00c54e8b1a")
+    public static let findPanelMessage = L10n.tr("c6ceb44dccd4")
+    public static let findPanelButton = L10n.tr("44ce7ae909bb")
 
     /// What one 「查找丢失的文件…」 run found.
     public static func relinkSummary(relinked: Int, unmatched: Int, rejected: Int, failed: Int) -> String {
         var parts: [String] = []
-        parts.append("已重新链接 \(relinked) 个")
-        if unmatched > 0 { parts.append("未找到 \(unmatched) 个") }
-        if rejected > 0 { parts.append("内容不一致 \(rejected) 个（已跳过）") }
-        if failed > 0 { parts.append("写入失败 \(failed) 个") }
+        parts.append(L10n.tr("fbe396053ea4" , String(describing: (relinked))))
+        if unmatched > 0 { parts.append(L10n.tr("1b29ccc137b8" , String(describing: (unmatched)))) }
+        if rejected > 0 { parts.append(L10n.tr("1fbeafc6c6d7" , String(describing: (rejected)))) }
+        if failed > 0 { parts.append(L10n.tr("9876a61f221e" , String(describing: (failed)))) }
         return parts.joined(separator: " · ")
     }
 
     /// A single item's失败 line, for the alert that reports the run.
-    public static let findNothingFound = "没有找到与条目内容一致的丢失文件；条目仍标记为「原文件已移动」。"
+    public static let findNothingFound = L10n.tr("b646ca8104d5")
 }
 
 // MARK: - the badge
@@ -201,13 +202,13 @@ public final class AssetContextMenu: NSObject, NSMenuDelegate {
         menu.addItem(findItem)
 
         menu.addItem(.separator())
-        addToAlbumItem = NSMenuItem(title: "加入相册", action: nil, keyEquivalent: "")
-        addToAlbumItem.submenu = NSMenu(title: "加入相册")
+        addToAlbumItem = NSMenuItem(title: L10n.tr("3910992c9ab5"), action: nil, keyEquivalent: "")
+        addToAlbumItem.submenu = NSMenu(title: L10n.tr("3910992c9ab5"))
         addToAlbumItem.isEnabled = false
         menu.addItem(addToAlbumItem)
 
-        removeFromAlbumItem = NSMenuItem(title: "移出相册", action: nil, keyEquivalent: "")
-        removeFromAlbumItem.submenu = NSMenu(title: "移出相册")
+        removeFromAlbumItem = NSMenuItem(title: L10n.tr("39ef5d30d1ff"), action: nil, keyEquivalent: "")
+        removeFromAlbumItem.submenu = NSMenu(title: L10n.tr("39ef5d30d1ff"))
         removeFromAlbumItem.isEnabled = false
         menu.addItem(removeFromAlbumItem)
     }
@@ -344,10 +345,10 @@ public enum MissingFilesPanels {
         guard !outcome.failures.isEmpty else { return }
         let alert = NSAlert()
         alert.messageText = MissingFileText.removeAndDeleteMenuTitle
-        alert.informativeText = "有条目未能移出（文件没有删除，条目仍在库中）：\n"
+        alert.informativeText = L10n.tr("c949e18a954d")
             + outcome.failures.joined(separator: "\n")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: L10n.tr("f867f3417859"))
         _ = alert.runModal()
         _ = window
     }
@@ -375,7 +376,7 @@ public enum MissingFilesPanels {
         alert.messageText = MissingFileText.findPanelTitle
         alert.informativeText = outcome.message
         alert.alertStyle = outcome.relinked.isEmpty ? .warning : .informational
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: L10n.tr("f867f3417859"))
         _ = alert.runModal()
         _ = window
     }

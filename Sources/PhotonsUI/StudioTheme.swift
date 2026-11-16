@@ -1,4 +1,5 @@
 import AppKit
+import PhotonsLocalization
 import SwiftUI
 
 /// Neutral, opaque surfaces keep the photograph's surround stable across desktop wallpapers.
@@ -7,7 +8,7 @@ enum StudioTheme {
     static let raised = adaptive("studio.raised", dark: 0.20, light: 0.98)
     static let well = adaptive("studio.well", dark: 0.12, light: 0.88)
     static let separator = adaptive("studio.separator", dark: 0.09, light: 0.78)
-    static let labelWidth: CGFloat = 62
+    static let labelWidth: CGFloat = L10n.language == "en" ? 82:62
     static let valueWidth: CGFloat = 64
     static let rowHeight: CGFloat = 26
 

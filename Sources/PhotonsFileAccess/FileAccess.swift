@@ -54,6 +54,11 @@ public final class FileAccessStore: @unchecked Sendable {
 
     public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
+    public func rememberedURLs() -> [URL] {
+        lock.lock(); defer { lock.unlock() }
+        return (defaults.dictionary(forKey:Self.key) ?? [:]).keys.map { URL(fileURLWithPath:$0) }
+    }
+
     public static func bookmark(for url: URL) throws -> Data {
         let access = FileAccess(url)
         return try withExtendedLifetime(access) {

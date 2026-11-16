@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import AppKit
 import SwiftUI
 import PhotonsPanorama
@@ -21,7 +22,7 @@ final class LCCProfileLibraryModel: ObservableObject {
                 let store=LCCProfileStore();try store.installBundledProfile();let catalog=store.catalog()
                 DispatchQueue.main.async {
                     guard let self else {return};self.profiles=catalog.profiles;self.busy=false
-                    self.status="\(catalog.profiles.count) 个镜头 profile · 保存在本机应用数据中"
+                    self.status=L10n.tr("e88329a2fa97" , String(describing: (catalog.profiles.count)))
                     if !catalog.issues.isEmpty {self.error=catalog.issues.joined(separator:"\n")}
                     self.selected=id ?? self.selected ?? catalog.profiles.first?.id;self.readSelected()
                 }
@@ -52,12 +53,12 @@ final class LCCProfileLibraryModel: ObservableObject {
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let access = FileAccess(url)
-        busy = true; status = "读取镜头 Profile…"
+        busy = true; status = L10n.tr("6430d7f1cd18")
         queue.async { [weak self] in
             defer { withExtendedLifetime(access) {} }
             do {
                 let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                guard size > 0, size <= 256 * 1024 * 1024 + 65584 else { throw PanoramaFailure("镜头 profile 大小无效。") }
+                guard size > 0, size <= 256 * 1024 * 1024 + 65584 else { throw PanoramaFailure(L10n.tr("8c7ee4e7adb6")) }
                 let imported = try LCCProfileCodec.decode(Data(contentsOf: url))
                 DispatchQueue.main.async { self?.confirmImport(imported) }
             } catch { DispatchQueue.main.async { self?.busy = false; self?.error = error.localizedDescription } }
@@ -66,10 +67,10 @@ final class LCCProfileLibraryModel: ObservableObject {
     private func confirmImport(_ imported: LCCLensProfile) {
         let store = LCCProfileStore()
         if FileManager.default.fileExists(atPath: store.url(for: imported.id).path) {
-            let alert = NSAlert(); alert.messageText = "替换现有镜头 Profile？"
-            alert.informativeText = "已存在相同标识的标定文件。替换会更新该文件的测量数据。"
-            alert.addButton(withTitle: "替换"); alert.addButton(withTitle: "取消")
-            guard alert.runModal() == .alertFirstButtonReturn else { busy = false; status = "已取消导入"; return }
+            let alert = NSAlert(); alert.messageText = L10n.tr("558c9f10c4c6")
+            alert.informativeText = L10n.tr("86833a8f747b")
+            alert.addButton(withTitle: L10n.tr("131b13aa2659")); alert.addButton(withTitle: L10n.tr("2cd0f3be8738"))
+            guard alert.runModal() == .alertFirstButtonReturn else { busy = false; status = L10n.tr("08d7a98d788a"); return }
         }
         queue.async { [weak self] in
             do {
@@ -85,12 +86,12 @@ final class LCCProfileLibraryModel: ObservableObject {
         panel.nameFieldStringValue = profile.name.replacingOccurrences(of: "/", with: "-") + ".photonslcc"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let access = FileAccess(url)
-        busy = true; status = "导出镜头 Profile…"
+        busy = true; status = L10n.tr("03523dad439e")
         queue.async { [weak self] in
             defer { withExtendedLifetime(access) {} }
             do {
                 try LCCProfileCodec.encode(profile).write(to: url, options: .atomic)
-                DispatchQueue.main.async { self?.busy = false; self?.status = "已导出：\(url.lastPathComponent)" }
+                DispatchQueue.main.async { self?.busy = false; self?.status = L10n.tr("474788f92319" , String(describing: (url.lastPathComponent))) }
             } catch { DispatchQueue.main.async { self?.busy = false; self?.error = error.localizedDescription } }
         }
     }
@@ -102,11 +103,11 @@ struct LCCProfileLibraryView: View {
         VStack(alignment:.leading,spacing:16) {
             HStack {
                 VStack(alignment:.leading,spacing:4) {
-                    Text("镜头 Profiles").font(.title.bold())
-                    Text("用户创建的 LCC 标定，可查看、导入和分享；随附样例由开发者作为用户制作。").foregroundStyle(.secondary)
+                    Text(L10n.tr("2eeb1676861b")).font(.title.bold())
+                    Text(L10n.tr("61f6b1a29661")).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("创建镜头 Profile…") {model.create()}.buttonStyle(.borderedProminent)
+                Button(L10n.tr("0d624bdac72a")) {model.create()}.buttonStyle(.borderedProminent)
             }
             HSplitView {
                 List(selection:$model.selected) {
@@ -114,7 +115,7 @@ struct LCCProfileLibraryView: View {
                         VStack(alignment:.leading,spacing:5) {
                             Text(p.name).font(.headline)
                             Text(p.camera).font(.caption).foregroundStyle(.secondary)
-                            Text(p.variants.map {"\($0.orientation.title) \($0.count) 张"}.joined(separator:" · ")).font(.caption2)
+                            Text(p.variants.map {L10n.tr("6db6e93d9c3d" , String(describing: ($0.orientation.title)), String(describing: ($0.count)))}.joined(separator:" · ")).font(.caption2)
                         }.padding(.vertical,6).tag(p.id)
                     }
                 }.frame(minWidth:270,idealWidth:300,maxWidth:360)
@@ -123,34 +124,34 @@ struct LCCProfileLibraryView: View {
                         VStack(alignment:.leading,spacing:14) {
                             Text(profile.name).font(.title2.bold())
                             Text(profile.camera).foregroundStyle(.secondary)
-                            if let body=LCCProfileSummary(profile).calibrationBody {Text("标定机身：\(body.name)").font(.caption)}
-                            if let aperture=profile.aperture {Text("标定光圈 f/\(aperture,specifier:"%g")")}
+                            if let body=LCCProfileSummary(profile).calibrationBody {Text(L10n.tr("00f3f3fdc6a8" , String(describing: (body.name)))).font(.caption)}
+                            if let aperture=profile.aperture {Text(L10n.tr("9ff1649978c3" , String(describing: (aperture,specifier:"%g"))))}
                             Text(profile.notes).font(.callout).textSelection(.enabled)
                             ForEach(profile.orientations) { orientation in
                                 let frames=profile.captures(for:orientation)
                                 VStack(alignment:.leading,spacing:8) {
-                                    Text("后背相对机身\(orientation.title) · \(frames.count) 张白板").font(.headline)
+                                    Text(L10n.tr("bc22134b1d3f" , String(describing: (orientation.title)), String(describing: (frames.count)))).font(.headline)
                                     LCCProfileCoverageView(captures:frames).frame(height:190)
-                                    Text(String(format:"H %+.1f 至 %+.1f mm · V %+.1f 至 %+.1f mm",frames.map(\.shiftX).min() ?? 0,frames.map(\.shiftX).max() ?? 0,frames.map(\.shiftY).min() ?? 0,frames.map(\.shiftY).max() ?? 0))
+                                    Text(String(format:L10n.tr("6c3b0465bdf0"),frames.map(\.shiftX).min() ?? 0,frames.map(\.shiftX).max() ?? 0,frames.map(\.shiftY).min() ?? 0,frames.map(\.shiftY).max() ?? 0))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }.padding(12).background(.quaternary,in:RoundedRectangle(cornerRadius:8))
                             }
-                            Text("保留每张白板的完整低频测量，包括弱光角落。原始 RAW 不会复制到 profile，也不需要一直保留在原路径。").font(.caption).foregroundStyle(.secondary)
-                            Text("拼接按后背相对机身的方向匹配标定；整机旋转会同步旋转校正场。对称机身的等价放置方向共用标定。").font(.caption).foregroundStyle(.secondary)
+                            Text(L10n.tr("462dcac8baeb")).font(.caption).foregroundStyle(.secondary)
+                            Text(L10n.tr("89e848ef8755")).font(.caption).foregroundStyle(.secondary)
                         }.padding(16)
-                    } else {ProgressView("读取镜头标定…").frame(maxWidth:.infinity,minHeight:280)}
+                    } else {ProgressView(L10n.tr("621708f1b63d")).frame(maxWidth:.infinity,minHeight:280)}
                 }.frame(minWidth:350)
             }
             HStack {
                 if model.busy {ProgressView().controlSize(.small)}
                 Text(model.status).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("导入…") {model.importProfile()}.disabled(model.busy)
-                Button("导出…") {model.exportProfile()}.disabled(model.profile==nil || model.busy)
-                Button("在 Finder 中显示") {model.reveal()}.disabled(model.selected==nil)
+                Button(L10n.tr("1b9818e1adfe")) {model.importProfile()}.disabled(model.busy)
+                Button(L10n.tr("643e7408e6a7")) {model.exportProfile()}.disabled(model.profile==nil || model.busy)
+                Button(L10n.tr("1280364b7f84")) {model.reveal()}.disabled(model.selected==nil)
             }
         }.padding(22).onAppear {model.refresh()}.onChange(of:model.selected) {_,_ in model.readSelected()}
-        .alert("镜头 Profiles",isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})) {Button("好") {model.error=nil}} message: {Text(model.error ?? "")}
+        .alert(L10n.tr("2eeb1676861b"),isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})) {Button(L10n.tr("f867f3417859")) {model.error=nil}} message: {Text(model.error ?? "")}
     }
 }
 
@@ -172,6 +173,6 @@ private struct LCCProfileCoverageView:View {
                 context.fill(Path(ellipseIn:CGRect(x:p.x-2,y:p.y-2,width:4,height:4)),with:.color(.primary.opacity(0.7)))
             }
         }.background(Color(nsColor:.underPageBackgroundColor),in:RoundedRectangle(cornerRadius:6))
-        .accessibilityLabel("标定照片在像场中的完整矩形覆盖范围")
+        .accessibilityLabel(L10n.tr("859a15dbf359"))
     }
 }

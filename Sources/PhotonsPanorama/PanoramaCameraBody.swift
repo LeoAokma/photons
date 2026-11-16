@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 
 /// Body rotation is independent of the sensor's EXIF orientation. Coordinates are
@@ -67,7 +68,7 @@ public struct PanoramaShiftRange:Equatable,Sendable {
         return CGRect(x:x0,y:y0,width:x1-x0,height:y1-y0)
     }
     public var summary:String {
-        String(format:"左 %.0f / 右 %.0f · 上 %.0f / 下 %.0f mm",left,right,up,down)
+        String(format:L10n.tr("2964a5376783"),left,right,up,down)
     }
 }
 
@@ -101,13 +102,13 @@ public enum PanoramaCameraBody:String,Codable,CaseIterable,Identifiable,Sendable
         [orientation]+PanoramaBodyOrientation.allCases.filter {$0 != orientation && travel(at:$0)==travel(at:orientation)}
     }
     public func placementLabel(_ orientation:PanoramaBodyOrientation)->String {
-        if orientations.count==1 {return "四向相同"}
-        if orientations.count==2 {return orientation == .degrees0 ? "水平放置":"竖直放置"}
+        if orientations.count==1 {return L10n.tr("fe4ff4c2b79b")}
+        if orientations.count==2 {return orientation == .degrees0 ? L10n.tr("0795fb1a4b4b"):L10n.tr("bf6b4f034de6")}
         switch orientation {
-        case .degrees0:return "正常放置"
-        case .degrees90:return "向左横放"
-        case .degrees180:return "倒置放置"
-        case .degrees270:return "向右横放"
+        case .degrees0:return L10n.tr("39b4d37525c7")
+        case .degrees90:return L10n.tr("9eb2d65178e1")
+        case .degrees180:return L10n.tr("920f1de3792d")
+        case .degrees270:return L10n.tr("3206dbbbf8e1")
         }
     }
 }

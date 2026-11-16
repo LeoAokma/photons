@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import AppKit
 import PhotonsFileAccess
 import SwiftUI
@@ -8,11 +9,14 @@ import PhotonsPanorama
 public final class PanoramaWindowController: NSWindowController, NSWindowDelegate {
     private let model: PanoramaWindowModel
     public var onClose: (() -> Void)?
+    public var onExported: (URL,@escaping(String?)->Void)->Void {
+        get {model.onExported} set {model.onExported=newValue}
+    }
     public init(urls: [URL]) {
         model = PanoramaWindowModel(urls:urls)
         let window = NSWindow(contentRect:NSRect(x:0,y:0,width:1240,height:820),
                               styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
-        window.title = "全景拼接"; window.minSize = NSSize(width:980,height:690); window.isReleasedWhenClosed = false
+        window.title = L10n.tr("8b92765d86d0"); window.minSize = NSSize(width:980,height:690); window.isReleasedWhenClosed = false
         super.init(window:window)
         window.delegate = self; model.window = window
         window.contentView = NSHostingView(rootView:PanoramaWorkspace(model:model))
@@ -33,7 +37,7 @@ private final class PanoramaWindowModel: ObservableObject {
     @Published var error: String?
     @Published var plan: PanoramaPlan?
     @Published var options = PanoramaOptions()
-    @Published var exportKind = PanoramaExportKind.standard
+    var onExported: (URL,@escaping(String?)->Void)->Void = {_,done in done(nil)}
     @Published var cameraBody:PanoramaCameraBody = .alpa12Max
     @Published var bodyOrientation:PanoramaBodyOrientation = .degrees0
     @Published var sensorChoice = 0
@@ -48,7 +52,7 @@ private final class PanoramaWindowModel: ObservableObject {
     @Published var lccCount = 0
     @Published var lensProfiles: [LCCProfileSummary] = []
     @Published var selectedLensProfileID = UserDefaults.standard.string(forKey:"Photons.panorama.lensProfileID") ?? LCCLensProfile.builtInID.uuidString
-    @Published var profileStatus = "正在读取镜头 profiles…"
+    @Published var profileStatus = L10n.tr("b3ef060e30d6")
     @Published var lccEnabled=false
     @Published var cropToLCC=false
     @Published var lccOffset=CGPoint.zero
@@ -82,7 +86,7 @@ private final class PanoramaWindowModel: ObservableObject {
     }
     var overviewReference:PanoramaPositionReference? {positionReference ?? estimatedReference}
     func setPositionReference(index:Int,x:Double,y:Double,asReference:Bool) {
-        guard x.isFinite,y.isFinite,abs(x)<=150,abs(y)<=150 else {error="请输入有效的移轴位置。";return}
+        guard x.isFinite,y.isFinite,abs(x)<=150,abs(y)<=150 else {error=L10n.tr("2dce53ce7a65");return}
         alignmentWindow?.close()
         knownPositions[index]=CGPoint(x:x,y:y)
         if asReference {positionReference=PanoramaPositionReference(sourceIndex:index,positionMM:CGPoint(x:x,y:y));estimatedReference=nil}
@@ -102,13 +106,13 @@ private final class PanoramaWindowModel: ObservableObject {
         if !lccEnabled {
             run {engine,token,_ in try engine.removingLCC(current,cancellation:token)};return
         }
-        guard let id=UUID(uuidString:selectedLensProfileID),let sensor else {error="请先选择镜头 profile 并确定传感器尺寸。";lccEnabled=false;return}
+        guard let id=UUID(uuidString:selectedLensProfileID),let sensor else {error=L10n.tr("fca735eecc8a");lccEnabled=false;return}
         let cached=lccSession,offset=lccOffset,crop=cropToLCC,exposure=exposureEV,protect=protectHighlights
         let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
         let shouldLocate=automaticallyLocate && positionReference==nil
         let body=cameraBody,orientation=bodyOrientation
         cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
-        busy=true;error=nil;status=shouldLocate ? "正在准备 LCC 并自动解算位置…":"正在更新 LCC 校正…"
+        busy=true;error=nil;status=shouldLocate ? L10n.tr("6631ec06dcd5"):L10n.tr("299e5b1859ed")
         queue.async { [weak self] in
             let engine=PanoramaEngine()
             let progress:PanoramaEngine.Progress={message in
@@ -130,7 +134,7 @@ private final class PanoramaWindowModel: ObservableObject {
                         try token.check()
                         // Keep a usable calibrated preview so a partial profile can still be
                         // aligned manually. Never report a failed estimate as an applied solution.
-                        locationIssue="自动解算未完成：\(error.localizedDescription) 可点击“手动对齐lcc”调整位置。"
+                        locationIssue=L10n.tr("2f7403431f62" , String(describing: (error.localizedDescription)))
                     }
                 }
                 let resolvedOffset=solution?.offsetMM ?? offset
@@ -150,7 +154,7 @@ private final class PanoramaWindowModel: ObservableObject {
                         self.positionExplanation=solution.explanation
                     } else if let locationIssue {self.positionExplanation=locationIssue}
                     self.busy=false;self.error=locationIssue
-                    self.status=solution != nil ? "LCC 自动解算并已应用 · 预览与输出共用同一位置":"预览就绪 · 拼接位置已锁定"
+                    self.status=solution != nil ? L10n.tr("a20a67918b78"):L10n.tr("8dc393a05b0d")
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -166,19 +170,19 @@ private final class PanoramaWindowModel: ObservableObject {
         if let alignmentWindow {alignmentWindow.showWindow(nil);return}
         let c=LCCAlignmentWindowController(plan:proposal ?? plan,session:session,offset:initialOffset ?? lccOffset,crop:cropToLCC,explanation:explanation) { [weak self] result,offset in
             guard self?.positionReference==nil else {return}
-            self?.plan=result;self?.lccOffset=offset;self?.status="LCC 对齐已应用 · 预览与输出共用同一校正位置"
+            self?.plan=result;self?.lccOffset=offset;self?.status=L10n.tr("b733a8d2ca5b")
             let r=result.sourceRect(0)
             self?.estimatedReference=PanoramaPositionReference(sourceIndex:0,positionMM:CGPoint(
                 x:(r.midX-result.size.width/2)*session.sensor.width/r.width-offset.x,
                 y:(result.size.height/2-r.midY)*session.sensor.height/r.height-offset.y))
-            self?.positionExplanation=explanation ?? "位置由手动 LCC 对齐确定；可点击照片输入已知读数覆盖。"
+            self?.positionExplanation=explanation ?? L10n.tr("1eaba71129bf")
         }
         c.onClose={ [weak self] in self?.alignmentWindow=nil };alignmentWindow=c;c.showWindow(nil);c.window?.makeKeyAndOrderFront(nil)
     }
     func solvePosition() {
         guard let current=plan,let session=lccSession,lccEnabled,!busy,positionReference==nil else {return}
         cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
-        busy=true;error=nil;status="正在自动解算位置…"
+        busy=true;error=nil;status=L10n.tr("3e9efb0180ff")
         let amount=exposureEV,protect=protectHighlights
         let body=cameraBody,orientation=bodyOrientation
         let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
@@ -196,7 +200,7 @@ private final class PanoramaWindowModel: ObservableObject {
                 try token.check()
                 DispatchQueue.main.async {
                     guard let self,(try? token.check()) != nil else {return}
-                    self.busy=false;self.status="自动解算完成，请在预览中核对并应用"
+                    self.busy=false;self.status=L10n.tr("a005705ea84c")
                     self.alignLCC(initialOffset:solution.offsetMM,explanation:solution.explanation,proposal:proposal)
                 }
             } catch {DispatchQueue.main.async {self?.busy=false;self?.status="";if !(error is CancellationError) {self?.error=error.localizedDescription}}}
@@ -209,7 +213,7 @@ private final class PanoramaWindowModel: ObservableObject {
                 let store=LCCProfileStore();try store.installBundledProfile();let catalog=store.catalog()
                 DispatchQueue.main.async {
                     self?.lensProfiles=catalog.profiles
-                    self?.profileStatus=catalog.issues.isEmpty ? "按后背型号、尺寸及后背相对机身的方向匹配。" : catalog.issues.joined(separator:"\n")
+                    self?.profileStatus=catalog.issues.isEmpty ? L10n.tr("5af8232321e0") : catalog.issues.joined(separator:"\n")
                     self?.selectLensProfile()
                 }
             } catch { DispatchQueue.main.async { self?.profileStatus=error.localizedDescription } }
@@ -239,10 +243,10 @@ private final class PanoramaWindowModel: ObservableObject {
         var value:SensorSize?
         switch sensorChoice {
         case 0: value=plan?.sources.first?.sensor
-        case 1: value=SensorSize(width:43.8,height:32.9,source:"手动：44 × 33")
-        case 2: value=SensorSize(width:54,height:40,source:"手动：54 × 40（按实际后背尺寸）")
-        case 3: value=SensorSize(width:36,height:24,source:"手动：135 全画幅")
-        default: value=sensorWidth>0 && sensorHeight>0 && sensorWidth<100 && sensorHeight<100 ? SensorSize(width:sensorWidth,height:sensorHeight,source:"自定义"):nil
+        case 1: value=SensorSize(width:43.8,height:32.9,source:L10n.tr("fe1ba1e1b306"))
+        case 2: value=SensorSize(width:54,height:40,source:L10n.tr("288f3856c6ea"))
+        case 3: value=SensorSize(width:36,height:24,source:L10n.tr("749c9afbfd71"))
+        default: value=sensorWidth>0 && sensorHeight>0 && sensorWidth<100 && sensorHeight<100 ? SensorSize(width:sensorWidth,height:sensorHeight,source:L10n.tr("4eafa9e925b3")):nil
         }
         if let source=plan?.sources.first,let s=value,(source.size.height>source.size.width) != (s.height>s.width) {
             value=SensorSize(width:s.height,height:s.width,source:s.source)
@@ -273,7 +277,7 @@ private final class PanoramaWindowModel: ObservableObject {
                 try token.check()
                 DispatchQueue.main.async { guard (try? token.check()) != nil else {self?.busy=false;return}
                     self?.plan = result; self?.selectLensProfile(); self?.busy = false
-                    self?.status = result.isRegistered ? "预览就绪 · 拼接位置已锁定":"配准未完成 · 请补充移轴信息后重新匹配" }
+                    self?.status = result.isRegistered ? L10n.tr("8dc393a05b0d"):L10n.tr("50ab666cb70c") }
             } catch {
                 DispatchQueue.main.async { self?.busy = false; if !(error is CancellationError) { self?.error = error.localizedDescription }; self?.status = "" }
             }
@@ -288,36 +292,15 @@ private final class PanoramaWindowModel: ObservableObject {
     }
     func stitch() {
         guard let plan, let window, canStitch else { return }
-        if exportKind == .standard {
-            let controller = PanoramaExportController(plan: plan)
-            exportWindow = controller
-            controller.present(in: window)
-            return
-        }
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "全景.dng"
-        panel.allowedContentTypes = [UTType(filenameExtension:"dng") ?? .data]
-        panel.canCreateDirectories = true
-        panel.beginSheetModal(for:window) { [weak self] result in
-            guard result == .OK, let destination = panel.url, let self else { return }
-            self.busy = true; self.error = nil; self.cancellation = PanoramaCancellation()
-            let token = self.cancellation
-            let destinationAccess = FileAccess(destination)
-            self.queue.async {
-                defer { withExtendedLifetime(destinationAccess) {} }
-                do {
-                    try PanoramaEngine().export(plan,to:destination,format:.dng,cancellation:token) { message in
-                        DispatchQueue.main.async { self.status = message }
-                    }
-                    DispatchQueue.main.async {
-                        self.busy = false; self.status = "已保存：\(destination.lastPathComponent)"
-                        NSWorkspace.shared.activateFileViewerSelecting([destination])
-                    }
-                } catch { DispatchQueue.main.async {
-                    self.busy = false; self.status = error is CancellationError ? "已取消" : "导出失败"
-                    if !(error is CancellationError) { self.error = error.localizedDescription }
-                }}
-            }
-        }
+        let profile=lensProfiles.first {$0.id.uuidString==selectedLensProfileID}
+        let manifest=PanoramaManifest(plan:plan,profileID:profile?.id,profileName:profile?.name,
+            offsetMM:positionReference != nil || estimatedReference != nil ? lccOffset:nil,
+            sensor:sensor,bodyOrientation:bodyOrientation)
+        let controller=PanoramaExportController(plan:plan,manifest:manifest)
+        controller.onExported=onExported
+        controller.onQueued={ [weak self] in self?.exportWindow=nil;self?.window?.close() }
+        exportWindow=controller
+        controller.present(in:window)
     }
 }
 
@@ -328,8 +311,8 @@ private struct PanoramaWorkspace: View {
             if model.choosingMode { modeSelection }
             else { workspace }
         }
-        .alert("全景拼接",isPresented:Binding(get:{ model.error != nil },set:{ if !$0 { model.error = nil } })) {
-            Button("好",role:.cancel) { model.error = nil }
+        .alert(L10n.tr("8b92765d86d0"),isPresented:Binding(get:{ model.error != nil },set:{ if !$0 { model.error = nil } })) {
+            Button(L10n.tr("f867f3417859"),role:.cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
         .sheet(isPresented:Binding(get:{model.editingPosition != nil},set:{if !$0 {model.editingPosition=nil}})) {
             if let index=model.editingPosition,let plan=model.plan,let sensor=model.sensor {
@@ -343,18 +326,18 @@ private struct PanoramaWorkspace: View {
     }
     private var modeSelection: some View {
         VStack(alignment:.leading,spacing:24) {
-            Text("选择拼接模式").font(.largeTitle.bold())
-            Text("已选择 \(model.urls.count) 张照片").foregroundStyle(.secondary)
+            Text(L10n.tr("e7e00c84ee53")).font(.largeTitle.bold())
+            Text(L10n.tr("18a20c5ab680" , String(describing: (model.urls.count)))).foregroundStyle(.secondary)
             VStack(alignment:.leading,spacing:12) {
-                Label { Text("移轴接片") } icon: { PanoramaModeIcon() }.font(.title2.bold())
-                Text("镜头保持固定，后背平移。只移动图片位置，保留原始透视。")
-                Button("开始移轴接片") { model.prepare() }.buttonStyle(.borderedProminent).controlSize(.large)
+                Label { Text(L10n.tr("e0a7acc067fd")) } icon: { PanoramaModeIcon() }.font(.title2.bold())
+                Text(L10n.tr("f6ec5765c5b6"))
+                Button(L10n.tr("0f638e919d73")) { model.prepare() }.buttonStyle(.borderedProminent).controlSize(.large)
             }.padding(24).frame(maxWidth:.infinity,alignment:.leading).background(.quaternary,in:RoundedRectangle(cornerRadius:14))
             VStack(alignment:.leading,spacing:8) {
-                Label { Text("透视接片") } icon: { PanoramaModeIcon(perspective:true) }.font(.title2)
-                Text("适用于转动相机的拍摄方式，后续版本提供。").foregroundStyle(.secondary)
+                Label { Text(L10n.tr("713e40499206")) } icon: { PanoramaModeIcon(perspective:true) }.font(.title2)
+                Text(L10n.tr("45da88d7b38d")).foregroundStyle(.secondary)
             }.padding(24).frame(maxWidth:.infinity,alignment:.leading).background(.quinary,in:RoundedRectangle(cornerRadius:14))
-            Text("使用原始图像统一解码，不应用图库内的裁剪和调色。预览完成后，点击“拼接”才生成全分辨率文件。")
+            Text(L10n.tr("62fd2de26931"))
                 .font(.callout).foregroundStyle(.secondary)
         }.padding(48).frame(maxWidth:720).frame(maxWidth:.infinity,maxHeight:.infinity)
     }
@@ -368,8 +351,8 @@ private struct PanoramaWorkspace: View {
                     } else {
                         VStack(spacing:14) {
                             Image(systemName:"panorama").font(.system(size:52)).foregroundStyle(.secondary)
-                            Text(model.busy ? "正在解算拼接位置" : "请在示意图中选择照片，补充移轴信息后重新匹配")
-                            if !model.busy { Button("按移轴信息重新匹配") { model.prepare() } }
+                            Text(model.busy ? L10n.tr("248c5f929e45") : L10n.tr("e885a990b960"))
+                            if !model.busy { Button(L10n.tr("03b1a13cf2c0")) { model.prepare() } }
                         }
                     }
                     if model.busy { VStack { Spacer(); ProgressView(model.status).padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)) }.padding(20) }
@@ -381,21 +364,21 @@ private struct PanoramaWorkspace: View {
             HStack {
                 VStack(alignment:.leading,spacing:3) {
                     Text(model.status).lineLimit(1)
-                    if let plan = model.plan { Text("\(Int(plan.outputSize.width)) × \(Int(plan.outputSize.height)) · \(plan.outputSize.width*plan.outputSize.height/1_000_000,specifier:"%.1f") MP · \(plan.sources.count) 张")
+                    if let plan = model.plan { Text(L10n.tr("f423e12e53c9" , String(describing: (Int(plan.outputSize.width))), String(describing: (Int(plan.outputSize.height))), String(describing: (plan.outputSize.width*plan.outputSize.height/1_000_000,specifier:"%.1f")), String(describing: (plan.sources.count))))
                         .font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
-                if model.busy { Button("取消") { model.cancel() } }
-                Button("拼接") { model.stitch() }.buttonStyle(.borderedProminent).controlSize(.large).disabled(!model.canStitch)
+                if model.busy { Button(L10n.tr("2cd0f3be8738")) { model.cancel() } }
+                Button(L10n.tr("630ca11bfbde")) { model.stitch() }.buttonStyle(.borderedProminent).controlSize(.large).disabled(!model.canStitch)
             }.padding(16)
         }
     }
     private var inspector: some View {
         VStack(alignment:.leading,spacing:16) {
-            Text("移轴接片").font(.title2.bold())
+            Text(L10n.tr("e0a7acc067fd")).font(.title2.bold())
             VStack(alignment:.leading,spacing:6) {
-                Text("拍摄机身").font(.headline)
-                Picker("机身",selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})) {
+                Text(L10n.tr("dcd3ee9cec9b")).font(.headline)
+                Picker(L10n.tr("ee38b80c37d9"),selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})) {
                     ForEach(PanoramaCameraBody.allCases) {Text($0.name).tag($0)}
                 }.labelsHidden()
                 PanoramaBodyOrientationPicker(cameraBody:model.cameraBody,selection:Binding(get:{model.bodyOrientation},set:{model.setBodyOrientation($0)}))
@@ -404,40 +387,40 @@ private struct PanoramaWorkspace: View {
             if let plan = model.plan {
                 PanoramaPositionOverview(plan:plan,sensor:model.sensor,reference:model.overviewReference,cameraBody:model.cameraBody,bodyOrientation:model.bodyOrientation) {index in model.editingPosition=index}
                     .frame(height:200).background(Color(nsColor:.underPageBackgroundColor),in:RoundedRectangle(cornerRadius:8))
-                Text(model.overviewReference != nil ? "已显示相对机身的位置。点击照片可指定唯一基准；橙框表示超出行程。" : "Δ 以拼接图中心为 (0, 0)，右／上为正。点击任意照片，输入已知移轴位置。")
+                Text(model.overviewReference != nil ? L10n.tr("a1d86877af02") : L10n.tr("92edb20a3dbc"))
                     .font(.caption).foregroundStyle(.secondary)
-                if !plan.isRegistered {Text("待配准示意，未确认的照片位置仅供选取。").font(.caption).foregroundStyle(.orange)}
-                Text("已录入 \(model.knownPositions.count) 张移轴信息；搜索范围为读数附近 ±1.5 mm。").font(.caption).foregroundStyle(.secondary)
+                if !plan.isRegistered {Text(L10n.tr("de949bd06103")).font(.caption).foregroundStyle(.orange)}
+                Text(L10n.tr("5e76d67d4617" , String(describing: (model.knownPositions.count)))).font(.caption).foregroundStyle(.secondary)
                 if model.knownPositions.count>1 || !plan.isRegistered {
-                    Button("按移轴信息重新匹配") {model.prepare()}
-                    if model.alignmentNeedsUpdate {Text("移轴约束已变更，请重新匹配。").font(.caption).foregroundStyle(.orange)}
+                    Button(L10n.tr("03b1a13cf2c0")) {model.prepare()}
+                    if model.alignmentNeedsUpdate {Text(L10n.tr("a41d4452a74e")).font(.caption).foregroundStyle(.orange)}
                 }
             }
-            Picker("传感器",selection:$model.sensorChoice) {
-                Text("从 RAW 自动识别").tag(0); Text("44 × 33 · 43.8 × 32.9 mm").tag(1)
-                Text("54 × 40 mm").tag(2); Text("135 · 36 × 24 mm").tag(3); Text("自定义尺寸").tag(4)
+            Picker(L10n.tr("a4f7cbe44e92"),selection:$model.sensorChoice) {
+                Text(L10n.tr("97f973377efe")).tag(0); Text("44 × 33 · 43.8 × 32.9 mm").tag(1)
+                Text("54 × 40 mm").tag(2); Text("135 · 36 × 24 mm").tag(3); Text(L10n.tr("8a2e28474a49")).tag(4)
             }
             if model.sensorChoice == 4 {
-                HStack { TextField("宽 mm",value:$model.sensorWidth,format:.number); Text("×"); TextField("高 mm",value:$model.sensorHeight,format:.number) }.textFieldStyle(.roundedBorder)
+                HStack { TextField(L10n.tr("345ff469e07d"),value:$model.sensorWidth,format:.number); Text("×"); TextField(L10n.tr("b8da5e89518e"),value:$model.sensorHeight,format:.number) }.textFieldStyle(.roundedBorder)
             }
             if let sensor = model.sensor {
                 Text("\(sensor.width,specifier:"%.2f") × \(sensor.height,specifier:"%.2f") mm\n\(sensor.source)").font(.caption).foregroundStyle(.secondary)
-            } else { Text("无法确定传感器尺寸，请选择规格或手动输入。相对像素位置仍然有效。").font(.caption).foregroundStyle(.orange) }
+            } else { Text(L10n.tr("0edf8c27def3")).font(.caption).foregroundStyle(.orange) }
             Divider()
-            Text("光学位置估计").font(.headline)
-            Text(model.positionReference == nil ? (model.plan?.optical.explanation ?? "读取亮度衰减、边缘遮挡与红移后估计。") : "已知位置优先，LCC 原点由该基准确定，自动估计与手动对齐不再改变位置。").font(.caption).foregroundStyle(.secondary)
+            Text(L10n.tr("7702014ae81a")).font(.headline)
+            Text(model.positionReference == nil ? (model.plan?.optical.explanation ?? L10n.tr("9f661eaa4c1a")) : L10n.tr("93fa020baa18")).font(.caption).foregroundStyle(.secondary)
             if model.positionReference == nil,let plan = model.plan, let center = plan.optical.center, let sensor = model.sensor {
-                Text("候选光轴：距第一张中心 X \((center.x-plan.origins[0].x-plan.sources[0].size.width/2)*sensor.width/plan.sources[0].size.width,specifier:"%.1f") / Y \((center.y-plan.origins[0].y-plan.sources[0].size.height/2)*sensor.height/plan.sources[0].size.height,specifier:"%.1f") mm")
+                Text(L10n.tr("73281fd9d6f5" , String(describing: ((center.x-plan.origins[0].x-plan.sources[0].size.width/2)*sensor.width/plan.sources[0].size.width,specifier:"%.1f")), String(describing: ((center.y-plan.origins[0].y-plan.sources[0].size.height/2)*sensor.height/plan.sources[0].size.height,specifier:"%.1f"))))
                     .font(.caption)
             }
             if let reference=model.positionReference,let plan=model.plan {
-                Text("位置基准：\(plan.sources[reference.sourceIndex].url.lastPathComponent)\nX \(reference.positionMM.x,specifier:"%+.1f") / Y \(reference.positionMM.y,specifier:"%+.1f") mm").font(.caption)
-                Button("解除位置基准") {model.positionReference=nil;model.estimatedReference=nil;model.lccOffset = .zero;model.changeLCC()}
+                Text(L10n.tr("a6805c058eaa" , String(describing: (plan.sources[reference.sourceIndex].url.lastPathComponent)), String(describing: (reference.positionMM.x,specifier:"%+.1f")), String(describing: (reference.positionMM.y,specifier:"%+.1f")))).font(.caption)
+                Button(L10n.tr("47966d105fad")) {model.positionReference=nil;model.estimatedReference=nil;model.lccOffset = .zero;model.changeLCC()}
             } else if model.estimatedReference != nil {
                 Text(model.positionExplanation).font(.caption).foregroundStyle(.secondary)
             }
-            Picker("镜头 Profile",selection:$model.selectedLensProfileID) {
-                Text("不选择").tag("")
+            Picker(L10n.tr("185ffacaf4ad"),selection:$model.selectedLensProfileID) {
+                Text(L10n.tr("d03dcdd057a2")).tag("")
                 ForEach(model.lensProfiles) { Text($0.name).tag($0.id.uuidString) }
             }.onChange(of:model.selectedLensProfileID) { _,_ in model.selectLensProfile(); model.changeLCC() }
             Text(model.profileStatus).font(.caption).foregroundStyle(.secondary)
@@ -447,74 +430,67 @@ private struct PanoramaWorkspace: View {
                         Text(plan.sources[i].url.lastPathComponent).lineLimit(1).truncationMode(.middle)
                         Spacer()
                         if plan.lensProfileSelections.indices.contains(i),let binding=plan.lensProfileSelections[i] {
-                            Text("\(binding.orientation.title) · \(binding.captureCount) 张标定").foregroundStyle(.secondary)
-                        } else {Text("无匹配标定").foregroundStyle(.orange)}
+                            Text(L10n.tr("f7485cc751f2" , String(describing: (binding.orientation.title)), String(describing: (binding.captureCount)))).foregroundStyle(.secondary)
+                        } else {Text(L10n.tr("10f0730bd9d6")).foregroundStyle(.orange)}
                     }.font(.caption)
                 }
             }
-            Button("镜头 Profile 管理…") {model.manageLCC(showProfiles:true)}
-            Toggle("LCC校正",isOn:$model.lccEnabled).toggleStyle(.checkbox)
+            Button(L10n.tr("23615da9ada4")) {model.manageLCC(showProfiles:true)}
+            Toggle(L10n.tr("945ac5c3da15"),isOn:$model.lccEnabled).toggleStyle(.checkbox)
                 .disabled(model.plan?.isRegistered != true)
                 .onChange(of:model.lccEnabled) {_,enabled in model.changeLCC(automaticallyLocate:enabled)}
             if model.lccEnabled {
                 if let warning=model.plan?.lccState?.warning {
                     Text(warning).font(.caption).foregroundStyle(.orange)
-                    Toggle("将图片裁切到lcc覆盖范围",isOn:$model.cropToLCC).toggleStyle(.checkbox)
+                    Toggle(L10n.tr("61635e357c96"),isOn:$model.cropToLCC).toggleStyle(.checkbox)
                         .disabled(model.plan?.lccState?.suggestedCropRect == nil)
                         .onChange(of:model.cropToLCC) {_,_ in model.changeLCC()}
                 } else if model.cropToLCC {
-                    Toggle("将图片裁切到lcc覆盖范围",isOn:$model.cropToLCC).toggleStyle(.checkbox)
+                    Toggle(L10n.tr("61635e357c96"),isOn:$model.cropToLCC).toggleStyle(.checkbox)
                         .onChange(of:model.cropToLCC) {_,_ in model.changeLCC()}
                 }
-                Button("手动对齐lcc") {model.alignLCC()}.disabled(model.positionReference != nil)
-                Button("自动解算位置") {model.solvePosition()}.disabled(model.positionReference != nil)
-                Text("暗角与颜色偏移：完整校正").font(.caption)
-                HStack {Text("整体曝光");Spacer();Text(String(format:"%+.2f EV",model.exposureEV)).monospacedDigit()}
+                Button(L10n.tr("693a0e217822")) {model.alignLCC()}.disabled(model.positionReference != nil)
+                Button(L10n.tr("45d14f0c4f3d")) {model.solvePosition()}.disabled(model.positionReference != nil)
+                Text(L10n.tr("3b0da2de91ba")).font(.caption)
+                HStack {Text(L10n.tr("4626a2810ff9"));Spacer();Text(String(format:"%+.2f EV",model.exposureEV)).monospacedDigit()}
                 Slider(value:$model.exposureEV,in:-4...4,step:0.05,onEditingChanged:{editing in if !editing {model.changeLCC()}})
-                Toggle("校正后自动白平衡",isOn:$model.automaticLCCWB).toggleStyle(.checkbox)
+                Toggle(L10n.tr("fa9bce35de33"),isOn:$model.automaticLCCWB).toggleStyle(.checkbox)
                     .onChange(of:model.automaticLCCWB) {_,value in
                         if !value,let wb=model.plan?.lccState?.whiteBalance {model.lccTemperature=Double(wb.0);model.lccTint=Double(wb.1)}
                         model.changeLCC()
                     }
                 if let wb=model.plan?.lccState?.whiteBalance {
-                    Text("\(model.plan?.lccState?.whiteBalanceSource ?? "")：\(Int(wb.0.rounded())) K · 色调 \(wb.1,specifier:"%.1f")").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.tr("de9d8ad34ef8" , String(describing: (model.plan?.lccState?.whiteBalanceSource ?? "")), String(describing: (Int(wb.0.rounded()))), String(describing: (wb.1,specifier:"%.1f")))).font(.caption).foregroundStyle(.secondary)
                 }
                 if !model.automaticLCCWB {
                     HStack {
-                        Text("色温");TextField("K",value:$model.lccTemperature,format:.number.precision(.fractionLength(0))).onSubmit {model.changeLCC()}
-                        Text("色调");TextField("Tint",value:$model.lccTint,format:.number.precision(.fractionLength(1))).onSubmit {model.changeLCC()}
+                        Text(L10n.tr("84ac609620e5"));TextField("K",value:$model.lccTemperature,format:.number.precision(.fractionLength(0))).onSubmit {model.changeLCC()}
+                        Text(L10n.tr("5bddf6a1c0f5"));TextField("Tint",value:$model.lccTint,format:.number.precision(.fractionLength(1))).onSubmit {model.changeLCC()}
                     }.textFieldStyle(.roundedBorder)
-                    Button("应用白平衡") {model.changeLCC()}
+                    Button(L10n.tr("7d5e9c09c086")) {model.changeLCC()}
                 }
-                Toggle("保护高光",isOn:$model.protectHighlights).toggleStyle(.checkbox)
+                Toggle(L10n.tr("2444feb8c1fc"),isOn:$model.protectHighlights).toggleStyle(.checkbox)
                     .onChange(of:model.protectHighlights) {_,_ in model.changeLCC()}
                 if model.protectHighlights,let ev=model.plan?.lccState?.highlightEV {
-                    Text("高光保护自动曝光 \(ev,specifier:"%.2f") EV；HDR 预览与输出保留高光余量。").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.tr("b1df88bb7bb6" , String(describing: (ev,specifier:"%.2f")))).font(.caption).foregroundStyle(.secondary)
                 }
-                Text(model.positionReference == nil ? "开启 LCC 时自动解算并应用位置，也可手动对齐或重新解算。先校正 RAW 通道，再应用白平衡；预览与输出共用位置和增益。" : "LCC 已跟随位置基准锁定。清除基准后可手动对齐。").font(.caption).foregroundStyle(.secondary)
+                Text(model.positionReference == nil ? L10n.tr("571a6cd6f748") : L10n.tr("531e654e1a1e")).font(.caption).foregroundStyle(.secondary)
             }
             Divider()
-            Text("重叠处理").font(.headline)
-            Toggle("自动避开运动冲突",isOn:$model.options.avoidMotion).onChange(of:model.options.avoidMotion) { _,_ in model.refresh() }
-            Toggle("匹配重叠曝光",isOn:$model.options.matchExposure).onChange(of:model.options.matchExposure) { _,_ in model.refresh() }
-            Text("接缝柔化").font(.callout)
+            Text(L10n.tr("71e8dddcf62b")).font(.headline)
+            Toggle(L10n.tr("dcc5dc5e40cb"),isOn:$model.options.avoidMotion).onChange(of:model.options.avoidMotion) { _,_ in model.refresh() }
+            Toggle(L10n.tr("f332d17f7e09"),isOn:$model.options.matchExposure).onChange(of:model.options.matchExposure) { _,_ in model.refresh() }
+            Text(L10n.tr("802a18c71f09")).font(.callout)
             Slider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })
-            Picker("冲突优先",selection:$model.options.preferredSource) {
-                Text("自动选择").tag(-1)
+            Picker(L10n.tr("f55043412c64"),selection:$model.options.preferredSource) {
+                Text(L10n.tr("db9773faa309")).tag(-1)
                 ForEach(Array(model.urls.enumerated()),id:\.offset) { i,url in Text(url.lastPathComponent).tag(i) }
             }.onChange(of:model.options.preferredSource) { _,_ in model.refresh() }
-            Text("接缝可绕开冲突区域。仅有两张且背景被遮住时，自动判断可能有误，可改选优先照片。").font(.caption).foregroundStyle(.secondary)
+            Text(L10n.tr("95875297cbcd")).font(.caption).foregroundStyle(.secondary)
             Divider()
-            Button("管理逐张 LCC…") { model.manageLCC() }
-            Text("已记录 \(model.lccCount)/\(model.urls.count) 组逐张配对，白板用于自动定位与校正后的白平衡测量。“LCC校正”只应用所选镜头 Profile，不叠加白板校正。").font(.caption).foregroundStyle(.secondary)
-            Picker("输出",selection:$model.exportKind) {
-                Text("标准导出（与主体一致）").tag(PanoramaExportKind.standard)
-                Text("16 位无损压缩 DNG").tag(PanoramaExportKind.losslessDNG)
-            }
-            Text(model.exportKind == .standard
-                 ? "点击“拼接”打开主体导出设置，使用相同的格式、色彩空间、位深与 HDR 选项。"
-                 : "DNG 为已应用白平衡的 16 位线性 RGB，使用无损压缩并保留高光余量。")
-                .font(.caption).foregroundStyle(.secondary)
+            Button(L10n.tr("9e4be2d889be")) { model.manageLCC() }
+            Text(L10n.tr("26747f634b19" , String(describing: (model.lccCount)), String(describing: (model.urls.count)))).font(.caption).foregroundStyle(.secondary)
+
         }.disabled(model.busy)
         .onChange(of:model.sensorChoice) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
         .onChange(of:model.sensorWidth) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
@@ -538,14 +514,14 @@ private struct PanoramaPositionEntry:View {
     }
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
-            Text("照片移轴信息").font(.title2.bold())
+            Text(L10n.tr("26de880334ca")).font(.title2.bold())
             Text(filename).font(.headline)
-            Text("按画面方向填写：右 R／上 U 为正，左 L／下 D 为负。机身旋转后，请先将刻度换算到画面方向。输入镜头相对后背的移轴读数；若记录的是后背移动方向，请取反。").font(.callout)
-            HStack {Text("水平 X");TextField("mm",text:$x);Text("mm")}
-            HStack {Text("垂直 Y");TextField("mm",text:$y);Text("mm")}
-            Toggle("设为整组位置基准",isOn:$isReference).toggleStyle(.checkbox)
-            Text("可录入多张照片用于辅助匹配；整组只有一个绝对位置基准。清除仅移除这张照片的读数。").font(.caption).foregroundStyle(.secondary)
-            HStack {Button("清除移轴信息",action:onClear).disabled(!hasPosition);Spacer();Button("取消",action:onCancel);Button("应用位置") {if let x=Double(x),let y=Double(y) {onSave(x,y,isReference)}}
+            Text(L10n.tr("5851c578611d")).font(.callout)
+            HStack {Text(L10n.tr("98ab61de3e93"));TextField("mm",text:$x);Text("mm")}
+            HStack {Text(L10n.tr("5e9009b476b1"));TextField("mm",text:$y);Text("mm")}
+            Toggle(L10n.tr("13097721eadb"),isOn:$isReference).toggleStyle(.checkbox)
+            Text(L10n.tr("096e62731d90")).font(.caption).foregroundStyle(.secondary)
+            HStack {Button(L10n.tr("44acfaf249fe"),action:onClear).disabled(!hasPosition);Spacer();Button(L10n.tr("2cd0f3be8738"),action:onCancel);Button(L10n.tr("d977ab79b013")) {if let x=Double(x),let y=Double(y) {onSave(x,y,isReference)}}
                 .buttonStyle(.borderedProminent).disabled((Double(x).map {!$0.isFinite || abs($0)>150} ?? true) || (Double(y).map {!$0.isFinite || abs($0)>150} ?? true))}
         }.padding(24).frame(width:420).textFieldStyle(.roundedBorder)
     }
@@ -589,7 +565,7 @@ private struct PanoramaPositionOverview: View {
                 if let body=layout.body {
                     context.fill(Path(body),with:.color(.primary.opacity(0.025)))
                     context.stroke(Path(body),with:.color(.primary.opacity(0.65)),style:StrokeStyle(lineWidth:1.2,dash:[5,3]))
-                    context.draw(Text("\(cameraBody.name) · \(bodyOrientation.rawValue)° · 总覆盖范围").font(.system(size:9)).foregroundColor(.secondary),at:CGPoint(x:body.midX,y:body.minY-9))
+                    context.draw(Text(L10n.tr("fe8af84b5fd4" , String(describing: (cameraBody.name)), String(describing: (bodyOrientation.rawValue)))).font(.system(size:9)).foregroundColor(.secondary),at:CGPoint(x:body.midX,y:body.minY-9))
                 }
                 for i in plan.sources.indices {
                     let rect=layout.photos[i],color=colors[i%colors.count]
@@ -607,7 +583,7 @@ private struct PanoramaPositionOverview: View {
                     }
                 }
                 if reference==nil {
-                    context.draw(Text("范围居中示意 · 绝对位置未知").font(.system(size:8)).foregroundColor(.secondary),at:CGPoint(x:canvas.width/2,y:canvas.height-8))
+                    context.draw(Text(L10n.tr("00964853f102")).font(.system(size:8)).foregroundColor(.secondary),at:CGPoint(x:canvas.width/2,y:canvas.height-8))
                 }
             }.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded {value in
                 guard sensor != nil else {return}

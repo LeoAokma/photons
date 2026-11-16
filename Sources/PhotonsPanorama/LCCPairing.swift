@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import CoreImage
 
@@ -29,18 +30,18 @@ public enum LCCInspector {
         }}
         let fraction = Double(textured)/Double(max(1,total)), clip = Double(clipped)/Double(max(1,total)), black = Double(dark)/Double(max(1,total))
         let flat = fraction < 0.1 && black < 0.5
-        var messages = [flat ? "平场特征符合 LCC（仅为识别提示）" : "包含较多纹理或过暗，请核对是否为 LCC"]
-        if clip > 0.01 { messages.append("约 \(Int(clip*100))% 像素接近饱和") }
-        if black > 0.005 { messages.append("检测到暗区／物理遮挡") }
+        var messages = [flat ? L10n.tr("5fecc8c5b050") : L10n.tr("bafa53262a70")]
+        if clip > 0.01 { messages.append(L10n.tr("f29324f3114f" , String(describing: (Int(clip*100))))) }
+        if black > 0.005 { messages.append(L10n.tr("2e52cbc0f6b8")) }
         let cg = engine.context.createCGImage(image,from:image.extent,format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!)
         return LCCInspection(source:source,thumbnail:cg,likelyFlat:flat,clippedFraction:clip,darkFraction:black,message:messages.joined(separator:"；"))
     }
 
     public static func incompatibility(scene: PanoramaSource, flat: PanoramaSource) -> String? {
-        if scene.url.standardizedFileURL == flat.url.standardizedFileURL { return "场景照片不能同时作为自己的 LCC" }
-        if scene.size != flat.size { return "像素尺寸不同" }
-        if scene.orientation != flat.orientation { return "拍摄方向不同" }
-        if scene.camera != "未知机身", flat.camera != "未知机身", scene.camera != flat.camera { return "相机／后背型号不同" }
+        if scene.url.standardizedFileURL == flat.url.standardizedFileURL { return L10n.tr("22ae2734f10b") }
+        if scene.size != flat.size { return L10n.tr("8883220d2555") }
+        if scene.orientation != flat.orientation { return L10n.tr("d9bd50d31ae9") }
+        if scene.camera != L10n.tr("1e3818fd0c54"), flat.camera != L10n.tr("1e3818fd0c54"), scene.camera != flat.camera { return L10n.tr("5d172d568146") }
         return nil
     }
 }
@@ -79,7 +80,7 @@ public struct LCCPairingStore {
     }
     public func save(_ pairs: [LCCPairRecord]) throws {
         guard Set(pairs.map(\.scene)).count == pairs.count, Set(pairs.map(\.flat)).count == pairs.count else {
-            throw PanoramaFailure("每张场景照片和每张 LCC 只能在这组配对中出现一次。")
+            throw PanoramaFailure(L10n.tr("39305921c957"))
         }
         var existing = records().filter { old in !pairs.contains { $0.scene == old.scene } }
         existing += pairs

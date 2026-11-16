@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import CoreImage
 import Vision
@@ -221,9 +222,9 @@ enum OpticalPositionEstimator {
         if fits.count == 2, hypot(fits[0].0.x-fits[1].0.x,fits[0].0.y-fits[1].0.y)<size.width*0.12,
            fits[0].1<0.2, fits[1].1<0.12 {
             return OpticalEstimate(center:CGPoint(x:(fits[0].0.x+fits[1].0.x)/2,y:(fits[0].0.y+fits[1].0.y)/2),
-                                   confidence:0.45,explanation:"暗角与红移拟合一致，低置信度候选；场景明暗仍可能干扰，请手动校准。",occludedEdges:occluded)
+                                   confidence:0.45,explanation:L10n.tr("4a14b51acd0b"),occludedEdges:occluded)
         }
-        return OpticalEstimate(center:nil,confidence:0,explanation:"暗角／红移不足以可靠确定绝对移轴位置；当前显示相对位置。可用已知机身读数手动校准。",occludedEdges:occluded)
+        return OpticalEstimate(center:nil,confidence:0,explanation:L10n.tr("0df4a9d36d96"),occludedEdges:occluded)
     }
     static func solve(_ rows: [[Double]], _ values: [Double]) -> [Double]? {
         guard let first = rows.first, rows.count > first.count*3 else { return nil }

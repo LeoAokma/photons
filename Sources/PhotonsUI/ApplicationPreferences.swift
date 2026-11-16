@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import AppKit
 import Observation
 
@@ -5,7 +6,7 @@ import Observation
 public enum WorkspaceAppearance: String, CaseIterable, Sendable {
     case dark, light, system
     public var title: String {
-        switch self { case .dark: return "深色"; case .light: return "浅色"; case .system: return "跟随系统" }
+        switch self { case .dark: return L10n.tr("a6b75d068032"); case .light: return L10n.tr("aa0819dfc4d8"); case .system: return L10n.tr("217cfe7db1e3") }
     }
     var appearance: NSAppearance? {
         switch self {
@@ -20,9 +21,9 @@ public enum ProcessingPolicy: String, CaseIterable, Sendable {
     case automatic, responsive, economical
     public var title: String {
         switch self {
-        case .automatic: return "自动平衡"
-        case .responsive: return "性能优先"
-        case .economical: return "节能"
+        case .automatic: return L10n.tr("f261d33274d7")
+        case .responsive: return L10n.tr("2822bd0c1053")
+        case .economical: return L10n.tr("758d05bff127")
         }
     }
 

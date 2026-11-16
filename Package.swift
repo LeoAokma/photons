@@ -19,6 +19,7 @@ let package = Package(
         .library(name: "PhotonsUI", targets: ["PhotonsUI"]),
         .executable(name: "photonsctl", targets: ["photonsctl"]),
         .executable(name: "Photons", targets: ["PhotonsApp"]),
+        .executable(name: "photons-panorama-worker", targets:["PhotonsPanoramaWorker"]),
     ],
     // The single third-party dependency: GRDB (MIT), an SQLite toolkit. Pinned on purpose —
     // the catalog needs WAL, a migration ladder and typed row decoding, and GRDB resolves to exactly
@@ -30,12 +31,15 @@ let package = Package(
         // Kernels ship as *copied resources* and are compiled at runtime by Metal.framework.
         // SwiftPM has no dependable .metal build step here, and the Metal toolchain component is a
         // network download that has already failed on this machine (see the session-bus pitfalls).
-        .target(name: "PhotonsCore", resources: [.copy("Kernels")]),
-        .target(name: "PhotonsExport", dependencies: ["PhotonsCore"]),
+        .target(name: "PhotonsLocalization",resources:[.process("Resources")]),
+        .target(name: "PhotonsCore", dependencies:["PhotonsLocalization"], resources: [.copy("Kernels")]),
+        .target(name: "PhotonsExport", dependencies: ["PhotonsCore","PhotonsLocalization","PhotonsPanorama"]),
         .target(name: "PhotonsFileAccess"),
-        .target(name: "PhotonsExtensions", dependencies: ["PhotonsFileAccess"]),
-        .target(name: "PhotonsPanorama", dependencies: ["PhotonsExtensions", "PhotonsFileAccess"], resources: [.copy("Profiles")]),
-        .target(name: "PhotonsCatalog", dependencies: [
+        .target(name: "PhotonsJobs", dependencies:["PhotonsPanorama","PhotonsExport","PhotonsFileAccess","PhotonsLocalization"]),
+        .executableTarget(name:"PhotonsPanoramaWorker", dependencies:["PhotonsJobs","PhotonsLocalization"]),
+        .target(name: "PhotonsExtensions", dependencies: ["PhotonsFileAccess","PhotonsLocalization"]),
+        .target(name: "PhotonsPanorama", dependencies: ["PhotonsCore", "PhotonsExtensions", "PhotonsFileAccess", "PhotonsLocalization"], resources: [.copy("Profiles")]),
+        .target(name: "PhotonsCatalog", dependencies: ["PhotonsLocalization",
             "PhotonsCore",
             "PhotonsFileAccess",
             .product(name: "GRDB", package: "GRDB.swift"),
@@ -48,10 +52,11 @@ let package = Package(
         // `PhotonsExtensions` is here for §384: 「HDR 合成…」 in the right-click menu calls
         // `HDRMergeService` — the GPLv3 `hdrmerge-swift` binary is spawned as a child process by that
         // module, never linked, so this edge keeps Photons MIT.
-        .target(name: "PhotonsUI", dependencies: ["PhotonsCore", "PhotonsExport", "PhotonsCatalog",
-                                                  "PhotonsExtensions", "PhotonsPanorama", "PhotonsFileAccess"],
+        .target(name: "PhotonsUI", dependencies: ["PhotonsLocalization","PhotonsCore", "PhotonsExport", "PhotonsCatalog",
+                                                  "PhotonsExtensions", "PhotonsPanorama", "PhotonsFileAccess", "PhotonsJobs"],
                 resources: []),
         .executableTarget(name: "PhotonsApp", dependencies: ["PhotonsCore", "PhotonsExport", "PhotonsCatalog", "PhotonsUI", "PhotonsFileAccess"]),
+        .testTarget(name: "PhotonsJobsTests", dependencies: ["PhotonsJobs"]),
         .testTarget(name: "PhotonsFileAccessTests", dependencies: ["PhotonsFileAccess"]),
         .testTarget(name: "PhotonsCoreTests", dependencies: ["PhotonsCore", "PhotonsExport"]),
         .testTarget(name: "PhotonsExportTests", dependencies: ["PhotonsExport", "PhotonsCore"]),

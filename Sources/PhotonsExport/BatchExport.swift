@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import PhotonsCore
 import CoreGraphics
@@ -18,6 +19,9 @@ public struct ExportItem: Sendable {
     public var rating: Int
     public var edit: EditModel?
     public var sourceURL: URL?
+    /// Destination only: a composite must not copy one RAW's crop/orientation metadata.
+    public var originalDirectory: URL? = nil
+    public var panoramaMetadata: Data? = nil
     /// The catalog's `make|model` key, for the `{camera}` subfolder token.
     public var cameraKey: String?
     /// Written by the `copyright` metadata level when the caller knows them.
@@ -233,13 +237,18 @@ public enum BatchExporter {
         do {
             // 1. the destination folder, created on demand. A subfolder template cannot escape the
             //    batch's destination: `ExportNaming.subfolder` sanitises every component.
+            let root: URL
+            if preset.destination == .sourceFolder {
+                guard let sourceFolder = item.originalDirectory ?? item.sourceURL?.deletingLastPathComponent() else {
+                    throw CocoaError(.fileNoSuchFile, userInfo:[NSLocalizedDescriptionKey:L10n.tr("b413c7356a75")])
+                }
+                root = sourceFolder
+            } else { root = directory }
             let folder = ExportNaming.subfolder(template: preset.subfolder, item: item)
             let directory = folder.isEmpty
-                ? directory
-                : directory.appendingPathComponent(folder, isDirectory: true)
-            if !folder.isEmpty {
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            }
+                ? root
+                : root.appendingPathComponent(folder, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
             let rendered = try render(item, preset)
             // 161 §8 — the cancellation the sheet's 取消 button sets can land while this item is
@@ -274,7 +283,7 @@ public enum BatchExporter {
                     // 168 §2 — say out loud that 不扩大 clamped the request, so a 4000 request on a
                     // 3000 px picture is not quietly reported as "4000" by the result row.
                     if preset.noUpscale, longEdge > current {
-                        warnings.append("长边 \(longEdge) 请求 → 源 \(current)，按不扩大输出 \(current)")
+                        warnings.append(L10n.tr("933e7782d4d7" , String(describing: (longEdge)), String(describing: (current)), String(describing: (current))))
                     }
                     if current > target {
                         warnings.append("renderer returned \(rendered.width)×\(rendered.height); "
@@ -295,6 +304,7 @@ public enum BatchExporter {
                     }
                 }
             }
+            let sizeBeforeGainMapTrim=image.size
             // 3. 163 §1.6 — a half-size gain map needs an even base. Trim right/bottom after the
             //    final size, so the file, the map and the report all describe one picture.
             if preset.hdrKind == .gainMap, preset.hdr?.halfSize == true {
@@ -348,13 +358,16 @@ public enum BatchExporter {
             let pngAt16 = preset.format == .png && preset.effectiveBitDepth == 16
             let embedsXMP = preset.metadataLevel == .all && preset.writeXMP
                 && item.edit != nil && preset.format.supportsXMPEmbedding && !pngAt16
-            let metadata = ExportMetadataContext(level: preset.metadataLevel,
+            var metadata = ExportMetadataContext(level: preset.metadataLevel,
                                                  source: source,
                                                  edit: item.edit,
                                                  author: item.author,
                                                  copyright: item.copyright,
                                                  embedXMP: embedsXMP,
                                                  ppi: preset.effectivePPI)
+            metadata.panoramaData = try PanoramaExportMetadata.data(for:item,source:source,
+                trimX:Double(image.width)/Double(sizeBeforeGainMapTrim.width),
+                trimY:Double(image.height)/Double(sizeBeforeGainMapTrim.height))
             try Exporter.write(image, to: url, options: preset.exportOptions, metadata: metadata)
             let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
 
@@ -485,15 +498,15 @@ public enum BatchExporter {
 /// Hands out filenames according to the preset's conflict policy. The set is in-memory (one process
 /// = one batch) *and* the filesystem is consulted. Lower-cased keys because APFS is case-insensitive
 /// by default: `IMG_1.jpg` and `img_1.jpg` are one file there.
-final class OutputNameAllocator {
+public final class OutputNameAllocator {
     private let lock = NSLock()
     private let fm = FileManager.default
     private var used: Set<String> = []
 
-    init() {}
+    public init() {}
 
     /// `nil` means "skip": the caller must not write anything for this item.
-    func reserve(base: String, ext: String, in directory: URL,
+    public func reserve(base: String, ext: String, in directory: URL,
                  policy: ExportConflict) -> URL? {
         lock.lock(); defer { lock.unlock() }
         let suffix = ext.isEmpty ? "" : "." + ext

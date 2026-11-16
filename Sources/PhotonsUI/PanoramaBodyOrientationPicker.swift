@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import SwiftUI
 import PhotonsPanorama
 
@@ -18,19 +19,19 @@ struct PanoramaBodyOrientationPicker:View {
                             .background(selection==angle ? Color.accentColor.opacity(0.16):Color.secondary.opacity(0.06),in:RoundedRectangle(cornerRadius:7))
                             .overlay(RoundedRectangle(cornerRadius:7).stroke(selection==angle ? Color.accentColor:Color.secondary.opacity(0.3),lineWidth:selection==angle ? 1.5:0.6))
                     }.buttonStyle(.plain)
-                        .accessibilityLabel("机身方向：\(angle.rawValue)° \(cameraBody.placementLabel(angle))")
-                        .accessibilityValue(selection==angle ? "已选择":"未选择")
+                        .accessibilityLabel(L10n.tr("c0a3dfc3ae3e" , String(describing: (angle.rawValue)), String(describing: (cameraBody.placementLabel(angle)))))
+                        .accessibilityValue(selection==angle ? L10n.tr("3f4ebc4aad97"):L10n.tr("1182c5454f11"))
                         .accessibilityIdentifier("panorama.body.orientation.\(angle.rawValue)")
                 }
             }
-            Text("逆时针旋转 · 十字为移轴零点").font(.caption2).foregroundStyle(.secondary)
+            Text(L10n.tr("444399a3f9ce")).font(.caption2).foregroundStyle(.secondary)
         }
     }
     private func diagram(_ angle:PanoramaBodyOrientation)->some View {
         Canvas {context,size in
             let travel=cameraBody.travel(at:angle)
             // A small footprint gives single-axis bodies a visible rectangular outline.
-            let range=travel.coverage(sensor:SensorSize(width:12,height:12,source:"示意"),centered:false)
+            let range=travel.coverage(sensor:SensorSize(width:12,height:12,source:L10n.tr("65c83dfb4727")),centered:false)
             let scale=min(52/range.width,34/range.height)
             let center=CGPoint(x:size.width/2,y:size.height/2)
             let rect=CGRect(x:center.x-range.width*scale/2,y:center.y-range.height*scale/2,width:range.width*scale,height:range.height*scale)

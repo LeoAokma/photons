@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import AppKit
 import SwiftUI
 import Metal
@@ -10,7 +11,7 @@ public final class SettingsWindowController: NSWindowController {
     private init() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 550),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "设置"
+        window.title = L10n.tr("df3d58c7d84b")
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: SettingsView())
         super.init(window: window)
@@ -27,25 +28,27 @@ public final class SettingsWindowController: NSWindowController {
 }
 
 private enum SettingsPage: String, CaseIterable, Identifiable {
-    case workspace, hdr, performance
+    case general, workspace, hdr, performance, libraries
     var id: String { rawValue }
     var title: String {
-        switch self { case .workspace: return "工作区"; case .hdr: return "HDR 与预览"; case .performance: return "性能与降噪" }
+        switch self { case .general: return L10n.tr("835b700e028c"); case .libraries: return L10n.tr("df3be042e1cf"); case .workspace: return L10n.tr("37979829426b"); case .hdr: return L10n.tr("f02381de45eb"); case .performance: return L10n.tr("58d26314335d") }
     }
     var symbol: String {
-        switch self { case .workspace: return "rectangle.3.group"; case .hdr: return "sun.max"; case .performance: return "cpu" }
+        switch self { case .general: return "gearshape"; case .libraries: return "photo.stack"; case .workspace: return "rectangle.3.group"; case .hdr: return "sun.max"; case .performance: return "cpu" }
     }
     var subtitle: String {
         switch self {
-        case .workspace: return "让界面适合你的看图与编辑习惯。"
-        case .hdr: return "管理屏幕上的高光显示。"
-        case .performance: return "平衡后台处理速度、内存与能耗。"
+        case .general: return L10n.tr("acb3664262f1")
+        case .libraries: return L10n.tr("74ff79c4bef3")
+        case .workspace: return L10n.tr("886ed0494986")
+        case .hdr: return L10n.tr("3c98d56527cc")
+        case .performance: return L10n.tr("727c570a573c")
         }
     }
 }
 
 private struct SettingsView: View {
-    @State private var page: SettingsPage = .workspace
+    @State private var page: SettingsPage = .general
     @Bindable private var preferences = ApplicationPreferences.shared
     @State private var backdrop = CanvasBackdrop.current
     @State private var concurrency = ProcessingPreferences.thumbnailConcurrency
@@ -71,7 +74,7 @@ private struct SettingsView: View {
                     .accessibilityAddTraits(page == item ? .isSelected : [])
                 }
                 Spacer()
-                Text("设置自动保存").font(.system(size: 11)).foregroundStyle(.secondary).padding(12)
+                Text(L10n.tr("6746e89bd14e")).font(.system(size: 11)).foregroundStyle(.secondary).padding(12)
             }
             .padding(.horizontal, 12).frame(width: 172)
             .background(Color(nsColor: StudioTheme.panel))
@@ -82,6 +85,8 @@ private struct SettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         switch page {
+                        case .general: general
+                        case .libraries: LibraryHistoryView()
                         case .workspace: workspace
                         case .hdr: hdr
                         case .performance: performance
@@ -99,26 +104,35 @@ private struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in refreshStatus() }
     }
 
+    @AppStorage("photons.language") private var language = "zh-Hans"
+    private var general:some View {
+        group(L10n.tr("9f6fee1aba17")) {
+            Picker(L10n.tr("da9054ac44be"),selection:$language) {
+                Text(L10n.tr("4eaa632ed776")).tag("zh-Hans");Text("English").tag("en")
+            }.accessibilityIdentifier("settings.language")
+            Text(L10n.tr("ee45ba7af403")).settingsHint()
+        }
+    }
     private var workspace: some View {
         Group {
-            group("外观") {
-                Picker("界面", selection: $preferences.appearance) {
+            group(L10n.tr("86a63f23a076")) {
+                Picker(L10n.tr("785d65c70fde"), selection: $preferences.appearance) {
                     ForEach(WorkspaceAppearance.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.pickerStyle(.segmented).accessibilityIdentifier("settings.appearance")
-                Text("中性的界面背景，便于判断照片的色彩与明暗。").settingsHint()
+                Text(L10n.tr("8e8cb3a30cd2")).settingsHint()
             }
-            group("画布") {
-                Picker("照片周围的背景", selection: Binding(get: { backdrop }, set: {
+            group(L10n.tr("3906276fd1bd")) {
+                Picker(L10n.tr("971d8601d9ef"), selection: Binding(get: { backdrop }, set: {
                     backdrop = $0; CanvasBackdrop.set($0)
                 })) {
-                    Text("深灰").tag(CanvasBackdrop.dark)
-                    Text("中灰").tag(CanvasBackdrop.midGrey)
-                    Text("浅灰").tag(CanvasBackdrop.light)
+                    Text(L10n.tr("79551187b83c")).tag(CanvasBackdrop.dark)
+                    Text(L10n.tr("4f0126e18c78")).tag(CanvasBackdrop.midGrey)
+                    Text(L10n.tr("fe07a094f39e")).tag(CanvasBackdrop.light)
                 }.accessibilityIdentifier("settings.canvasBackdrop")
-                Text("立即应用于主画布和素材浏览区。").settingsHint()
+                Text(L10n.tr("6d2382ffa01b")).settingsHint()
             }
-            group("启动") {
-                Toggle("重新打开上次使用的照片库", isOn: $preferences.reopenLibrary)
+            group(L10n.tr("56410fc65314")) {
+                Toggle(L10n.tr("ab39ddf5d95d"), isOn: $preferences.reopenLibrary)
                     .accessibilityIdentifier("settings.reopenLibrary")
             }
         }
@@ -126,41 +140,41 @@ private struct SettingsView: View {
 
     private var hdr: some View {
         Group {
-            group("显示预览") {
-                Toggle("启用 HDR 预览", isOn: $preferences.hdrPreview)
+            group(L10n.tr("ef14a0c17fbe")) {
+                Toggle(L10n.tr("03e08145d393"), isOn: $preferences.hdrPreview)
                     .accessibilityIdentifier("settings.hdrPreview")
-                Text("在支持的显示器上显示超出 SDR 白色的高光，立即应用于单图、缩略图与全景预览。关闭后使用 SDR 显示。")
+                Text(L10n.tr("5ccdb424dd76"))
                     .settingsHint()
             }
-            group("工作流") {
-                Label("原始图像与导出保持独立", systemImage: "photo.badge.checkmark")
-                Text("这个开关只改变屏幕预览，不修改照片参数。HDR 导出仍在导出面板中选择格式、色彩空间与 HDR 编码。")
+            group(L10n.tr("c71d0bca46eb")) {
+                Label(L10n.tr("10c90668a3ab"), systemImage: "photo.badge.checkmark")
+                Text(L10n.tr("4cc9cdf1a1d8"))
                     .settingsHint()
-                Text("可显示的高光范围取决于屏幕、亮度和系统当前提供的余量。").settingsHint()
+                Text(L10n.tr("12395fe07d46")).settingsHint()
             }
         }
     }
 
     private var performance: some View {
         Group {
-            group("后台处理") {
-                Picker("性能策略", selection: $preferences.processing) {
+            group(L10n.tr("018be97547b4")) {
+                Picker(L10n.tr("0fb008493588"), selection: $preferences.processing) {
                     ForEach(ProcessingPolicy.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.pickerStyle(.segmented).accessibilityIdentifier("settings.processing")
-                Text("自动平衡：适度并发，低电量模式下收敛至单任务。性能优先：允许更多并行任务。节能：逐张生成缩略图。高温时所有策略都会降低并发。")
+                Text(L10n.tr("bb7c48e8d7fc"))
                     .settingsHint()
-                LabeledContent("当前缩略图并发上限", value: "\(concurrency)")
+                LabeledContent(L10n.tr("0a418653465e"), value: "\(concurrency)")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            group("硬件加速") {
-                LabeledContent("显影与显示", value: deviceName == nil ? "Metal 不可用" : "Metal GPU · 已启用")
+            group(L10n.tr("70a474eff9ef")) {
+                LabeledContent(L10n.tr("ec2dfc19ec2f"), value: deviceName == nil ? L10n.tr("a3073210cfd1") : L10n.tr("6b522b15a417"))
                 if let deviceName { Text(deviceName).settingsHint() }
-                Text("显影引擎使用 Metal；此版本没有完整的 CPU 显影后端。").settingsHint()
+                Text(L10n.tr("50456a97e64e")).settingsHint()
                 Divider().padding(.vertical, 3)
-                Toggle("AI 模型降噪使用 GPU", isOn: $preferences.denoiseGPU)
+                Toggle(L10n.tr("b43d3c8a5e31"), isOn: $preferences.denoiseGPU)
                     .disabled(deviceName == nil)
                     .accessibilityIdentifier("settings.denoiseGPU")
-                Text("推荐开启。关闭后下一次模型降噪使用 CPU，主要用于兼容性排查，通常耗时更长。不会中断正在运行的任务。")
+                Text(L10n.tr("e4be6cfc2997"))
                     .settingsHint()
             }
         }

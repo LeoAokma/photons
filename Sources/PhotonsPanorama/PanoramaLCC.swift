@@ -1,3 +1,4 @@
+import PhotonsLocalization
 import Foundation
 import PhotonsFileAccess
 import CoreImage
@@ -105,7 +106,7 @@ public final class LCCCorrectionField {
     private var reference=SIMD4<Double>(repeating:1)
     public init(profile:LCCLensProfile,orientation:LCCCaptureOrientation,cancellation:PanoramaCancellation = .init()) throws {
         self.orientation=orientation;isCameraSpace=profile.captures(for:orientation).allSatisfy {$0.grid.space.hasPrefix("camera-cfa-")};samplers=profile.captures(for:orientation).compactMap(LCCSampler.init)
-        guard !samplers.isEmpty else {throw PanoramaFailure("\(orientation.title) 尚无可用于校正的原始通道标定。")}
+        guard !samplers.isEmpty else {throw PanoramaFailure(L10n.tr("da5dd0a43564" , String(describing: (orientation.title))))}
         region=LCCCoverageRegion(samplers.map {$0.capture.fieldRect});bounds=region.rectangles.reduce(.null) {$0.union($1)}
         width=max(2,min(512,Int(ceil(bounds.width/0.5))));height=max(2,min(512,Int(ceil(bounds.height/0.5))))
         for y in 0..<height {
@@ -140,7 +141,7 @@ public final class LCCCorrectionField {
             // A partial profile need not include the optical axis. Normalize at its brightest
             // measured green cell without pretending the missing center was measured.
             guard let best=values.filter({$0.x>0 && $0.y>0 && $0.z>0 && $0.w>0}).max(by:{$0.y<$1.y}) else {
-                throw PanoramaFailure("白板没有可用于校正的正信号。")
+                throw PanoramaFailure(L10n.tr("8c2a5480489f"))
             };reference=best
         }
     }
@@ -212,7 +213,7 @@ public struct PanoramaLCCState {
     public var cameraBody:PanoramaCameraBody? = nil
     public var bodyOrientation:PanoramaBodyOrientation = .degrees0
     public var warning:String? {
-        complete ? nil:String(format:"⚠️ LCC矫正不完全：当前标定约覆盖 %.1f%%。未覆盖区域保留原图。",coveredFraction*100)
+        complete ? nil:String(format:L10n.tr("39cf8921084d"),coveredFraction*100)
     }
 }
 
@@ -224,7 +225,7 @@ extension PanoramaEngine {
             var images:[CIImage]=[],raws:[CameraMosaic?]=[],flats:[CameraMosaic?]=[]
             let records=LCCPairingStore().records()
             for (i,source) in plan.sources.enumerated() {
-                try cancellation.check();progress("读取原始 LCC 通道 \(i+1)/\(plan.sources.count)")
+                try cancellation.check();progress(L10n.tr("6267568b6d4b" , String(describing: (i+1)), String(describing: (plan.sources.count))))
                 if ["3fr","dng"].contains(source.url.pathExtension.lowercased()) {
                     let raw=try LCCCameraPipeline.read(source,maxDimension:2048)
                     raws.append(raw);images.append(LCCCameraPipeline.cameraImage(raw))
@@ -232,7 +233,7 @@ extension PanoramaEngine {
                         let flatAccess=FileAccessStore.shared.access(to:pair.flat)
                         defer {withExtendedLifetime(flatAccess) {}}
                         let flat=try PanoramaSource(url:flatAccess.url)
-                        guard LCCInspector.incompatibility(scene:source,flat:flat)==nil else {throw PanoramaFailure("配对白板与照片不匹配")}
+                        guard LCCInspector.incompatibility(scene:source,flat:flat)==nil else {throw PanoramaFailure(L10n.tr("ee285a263f1c"))}
                         flats.append(try LCCCameraPipeline.read(flat,maxDimension:512))
                     } else {flats.append(nil)}
                 } else {
@@ -252,10 +253,10 @@ extension PanoramaEngine {
                            offsetMM:CGPoint,sensor:SensorSize,crop:Bool,cancellation:PanoramaCancellation = .init(),
                            rebuildSeams:Bool=true,exposureEV:Double=0,protectHighlights:Bool=true,whiteBalanceOverride:(Float,Float)?=nil,
                            cameraBody:PanoramaCameraBody?=nil,bodyOrientation:PanoramaBodyOrientation = .degrees0) throws -> PanoramaPlan {
-        guard offsetMM.x.isFinite,offsetMM.y.isFinite,sensor.width>0,sensor.height>0 else {throw PanoramaFailure("LCC 对齐参数无效。")}
-        guard exposureEV.isFinite,(-8...8).contains(exposureEV) else {throw PanoramaFailure("整体曝光无效。")}
+        guard offsetMM.x.isFinite,offsetMM.y.isFinite,sensor.width>0,sensor.height>0 else {throw PanoramaFailure(L10n.tr("ff85097641dd"))}
+        guard exposureEV.isFinite,(-8...8).contains(exposureEV) else {throw PanoramaFailure(L10n.tr("0d2075dd3f5d"))}
         if let wb=whiteBalanceOverride {
-            guard wb.0.isFinite,wb.1.isFinite,(2000...50000).contains(wb.0),(-150...150).contains(wb.1) else {throw PanoramaFailure("请输入 2000–50000 K、色调 −150 至 150 的白平衡。")}
+            guard wb.0.isFinite,wb.1.isFinite,(2000...50000).contains(wb.0),(-150...150).contains(wb.1) else {throw PanoramaFailure(L10n.tr("cdd222f5e634"))}
         }
         var plan=original
         let summary=LCCProfileSummary(profile),sw=plan.sources[0].size.width,sh=plan.sources[0].size.height
@@ -313,7 +314,7 @@ extension PanoramaEngine {
             let right=floor(r.maxX*dx-(r.maxX<Double(cw) ? px:0)),bottom=floor(r.maxY*dy-(r.maxY<Double(ch) ? py:0))
             return right>x && bottom>y ? CGRect(x:x,y:y,width:right-x,height:bottom-y):nil
         }
-        if crop && candidate==nil {throw PanoramaFailure("当前 LCC 没有可裁切的完整覆盖区域，请先调整位置或选择匹配的 profile。")}
+        if crop && candidate==nil {throw PanoramaFailure(L10n.tr("b3cde958b3bb"))}
         var footprints:[CGRect]=[]
         for field in matches.compactMap({$0}) {
             for r in field.region.rectangles {
@@ -330,7 +331,7 @@ extension PanoramaEngine {
         var readings:[LCCWhiteBalanceReading]=[],flatReadings:[LCCWhiteBalanceReading]=[]
         for i in plan.sources.indices {
             guard let field=matches[i],field.isCameraSpace else {continue}
-            guard let raw=plan.lccRawPreviews?[i] else {throw PanoramaFailure("\(plan.sources[i].url.lastPathComponent)：此格式尚不支持原始通道 LCC；不能用 RGB 校正替代。")}
+            guard let raw=plan.lccRawPreviews?[i] else {throw PanoramaFailure(L10n.tr("8c0a27d8b9db" , String(describing: (plan.sources[i].url.lastPathComponent))))}
             let map=LCCCameraGainMap(field:field.field,source:plan.sources[i],origin:plan.origins[i],panoramaSize:plan.size,sensor:sensor,offset:offsetMM,bodyOrientation:field.bodyOrientation)
             cameraGains[i]=map
             if let flat=plan.lccFlatPreviews?[i] {
@@ -346,16 +347,16 @@ extension PanoramaEngine {
         }
         plan.lccState?.cameraGains=cameraGains;plan.lccState?.whiteBalance=wb;plan.lccState?.highlightNeutral=neutral
         plan.lccState?.whiteBalanceWasManual=whiteBalanceOverride != nil
-        plan.lccState?.whiteBalanceSource=whiteBalanceOverride != nil ? "手动白平衡":(flatReadings.isEmpty ? "校正后场景估计":"校正后配对白板平均")
+        plan.lccState?.whiteBalanceSource=whiteBalanceOverride != nil ? L10n.tr("d23649ab6a49"):(flatReadings.isEmpty ? L10n.tr("81f4b75a4c48"):L10n.tr("4b3606bb6ea6"))
         plan.previewImages=try plan.sources.indices.map {i in
             guard let field=matches[i] else {return (plan.originalPreviewImages ?? plan.previewImages)[i]}
             if let map=cameraGains[i],let raw=plan.lccRawPreviews?[i] {
                 return try materialize(LCCCameraPipeline.develop(raw,gain:map,whiteBalance:wb,highlightNeutral:neutral,size:plan.sources[i].size,scale:plan.previewScale))
             }
-            guard !field.isCameraSpace else {throw PanoramaFailure("缺少 RAW 校正缓存")}
+            guard !field.isCameraSpace else {throw PanoramaFailure(L10n.tr("344c1f88edf9"))}
             // Legacy RGB profiles remain usable for rendered inputs only. Recreate from RAW
             // to obtain physically ordered LCC; never silently use them on a RAW photograph.
-            if plan.sources[i].isRAW {throw PanoramaFailure("旧版 RGB profile 不能提供原始通道 LCC，请从白板 RAW 重新创建。")}
+            if plan.sources[i].isRAW {throw PanoramaFailure(L10n.tr("4bb84000db0d"))}
             return applyGain(base[i],gain:gainImages[i],scale:plan.previewScale)
         }
         plan.photometricGains=[]
