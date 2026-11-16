@@ -1314,5 +1314,8 @@
   "previews.title": "生成初始预览",
   "previews.progress": "生成预览 · {0}/{1}",
   "previews.failed": "共 {1} 张，{0} 张预览生成失败",
-  "panorama.geometry": "验证几何匹配 {0} ↔ {1}"
+  "panorama.geometry": "验证几何匹配 {0} ↔ {1}",
+  "886fc2719d25": "自动调节",
+  "a0dc4ea6b223": "自动调节：按纹理损失安排曝光、高光、白色、黑色与对比",
+  "187f2e7d1e49": "明暗 · 自动"
 }

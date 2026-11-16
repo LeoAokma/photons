@@ -8128,5 +8128,23 @@
     "files": [
       "Sources/PhotonsUI/LCCWindowController.swift"
     ]
+  },
+  "886fc2719d25": {
+    "zh": "自动调节",
+    "files": [
+      "Sources/PhotonsUI/InspectorView.swift"
+    ]
+  },
+  "a0dc4ea6b223": {
+    "zh": "自动调节：按纹理损失安排曝光、高光、白色、黑色与对比",
+    "files": [
+      "Sources/PhotonsUI/InspectorView.swift"
+    ]
+  },
+  "187f2e7d1e49": {
+    "zh": "明暗 · 自动",
+    "files": [
+      "Sources/PhotonsUI/LoupeController.swift"
+    ]
   }
 }
