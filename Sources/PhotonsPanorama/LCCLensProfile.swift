@@ -5,6 +5,13 @@ public enum LCCCaptureOrientation: Int, Codable, CaseIterable, Identifiable {
     case landscape = 1, inverted = 3, portraitRight = 6, portraitLeft = 8
     public var id: Int { rawValue }
     public var isPortrait: Bool { self == .portraitLeft || self == .portraitRight }
+    public var rotation:PanoramaBodyOrientation {
+        switch self {case .landscape:return .degrees0;case .portraitLeft:return .degrees90;case .inverted:return .degrees180;case .portraitRight:return .degrees270}
+    }
+    public func relative(to body:PanoramaBodyOrientation)->Self {
+        let degrees=(rotation.rawValue-body.rawValue+360)%360
+        return Self.allCases.first {$0.rotation.rawValue==degrees}!
+    }
     public var title: String {
         switch self {
         case .landscape: return "横向"
@@ -74,6 +81,8 @@ public struct LCCProfileCapture: Codable, Equatable, Identifiable {
     public var thumbnail: Data?
     /// Optional fixed-WB linear RGB measurements for the Core Image rendering pipeline.
     public var renderGrid: LCCMeasurementGrid? = nil
+    /// Capture metadata; grids and shifts are normalized to the body's 0° coordinate system.
+    public var bodyOrientation:PanoramaBodyOrientation? = nil
     public var fieldRect: CGRect {
         CGRect(x:shiftX-sensorWidth/2,y:shiftY-sensorHeight/2,width:sensorWidth,height:sensorHeight)
     }
@@ -89,6 +98,7 @@ public struct LCCLensProfile: Codable, Equatable, Identifiable {
     public var notes: String
     public var createdAt: Date
     public var captures: [LCCProfileCapture]
+    public var cameraBody:PanoramaCameraBody? = nil
     public var orientations: [LCCCaptureOrientation] {
         Array(Set(captures.map(\.orientation))).sorted { $0.rawValue < $1.rawValue }
     }
@@ -96,7 +106,7 @@ public struct LCCLensProfile: Codable, Equatable, Identifiable {
         captures.filter { $0.orientation == orientation }
     }
     public func validate() throws {
-        guard schemaVersion == 1, !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
+        guard [1,2].contains(schemaVersion), !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
               name.count <= 200, !camera.isEmpty, camera.count <= 200,
               notes.count <= 8000, (1...256).contains(captures.count),
               Set(captures.map(\.id)).count == captures.count,
@@ -129,8 +139,11 @@ public struct LCCProfileSummary: Codable, Equatable, Identifiable {
     public let aperture: Double?
     public let createdAt: Date
     public let variants: [LCCVariantSummary]
+    public var cameraBody:PanoramaCameraBody? = nil
+    public var calibrationBody:PanoramaCameraBody? {cameraBody ?? (id==LCCLensProfile.builtInID ? .alpa12Max:nil)}
     public init(_ profile: LCCLensProfile) {
         id=profile.id; name=profile.name; camera=profile.camera; aperture=profile.aperture; createdAt=profile.createdAt
+        cameraBody=profile.cameraBody
         variants=profile.orientations.map { o in
             let frames=profile.captures(for:o)
             return LCCVariantSummary(orientation:o,count:frames.count,sensorWidth:frames[0].sensorWidth,
@@ -138,16 +151,33 @@ public struct LCCProfileSummary: Codable, Equatable, Identifiable {
         }
     }
     public var captureCount: Int { variants.reduce(0) { $0+$1.count } }
-    public func match(camera: String, exifOrientation: Int, sensor: SensorSize?) -> LCCVariantSummary? {
-        // Do not silently use a profile from another back, another sensor size or the opposite
-        // quarter-turn. An absent orientation is shown as missing instead of rotating a calibration.
+    public func match(camera:String,exifOrientation:Int,sensor:SensorSize?,cameraBody:PanoramaCameraBody?=nil,
+                      bodyOrientation:PanoramaBodyOrientation = .degrees0)->LCCVariantSummary? {
+        placement(camera:camera,exifOrientation:exifOrientation,sensor:sensor,cameraBody:cameraBody,bodyOrientation:bodyOrientation)?.variant
+    }
+    public func placement(camera:String,exifOrientation:Int,sensor:SensorSize?,cameraBody:PanoramaCameraBody?=nil,
+                          bodyOrientation:PanoramaBodyOrientation = .degrees0)->LCCProfilePlacement? {
         guard Self.cameraKey(camera) == Self.cameraKey(self.camera),
               let orientation = LCCCaptureOrientation(rawValue:exifOrientation), let sensor else { return nil }
-        return variants.first { $0.orientation == orientation && abs($0.sensorWidth-sensor.width)<0.3 && abs($0.sensorHeight-sensor.height)<0.3 }
+        // Body model is capture provenance, not an optical compatibility restriction.
+        // The lens/back calibration can be reused on another body with the same geometry.
+        let rotations=cameraBody?.equivalentOrientations(to:bodyOrientation) ?? [bodyOrientation]
+        for rotation in rotations {
+            let relative=orientation.relative(to:rotation)
+            let width=rotation.swapsAxes ? sensor.height:sensor.width,height=rotation.swapsAxes ? sensor.width:sensor.height
+            if let variant=variants.first(where:{$0.orientation==relative && abs($0.sensorWidth-width)<0.3 && abs($0.sensorHeight-height)<0.3}) {
+                return LCCProfilePlacement(variant:variant,bodyOrientation:rotation)
+            }
+        }
+        return nil
     }
     static func cameraKey(_ s:String) -> String {
         s.components(separatedBy:"/")[0].trimmingCharacters(in:.whitespacesAndNewlines).uppercased()
     }
+}
+public struct LCCProfilePlacement {
+    public let variant:LCCVariantSummary
+    public let bodyOrientation:PanoramaBodyOrientation
 }
 public struct LCCVariantSummary: Codable, Equatable {
     public var orientation: LCCCaptureOrientation

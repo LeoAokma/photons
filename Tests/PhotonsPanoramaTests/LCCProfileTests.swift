@@ -169,7 +169,7 @@ final class LCCQualityTests:XCTestCase {
         var observations:[LCCPositionSolver.Observation]=[]
         for y in stride(from:-10.0,through:10.0,by:2) {for x in stride(from:-12.0,through:12.0,by:2) {
             let point=CGPoint(x:x,y:y),g=try XCTUnwrap(field.gain(at:CGPoint(x:x-truth.x,y:y-truth.y)))
-            observations.append(.init(frame:0,point:point,logRGB:SIMD3(-log(g.x),-log(g.y),-log(g.z)),field:field))
+            observations.append(.init(frame:0,point:point,logRGB:SIMD3(-log(g.x),-log(g.y),-log(g.z)),field:LCCOrientedField(field:field,bodyOrientation:.degrees0)))
         }}
         let result=try LCCPositionSolver.search(observations:observations,xRange:-5...5,yRange:-6...4,flat:true,cancellation:.init())
         XCTAssertEqual(result.point.x,truth.x,accuracy:0.2);XCTAssertEqual(result.point.y,truth.y,accuracy:0.2)

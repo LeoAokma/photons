@@ -8,7 +8,8 @@ public struct LCCCameraGainMap {
     let width:Int,height:Int
     let values:[SIMD4<Float>]
     fileprivate var clippedColors:LCCClippedColorMap?
-    init(field:LCCCorrectionField,source:PanoramaSource,origin:CGPoint,panoramaSize:CGSize,sensor:SensorSize,offset:CGPoint) {
+    init(field:LCCCorrectionField,source:PanoramaSource,origin:CGPoint,panoramaSize:CGSize,sensor:SensorSize,offset:CGPoint,
+         bodyOrientation:PanoramaBodyOrientation = .degrees0) {
         width=257;height=193
         var grid:[SIMD4<Float>]=[];grid.reserveCapacity(width*height)
         for y in 0..<height {for x in 0..<width {
@@ -16,7 +17,7 @@ public struct LCCCameraGainMap {
             let p=Self.orient(u,v,orientation:source.orientation)
             let point=CGPoint(x:(origin.x+p.x*source.size.width-panoramaSize.width/2)*sensor.width/source.size.width-offset.x,
                               y:(panoramaSize.height/2-origin.y-p.y*source.size.height)*sensor.height/source.size.height-offset.y)
-            let gain=field.cameraGain(at:point) ?? SIMD4<Double>(repeating:1)
+            let gain=field.cameraGain(at:bodyOrientation.inverse.rotate(point)) ?? SIMD4<Double>(repeating:1)
             grid.append(SIMD4<Float>(gain))
         }}
         values=grid

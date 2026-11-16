@@ -73,19 +73,20 @@ struct LCCProfileLibraryView: View {
                         VStack(alignment:.leading,spacing:14) {
                             Text(profile.name).font(.title2.bold())
                             Text(profile.camera).foregroundStyle(.secondary)
+                            if let body=LCCProfileSummary(profile).calibrationBody {Text("标定机身：\(body.name)").font(.caption)}
                             if let aperture=profile.aperture {Text("标定光圈 f/\(aperture,specifier:"%g")")}
                             Text(profile.notes).font(.callout).textSelection(.enabled)
                             ForEach(profile.orientations) { orientation in
                                 let frames=profile.captures(for:orientation)
                                 VStack(alignment:.leading,spacing:8) {
-                                    Text("\(orientation.title) · \(frames.count) 张白板").font(.headline)
+                                    Text("后背相对机身\(orientation.title) · \(frames.count) 张白板").font(.headline)
                                     LCCProfileCoverageView(captures:frames).frame(height:190)
                                     Text(String(format:"H %+.1f 至 %+.1f mm · V %+.1f 至 %+.1f mm",frames.map(\.shiftX).min() ?? 0,frames.map(\.shiftX).max() ?? 0,frames.map(\.shiftY).min() ?? 0,frames.map(\.shiftY).max() ?? 0))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }.padding(12).background(.quaternary,in:RoundedRectangle(cornerRadius:8))
                             }
                             Text("保留每张白板的完整低频测量，包括弱光角落。原始 RAW 不会复制到 profile，也不需要一直保留在原路径。").font(.caption).foregroundStyle(.secondary)
-                            Text("拼接会按照片方向匹配标定；镜头 profile 与逐张 LCC 对应关系分别保存。").font(.caption).foregroundStyle(.secondary)
+                            Text("拼接按后背相对机身的方向匹配标定；整机旋转会同步旋转校正场。对称机身的等价放置方向共用标定。").font(.caption).foregroundStyle(.secondary)
                         }.padding(16)
                     } else {ProgressView("读取镜头标定…").frame(maxWidth:.infinity,minHeight:280)}
                 }.frame(minWidth:350)

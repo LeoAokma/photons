@@ -173,6 +173,20 @@ public final class LCCCorrectionField {
     }
 }
 
+/// A measured field stays in body coordinates. Rotate coordinates, never interpolate
+/// or rewrite the saved calibration, when the camera is placed in another orientation.
+struct LCCOrientedField {
+    let field:LCCCorrectionField
+    let bodyOrientation:PanoramaBodyOrientation
+    let region:LCCCoverageRegion
+    init(field:LCCCorrectionField,bodyOrientation:PanoramaBodyOrientation) {
+        self.field=field;self.bodyOrientation=bodyOrientation
+        region=LCCCoverageRegion(field.region.rectangles.map {bodyOrientation.rotate($0)})
+    }
+    var isCameraSpace:Bool {field.isCameraSpace}
+    func gain(at point:CGPoint)->SIMD3<Double>? {field.gain(at:bodyOrientation.inverse.rotate(point))}
+}
+
 public struct PanoramaLCCState {
     public var profileID:UUID
     public var profileName:String
@@ -194,6 +208,8 @@ public struct PanoramaLCCState {
     public var highlightNeutral:SIMD3<Double>? = nil
     public var protectHighlights:Bool
     public var highlightEV:Double = 0
+    public var cameraBody:PanoramaCameraBody? = nil
+    public var bodyOrientation:PanoramaBodyOrientation = .degrees0
     public var warning:String? {
         complete ? nil:String(format:"⚠️ LCC矫正不完全：当前标定约覆盖 %.1f%%。未覆盖区域保留原图。",coveredFraction*100)
     }
@@ -231,7 +247,8 @@ extension PanoramaEngine {
     }
     public func applyingLCC(_ original:PanoramaPlan,profile:LCCLensProfile,fields:[LCCCaptureOrientation:LCCCorrectionField],
                            offsetMM:CGPoint,sensor:SensorSize,crop:Bool,cancellation:PanoramaCancellation = .init(),
-                           rebuildSeams:Bool=true,exposureEV:Double=0,protectHighlights:Bool=true,whiteBalanceOverride:(Float,Float)?=nil) throws -> PanoramaPlan {
+                           rebuildSeams:Bool=true,exposureEV:Double=0,protectHighlights:Bool=true,whiteBalanceOverride:(Float,Float)?=nil,
+                           cameraBody:PanoramaCameraBody?=nil,bodyOrientation:PanoramaBodyOrientation = .degrees0) throws -> PanoramaPlan {
         guard offsetMM.x.isFinite,offsetMM.y.isFinite,sensor.width>0,sensor.height>0 else {throw PanoramaFailure("LCC 对齐参数无效。")}
         guard exposureEV.isFinite,(-8...8).contains(exposureEV) else {throw PanoramaFailure("整体曝光无效。")}
         if let wb=whiteBalanceOverride {
@@ -240,9 +257,10 @@ extension PanoramaEngine {
         var plan=original
         let summary=LCCProfileSummary(profile),sw=plan.sources[0].size.width,sh=plan.sources[0].size.height
         let mx=sensor.width/sw,my=sensor.height/sh
-        let matches=plan.sources.map { source -> LCCCorrectionField? in
-            guard let match=summary.match(camera:source.camera,exifOrientation:source.orientation,sensor:source.sensor ?? sensor) else {return nil}
-            return fields[match.orientation]
+        let matches=plan.sources.map { source -> LCCOrientedField? in
+            guard let match=summary.placement(camera:source.camera,exifOrientation:source.orientation,sensor:source.sensor ?? sensor,
+                cameraBody:cameraBody,bodyOrientation:bodyOrientation),let field=fields[match.variant.orientation] else {return nil}
+            return LCCOrientedField(field:field,bodyOrientation:match.bodyOrientation)
         }
         func fieldPoint(_ p:CGPoint)->CGPoint {CGPoint(x:(p.x-plan.size.width/2)*mx-offsetMM.x,y:(plan.size.height/2-p.y)*my-offsetMM.y)}
         var gainImages:[CIImage]=[]
@@ -303,14 +321,14 @@ extension PanoramaEngine {
         plan.lccState=PanoramaLCCState(profileID:profile.id,profileName:profile.name,offsetMM:offsetMM,gainImages:gainImages,
             usesFixedDecode:matches.map {$0 != nil},complete:covered==used && used>0,coveredFraction:used>0 ? Double(covered)/Double(used):0,
             suggestedCropRect:candidate,cropRect:crop ? candidate:nil,footprintRects:footprints,sensor:sensor,
-            exposureEV:exposureEV,protectHighlights:protectHighlights)
+            exposureEV:exposureEV,protectHighlights:protectHighlights,cameraBody:cameraBody,bodyOrientation:bodyOrientation)
         let base=plan.lccLinearPreviewImages ?? plan.previewImages
         var cameraGains=[LCCCameraGainMap?](repeating:nil,count:plan.sources.count)
         var readings:[LCCWhiteBalanceReading]=[],flatReadings:[LCCWhiteBalanceReading]=[]
         for i in plan.sources.indices {
             guard let field=matches[i],field.isCameraSpace else {continue}
             guard let raw=plan.lccRawPreviews?[i] else {throw PanoramaFailure("\(plan.sources[i].url.lastPathComponent)：此格式尚不支持原始通道 LCC；不能用 RGB 校正替代。")}
-            let map=LCCCameraGainMap(field:field,source:plan.sources[i],origin:plan.origins[i],panoramaSize:plan.size,sensor:sensor,offset:offsetMM)
+            let map=LCCCameraGainMap(field:field.field,source:plan.sources[i],origin:plan.origins[i],panoramaSize:plan.size,sensor:sensor,offset:offsetMM,bodyOrientation:field.bodyOrientation)
             cameraGains[i]=map
             if let flat=plan.lccFlatPreviews?[i] {
                 flatReadings.append(try LCCCameraPipeline.whiteBalance(flat,gain:map,whitePlate:true))

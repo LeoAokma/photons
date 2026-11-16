@@ -53,9 +53,28 @@ RGB DNG, not a camera-CFA DNG with its original editable capture WB metadata.
 
 A measured frame is the sole absolute position anchor. Additional measured positions
 seed bounded (+/-1.5 mm) translation searches; image correlation must still succeed.
-The Alpa diagram includes sensor footprint plus X +/-18, Y -18...+25 mm travel. With
-no established optical origin its coverage bounding box is centered on the panorama.
+Body travel is independent of EXIF sensor orientation. Supported Alpa bodies (mm):
+Max: L/R 18, U 25, D 18; XY: L/R 25, U 45, D 25; STC: L/R 18, U/D 0;
+Pano: L/R 35, U/D 10; Plus: L/R/U/D 20. Placement angles are counterclockwise in
+image-plane right/up coordinates. Max/XY expose 0/90/180/270; symmetric travel is
+deduplicated to 0/90 for STC/Pano and 0 for Plus. The diagram, out-of-travel warnings
+and optical solver share these rotated ranges. Sensor footprints retain their own
+RAW orientation. With no established optical origin the total coverage box remains
+centered on the panorama; with an anchor, its asymmetry is relative to shift zero.
 An automatic optical-origin search uses confirmed paired white plates when available;
 otherwise scene colors/shading give only a low-confidence proposal for visual review.
 Paired plates determine corrected WB and aid location; they do not stack another
 spatial correction on top of the selected lens profile.
+
+Schema 2 profiles record the calibration body and each white plate's body placement.
+Grids, sensor extents and shifts are normalized to body coordinates on creation;
+the orientation variant describes sensor orientation RELATIVE to the body. User-entered
+H/V positions are in image right/up coordinates and are inverse-rotated on save.
+Matching subtracts body rotation from EXIF rotation; runtime gain sampling, coverage,
+cropping, optical solving and manual alignment rotate the field into image coordinates.
+This preserves the native CFA correction when body and back rotate together.
+Per the supported-body symmetry convention, equivalent travel placements may reuse
+the corresponding rotated LCC variant. Prefer a measured exact variant when present.
+Body model is recorded as provenance, not an optical restriction across camera bodies.
+Schema 1 profiles remain readable as body-0 measurements; the bundled 43XL profile
+was measured on an Alpa 12 Max at 0 degrees. No original calibration RAW is embedded.

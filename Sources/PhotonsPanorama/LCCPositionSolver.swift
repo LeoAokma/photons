@@ -12,24 +12,30 @@ public enum LCCPositionSolver {
         let frame:Int
         let point:CGPoint
         let logRGB:SIMD3<Double>
-        let field:LCCCorrectionField
+        let field:LCCOrientedField
     }
     public static func solve(plan:PanoramaPlan,fields:[LCCCaptureOrientation:LCCCorrectionField],sensor:SensorSize,
+                             cameraBody:PanoramaCameraBody = .alpa12Max,bodyOrientation:PanoramaBodyOrientation = .degrees0,
                              cancellation:PanoramaCancellation = .init(),progress:PanoramaEngine.Progress = {_ in}) throws -> LCCPositionSolution {
         let engine=PanoramaEngine(),records=LCCPairingStore().records()
         var observations:[Observation]=[],flats=0
         let w=plan.sources[0].size.width,h=plan.sources[0].size.height
         let centers=plan.sources.indices.map {i in CGPoint(x:(plan.sourceRect(i).midX-plan.size.width/2)*sensor.width/w,
             y:(plan.size.height/2-plan.sourceRect(i).midY)*sensor.height/h)}
-        // The Alpa travel constrains the optical origin, but does not establish its value.
-        let x0=centers.map {$0.x-18.75}.max()!,x1=centers.map {$0.x+18.75}.min()!
-        let y0=centers.map {$0.y-25.75}.max()!,y1=centers.map {$0.y+18.75}.min()!
-        guard x1>=x0,y1>=y0 else {throw PanoramaFailure("拼接范围超过 Alpa 12 Max 行程，无法用该机身约束自动解算。请手动输入位置。")}
+        let travel=cameraBody.travel(at:bodyOrientation)
+        guard let bounds=travel.opticalOriginBounds(centers:centers) else {
+            throw PanoramaFailure("拼接范围超过 \(cameraBody.name)（\(bodyOrientation.rawValue)°）行程，请检查机身方向或手动输入位置。")
+        }
+        let x0=bounds.minX,x1=bounds.maxX,y0=bounds.minY,y1=bounds.maxY
         let flatRecords=plan.sources.map {source in records.first {$0.scene.standardizedFileURL==source.url.standardizedFileURL}}
         let useFlats=flatRecords.contains {$0 != nil}
         for i in plan.sources.indices {
             try cancellation.check()
-            guard let orientation=LCCCaptureOrientation(rawValue:plan.sources[i].orientation),let field=fields[orientation] else {continue}
+            guard let orientation=LCCCaptureOrientation(rawValue:plan.sources[i].orientation) else {continue}
+            let rotations=cameraBody.equivalentOrientations(to:bodyOrientation)
+            guard let rotation=rotations.first(where:{fields[orientation.relative(to:$0)] != nil}),
+                  let calibration=fields[orientation.relative(to:rotation)] else {continue}
+            let field=LCCOrientedField(field:calibration,bodyOrientation:rotation)
             let image:CIImage
             if useFlats {
                 guard let pair=flatRecords[i] else {continue}

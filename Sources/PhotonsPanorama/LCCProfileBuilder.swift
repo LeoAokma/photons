@@ -8,6 +8,8 @@ public struct LCCCreationFrame: Identifiable, @unchecked Sendable {
     public var id=UUID()
     public let source: PanoramaSource
     public var orientation: LCCCaptureOrientation
+    public var bodyOrientation:PanoramaBodyOrientation = .degrees0
+    public var relativeOrientation:LCCCaptureOrientation {orientation.relative(to:bodyOrientation)}
     public var shiftX=0.0
     public var shiftY=0.0
     public var shiftConfirmed=false
@@ -48,6 +50,7 @@ public enum LCCProfileBuilder {
     }
     public static func create(name:String,aperture:Double?,notes:String,frames:[LCCCreationFrame],
                               sensorLongEdge:Double,sensorShortEdge:Double,
+                              cameraBody:PanoramaCameraBody?=nil,
                               cancellation:PanoramaCancellation = .init(),progress:(String)->Void = { _ in }) throws -> LCCLensProfile {
         guard !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,(1...256).contains(frames.count),
               (5...100).contains(sensorShortEdge),(sensorShortEdge...100).contains(sensorLongEdge),
@@ -71,7 +74,7 @@ public enum LCCProfileBuilder {
             progress("分析 LCC \(index+1)/\(frames.count)：\(frame.source.url.lastPathComponent)")
             let source=frame.source
             let raw=try LCCCameraPipeline.read(source)
-            let portrait=frame.orientation.isPortrait
+            let orientation=frame.relativeOrientation,portrait=orientation.isPortrait
             let sw=portrait ? sensorShortEdge:sensorLongEdge,sh=portrait ? sensorLongEdge:sensorShortEdge
             let rw=min(192,raw.width/2),rh=min(144,raw.height/2)
             var means=[SIMD4<Float>](repeating:.zero,count:rw*rh),sems=means
@@ -95,7 +98,7 @@ public enum LCCProfileBuilder {
             var values:[Float]=[],errors:[Float]=[]
             for y in 0..<gh {for x in 0..<gw {
                 let xx:Int,yy:Int
-                switch frame.orientation {
+                switch orientation {
                 case .portraitLeft:xx=rw-1-y;yy=x
                 case .portraitRight:xx=y;yy=rh-1-x
                 case .inverted:xx=rw-1-x;yy=rh-1-y
@@ -108,14 +111,15 @@ public enum LCCProfileBuilder {
                 y:(0..<gh).map { sh/2-(Double($0)+0.5)/Double(gh)*sh },channels:["R","G1","B","G2"],
                 values:LCCMeasurementGrid.pack(values),standardError:LCCMeasurementGrid.pack(errors),space:"camera-cfa-normalized-v2")
             let fullLong=Int(max(source.size.width,source.size.height)),fullShort=Int(min(source.size.width,source.size.height))
-            captures.append(LCCProfileCapture(id:frame.id,filename:source.url.lastPathComponent,orientation:frame.orientation,
-                shiftX:frame.shiftX,shiftY:frame.shiftY,sensorWidth:sw,sensorHeight:sh,
+            let shift=frame.bodyOrientation.inverse.rotate(CGPoint(x:frame.shiftX,y:frame.shiftY))
+            captures.append(LCCProfileCapture(id:frame.id,filename:source.url.lastPathComponent,orientation:orientation,
+                shiftX:shift.x,shiftY:shift.y,sensorWidth:sw,sensorHeight:sh,
                 pixelWidth:portrait ? fullShort:fullLong,pixelHeight:portrait ? fullLong:fullShort,
-                iso:frame.iso,exposureSeconds:frame.exposureSeconds,capturedAt:frame.capturedAt,grid:grid,thumbnail:frame.jpeg))
+                iso:frame.iso,exposureSeconds:frame.exposureSeconds,capturedAt:frame.capturedAt,grid:grid,thumbnail:frame.jpeg,bodyOrientation:frame.bodyOrientation))
             try source.checkUnchanged()
         }
-        let profile=LCCLensProfile(id:UUID(),name:name.trimmingCharacters(in:.whitespacesAndNewlines),camera:frames[0].source.camera,
-                                   aperture:aperture,notes:notes,createdAt:Date(),captures:captures)
+        let profile=LCCLensProfile(schemaVersion:2,id:UUID(),name:name.trimmingCharacters(in:.whitespacesAndNewlines),camera:frames[0].source.camera,
+                                   aperture:aperture,notes:notes,createdAt:Date(),captures:captures,cameraBody:cameraBody)
         try profile.validate();return profile
     }
     static func linearImage(source:PanoramaSource,scale:Double,whiteBalance:(Float,Float)?=nil) throws -> CIImage {

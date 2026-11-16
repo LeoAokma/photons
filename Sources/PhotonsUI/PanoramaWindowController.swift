@@ -32,6 +32,8 @@ private final class PanoramaWindowModel: ObservableObject {
     @Published var plan: PanoramaPlan?
     @Published var options = PanoramaOptions()
     @Published var format = PanoramaEngine.OutputFormat.dng
+    @Published var cameraBody:PanoramaCameraBody = .alpa12Max
+    @Published var bodyOrientation:PanoramaBodyOrientation = .degrees0
     @Published var sensorChoice = 0
     @Published var sensorWidth = 43.8
     @Published var sensorHeight = 32.9
@@ -60,6 +62,18 @@ private final class PanoramaWindowModel: ObservableObject {
     private let queue = DispatchQueue(label:"Photons.panorama",qos:.userInitiated)
     init(urls: [URL]) { self.urls = urls; refreshLCC() }
     func cancel() { cancellation.cancel() }
+    func setBody(_ body:PanoramaCameraBody) {
+        cameraBody=body;bodyOrientation=body.canonicalOrientation(bodyOrientation);bodyPlacementChanged()
+    }
+    func setBodyOrientation(_ orientation:PanoramaBodyOrientation) {
+        guard orientation != bodyOrientation else {return}
+        bodyOrientation=orientation;bodyPlacementChanged()
+    }
+    private func bodyPlacementChanged() {
+        alignmentWindow?.close();selectLensProfile()
+        if positionReference==nil {estimatedReference=nil;positionExplanation="";lccOffset = .zero}
+        if lccEnabled {changeLCC(automaticallyLocate:true)}
+    }
     var overviewReference:PanoramaPositionReference? {positionReference ?? estimatedReference}
     func setPositionReference(index:Int,x:Double,y:Double,asReference:Bool) {
         guard x.isFinite,y.isFinite,abs(x)<=150,abs(y)<=150 else {error="请输入有效的移轴位置。";return}
@@ -86,6 +100,7 @@ private final class PanoramaWindowModel: ObservableObject {
         let cached=lccSession,offset=lccOffset,crop=cropToLCC,exposure=exposureEV,protect=protectHighlights
         let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
         let shouldLocate=automaticallyLocate && positionReference==nil
+        let body=cameraBody,orientation=bodyOrientation
         cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
         busy=true;error=nil;status=shouldLocate ? "正在准备 LCC 并自动解算位置…":"正在更新 LCC 校正…"
         queue.async { [weak self] in
@@ -104,7 +119,7 @@ private final class PanoramaWindowModel: ObservableObject {
                 prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
                 var solution:LCCPositionSolution?,locationIssue:String?
                 if shouldLocate {
-                    do {solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:sensor,cancellation:token,progress:progress)}
+                    do {solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:sensor,cameraBody:body,bodyOrientation:orientation,cancellation:token,progress:progress)}
                     catch {
                         try token.check()
                         // Keep a usable calibrated preview so a partial profile can still be
@@ -114,7 +129,7 @@ private final class PanoramaWindowModel: ObservableObject {
                 }
                 let resolvedOffset=solution?.offsetMM ?? offset
                 let result=try engine.applyingLCC(prepared,profile:session.profile,fields:session.fields,offsetMM:resolvedOffset,sensor:sensor,crop:crop,cancellation:token,
-                    exposureEV:exposure,protectHighlights:protect,whiteBalanceOverride:wb)
+                    exposureEV:exposure,protectHighlights:protect,whiteBalanceOverride:wb,cameraBody:body,bodyOrientation:orientation)
                 try token.check()
                 DispatchQueue.main.async {
                     guard let self else {return}
@@ -159,6 +174,7 @@ private final class PanoramaWindowModel: ObservableObject {
         cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
         busy=true;error=nil;status="正在自动解算位置…"
         let amount=exposureEV,protect=protectHighlights
+        let body=cameraBody,orientation=bodyOrientation
         let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
         queue.async { [weak self] in
             do {
@@ -166,11 +182,11 @@ private final class PanoramaWindowModel: ObservableObject {
                 prepared.lccLinearPreviewImages=session.preparedPlan.lccLinearPreviewImages
                 prepared.lccRawPreviews=session.preparedPlan.lccRawPreviews
                 prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
-                let solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:session.sensor,cancellation:token) {message in
+                let solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:session.sensor,cameraBody:body,bodyOrientation:orientation,cancellation:token) {message in
                     DispatchQueue.main.async {self?.status=message}
                 }
                 let proposal=try PanoramaEngine().applyingLCC(prepared,profile:session.profile,fields:session.fields,offsetMM:solution.offsetMM,
-                    sensor:session.sensor,crop:false,cancellation:token,exposureEV:amount,protectHighlights:protect,whiteBalanceOverride:wb)
+                    sensor:session.sensor,crop:false,cancellation:token,exposureEV:amount,protectHighlights:protect,whiteBalanceOverride:wb,cameraBody:body,bodyOrientation:orientation)
                 try token.check()
                 DispatchQueue.main.async {
                     guard let self,(try? token.check()) != nil else {return}
@@ -187,7 +203,7 @@ private final class PanoramaWindowModel: ObservableObject {
                 let store=LCCProfileStore();try store.installBundledProfile();let catalog=store.catalog()
                 DispatchQueue.main.async {
                     self?.lensProfiles=catalog.profiles
-                    self?.profileStatus=catalog.issues.isEmpty ? "按后背、传感器尺寸和拍摄方向自动匹配。" : catalog.issues.joined(separator:"\n")
+                    self?.profileStatus=catalog.issues.isEmpty ? "按后背型号、尺寸及后背相对机身的方向匹配。" : catalog.issues.joined(separator:"\n")
                     self?.selectLensProfile()
                 }
             } catch { DispatchQueue.main.async { self?.profileStatus=error.localizedDescription } }
@@ -203,7 +219,7 @@ private final class PanoramaWindowModel: ObservableObject {
             if let s=resolvedSensor, (source.size.height>source.size.width) != (s.height>s.width) {
                 resolvedSensor=SensorSize(width:s.height,height:s.width,source:s.source)
             }
-            guard let variant=profile.match(camera:source.camera,exifOrientation:source.orientation,sensor:resolvedSensor) else {return nil}
+            guard let variant=profile.match(camera:source.camera,exifOrientation:source.orientation,sensor:resolvedSensor,cameraBody:cameraBody,bodyOrientation:bodyOrientation) else {return nil}
             return LCCProfileBinding(profile:profile,variant:variant)
         }
         self.plan=plan
@@ -262,7 +278,7 @@ private final class PanoramaWindowModel: ObservableObject {
         if !lccEnabled {return plan.lccState==nil}
         guard let lcc=plan.lccState else {return false}
         if !automaticLCCWB {guard let wb=lcc.whiteBalance,wb.0==Float(lccTemperature),wb.1==Float(lccTint) else {return false}}
-        return lcc.profileID.uuidString==selectedLensProfileID && lcc.offsetMM==lccOffset && (lcc.cropRect != nil)==cropToLCC && lcc.sensor==sensor && lcc.exposureEV==exposureEV && lcc.protectHighlights==protectHighlights
+        return lcc.profileID.uuidString==selectedLensProfileID && lcc.offsetMM==lccOffset && (lcc.cropRect != nil)==cropToLCC && lcc.sensor==sensor && lcc.exposureEV==exposureEV && lcc.protectHighlights==protectHighlights && lcc.cameraBody==cameraBody && lcc.bodyOrientation==bodyOrientation
     }
     func stitch() {
         guard let plan, let window, canStitch else { return }
@@ -365,11 +381,14 @@ private struct PanoramaWorkspace: View {
             Text("移轴接片").font(.title2.bold())
             VStack(alignment:.leading,spacing:6) {
                 Text("拍摄机身").font(.headline)
-                Picker("机身",selection:.constant(0)) { Text("Alpa 12 Max").tag(0) }.labelsHidden()
-                Text("水平 ±18 mm · 上 25 / 下 18 mm").font(.caption).foregroundStyle(.secondary)
+                Picker("机身",selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})) {
+                    ForEach(PanoramaCameraBody.allCases) {Text($0.name).tag($0)}
+                }.labelsHidden()
+                PanoramaBodyOrientationPicker(cameraBody:model.cameraBody,selection:Binding(get:{model.bodyOrientation},set:{model.setBodyOrientation($0)}))
+                Text(model.cameraBody.travel(at:model.bodyOrientation).summary).font(.caption).foregroundStyle(.secondary)
             }
             if let plan = model.plan {
-                PanoramaPositionOverview(plan:plan,sensor:model.sensor,reference:model.overviewReference) {index in model.editingPosition=index}
+                PanoramaPositionOverview(plan:plan,sensor:model.sensor,reference:model.overviewReference,cameraBody:model.cameraBody,bodyOrientation:model.bodyOrientation) {index in model.editingPosition=index}
                     .frame(height:200).background(Color(nsColor:.underPageBackgroundColor),in:RoundedRectangle(cornerRadius:8))
                 Text(model.overviewReference != nil ? "已显示相对机身的位置。点击照片可指定唯一基准；橙框表示超出行程。" : "Δ 以拼接图中心为 (0, 0)，右／上为正。点击任意照片，输入已知移轴位置。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -504,7 +523,7 @@ private struct PanoramaPositionEntry:View {
         VStack(alignment:.leading,spacing:16) {
             Text("照片移轴信息").font(.title2.bold())
             Text(filename).font(.headline)
-            Text("方向与 LCC 标定一致：右 R／上 U 为正，左 L／下 D 为负。输入镜头相对后背的移轴读数；若记录的是后背移动方向，请取反。").font(.callout)
+            Text("按画面方向填写：右 R／上 U 为正，左 L／下 D 为负。机身旋转后，请先将刻度换算到画面方向。输入镜头相对后背的移轴读数；若记录的是后背移动方向，请取反。").font(.callout)
             HStack {Text("水平 X");TextField("mm",text:$x);Text("mm")}
             HStack {Text("垂直 Y");TextField("mm",text:$y);Text("mm")}
             Toggle("设为整组位置基准",isOn:$isReference).toggleStyle(.checkbox)
@@ -519,6 +538,8 @@ private struct PanoramaPositionOverview: View {
     let plan: PanoramaPlan
     let sensor: SensorSize?
     let reference:PanoramaPositionReference?
+    let cameraBody:PanoramaCameraBody
+    let bodyOrientation:PanoramaBodyOrientation
     let onSelect:(Int)->Void
     private let colors: [Color] = [.cyan,.purple,.green,.pink,.yellow,.blue]
     private func geometry(_ canvas:CGSize)->(photos:[CGRect],body:CGRect?,factor:Double,offset:CGPoint) {
@@ -534,8 +555,7 @@ private struct PanoramaPositionOverview: View {
             }
             // The range is a frame footprint swept over the entire camera travel. Without a
             // measured reference, center its bounding rectangle on the panorama, not the axis.
-            body=CGRect(x:-18-sensor.width/2,y:reference == nil ? -(43+sensor.height)/2 : -25-sensor.height/2,
-                        width:36+sensor.width,height:43+sensor.height)
+            body=cameraBody.travel(at:bodyOrientation).coverage(sensor:sensor,centered:reference==nil)
         } else {photos=plan.sources.indices.map {plan.sourceRect($0)}}
         var bounds=photos.reduce(CGRect.null) {$0.union($1)}
         if let body {bounds=bounds.union(body)}
@@ -552,12 +572,12 @@ private struct PanoramaPositionOverview: View {
                 if let body=layout.body {
                     context.fill(Path(body),with:.color(.primary.opacity(0.025)))
                     context.stroke(Path(body),with:.color(.primary.opacity(0.65)),style:StrokeStyle(lineWidth:1.2,dash:[5,3]))
-                    context.draw(Text("Alpa 12 Max · 总覆盖范围").font(.system(size:9)).foregroundColor(.secondary),at:CGPoint(x:body.midX,y:body.minY-9))
+                    context.draw(Text("\(cameraBody.name) · \(bodyOrientation.rawValue)° · 总覆盖范围").font(.system(size:9)).foregroundColor(.secondary),at:CGPoint(x:body.midX,y:body.minY-9))
                 }
                 for i in plan.sources.indices {
                     let rect=layout.photos[i],color=colors[i%colors.count]
                     let position=sensor.flatMap {reference?.position(of:i,in:plan,sensor:$0)}
-                    let outside=position.map {$0.x < -18 || $0.x > 18 || $0.y < -18 || $0.y > 25} ?? false
+                    let outside=position.map {!cameraBody.travel(at:bodyOrientation).contains($0)} ?? false
                     context.fill(Path(rect),with:.color(color.opacity(0.14)))
                     context.stroke(Path(rect),with:.color(outside ? .orange:color),lineWidth:reference?.sourceIndex==i ? 2.5:1.2)
                     context.draw(Text(plan.sources[i].url.lastPathComponent).font(.system(size:10,weight:.medium)).foregroundColor(.primary),at:CGPoint(x:rect.midX,y:rect.midY))

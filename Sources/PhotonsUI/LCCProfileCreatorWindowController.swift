@@ -10,7 +10,10 @@ final class LCCProfileCreatorWindowController: NSWindowController, NSWindowDeleg
         let w=NSWindow(contentRect:NSRect(x:0,y:0,width:1060,height:780),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
         w.title="创建镜头 Profile";w.minSize=NSSize(width:900,height:680);w.isReleasedWhenClosed=false
         super.init(window:w);w.delegate=self;model.window=w;model.onCreated=onCreated
-        w.contentView=NSHostingView(rootView:LCCProfileCreatorView(model:model));w.center()
+        let hosting=NSHostingView(rootView:LCCProfileCreatorView(model:model))
+        // Adding per-frame metadata must scroll the inspector, not enlarge the window
+        // beyond the display and push the creation controls off screen.
+        hosting.sizingOptions=[];w.contentView=hosting;w.center()
     }
     required init?(coder:NSCoder) { fatalError("no nib") }
     func windowWillClose(_ notification:Notification) { model.close();onClose?() }
@@ -25,6 +28,7 @@ private final class LCCProfileCreatorModel: ObservableObject {
     @Published var notes=""
     @Published var sensorLong=43.8
     @Published var sensorShort=32.9
+    @Published var cameraBody:PanoramaCameraBody = .alpa12Max
     @Published var frames:[LCCCreationFrame]=[]
     @Published var selected:UUID?
     @Published var busy=false
@@ -42,6 +46,18 @@ private final class LCCProfileCreatorModel: ObservableObject {
     }
     func close() { closed=true;token.cancel() }
     func cancel() { token.cancel() }
+    func setBody(_ body:PanoramaCameraBody) {
+        cameraBody=body
+        for i in frames.indices {
+            frames[i].bodyOrientation=body.canonicalOrientation(frames[i].bodyOrientation)
+            frames[i].shiftConfirmed=false
+        }
+    }
+    func applyDirectionToAll(_ direction:PanoramaBodyOrientation) {
+        for i in frames.indices where frames[i].bodyOrientation != direction {
+            frames[i].bodyOrientation=direction;frames[i].shiftConfirmed=false
+        }
+    }
     func choose() {
         guard let window else { return }
         let panel=NSOpenPanel();panel.allowsMultipleSelection=true;panel.canChooseDirectories=false
@@ -81,11 +97,11 @@ private final class LCCProfileCreatorModel: ObservableObject {
         else if let n=Double(apertureText),n.isFinite,n>0,n<=128 { aperture=n }
         else { error="请填写有效光圈值，例如 11。";return }
         busy=true;status="建立镜头标定…";token=PanoramaCancellation()
-        let token=self.token,frames=self.frames,name=self.name,notes=self.notes,long=self.sensorLong,short=self.sensorShort
+        let token=self.token,frames=self.frames,name=self.name,notes=self.notes,long=self.sensorLong,short=self.sensorShort,body=self.cameraBody
         queue.async { [weak self] in
             do {
                 let profile=try LCCProfileBuilder.create(name:name,aperture:aperture,notes:notes,frames:frames,
-                    sensorLongEdge:long,sensorShortEdge:short,cancellation:token) { message in
+                    sensorLongEdge:long,sensorShortEdge:short,cameraBody:body,cancellation:token) { message in
                         DispatchQueue.main.async { self?.status=message }
                     }
                 try token.check()
@@ -112,13 +128,16 @@ private struct LCCProfileCreatorView: View {
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
             Text("创建镜头 Profile").font(.title.bold())
-            Text("请用 LCC 板，以相同曝光（ISO、快门）、同一光圈和对焦设置，拍摄不同移轴量的白板照片。若要支持横竖拍摄，请分别加入两个方向的样本。")
+            Text("请用 LCC 板，以相同曝光（ISO、快门）、同一光圈和对焦设置，拍摄不同移轴量的白板照片。后背相对机身的横竖方向分别标定；整机一起旋转可复用原标定。")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
             HStack {
                 TextField("镜头名称，例如 APO-Digitar 43XL + iiic",text:$model.name)
                 Text("f/");TextField("光圈",text:$model.apertureText).frame(width:55)
                 Button("添加白板照片…") { model.choose() }
             }.textFieldStyle(.roundedBorder).disabled(model.busy || model.savedURL != nil)
+            Picker("拍摄机身",selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})) {
+                ForEach(PanoramaCameraBody.allCases) {Text($0.name).tag($0)}
+            }.frame(width:300).disabled(model.busy || model.savedURL != nil)
             HSplitView {
                 VStack(alignment:.leading,spacing:10) {
                     HStack { Text("\(model.frames.count) 张 · 已确认 \(model.frames.filter(\.shiftConfirmed).count) 张");Spacer();Button("移除选中") { model.removeSelected() }.disabled(model.selected==nil) }.font(.caption)
@@ -130,7 +149,7 @@ private struct LCCProfileCreatorView: View {
                                         if let cg=frame.thumbnail { Image(decorative:cg,scale:1).resizable().aspectRatio(contentMode:.fit).frame(height:105) }
                                         else { Image(systemName:"photo").frame(height:105) }
                                         Text(frame.source.url.lastPathComponent).font(.caption).lineLimit(1).truncationMode(.middle)
-                                        Text(frame.orientation.title).font(.caption2).foregroundStyle(.secondary)
+                                        Text("机身 \(frame.bodyOrientation.rawValue)° · 后背相对\(frame.relativeOrientation.title)").font(.caption2).foregroundStyle(.secondary)
                                         Label(frame.shiftConfirmed ? String(format:"H %+.1f / V %+.1f mm",frame.shiftX,frame.shiftY):"待确认移轴量",systemImage:frame.shiftConfirmed ? "checkmark.circle.fill":"circle")
                                             .font(.caption2).foregroundStyle(frame.shiftConfirmed ? Color.green:Color.orange)
                                     }.padding(8).frame(maxWidth:.infinity)
@@ -142,7 +161,7 @@ private struct LCCProfileCreatorView: View {
                     }
                 }.frame(minWidth:460)
                 inspector.frame(width:290).padding(.leading,12)
-            }.disabled(model.busy || model.savedURL != nil)
+            }.frame(minHeight:0,maxHeight:.infinity).disabled(model.busy || model.savedURL != nil)
             if let issue=LCCProfileBuilder.exposureIssue(model.frames) { Text(issue).font(.caption).foregroundStyle(.orange) }
             if model.frames.contains(where: { $0.iso==nil || $0.exposureSeconds==nil }) {
                 Text("部分照片没有曝光元数据，请根据拍摄记录确认整组曝光相同。").font(.caption).foregroundStyle(.secondary)
@@ -166,13 +185,18 @@ private struct LCCProfileCreatorView: View {
             VStack(alignment:.leading,spacing:14) {
                 if let i=model.selectedIndex {
                     Text(model.frames[i].source.url.lastPathComponent).font(.headline).textSelection(.enabled)
-                    Picker("拍摄方向",selection:$model.frames[i].orientation) {
+                    Text("拍摄时的机身方向").font(.headline)
+                    PanoramaBodyOrientationPicker(cameraBody:model.cameraBody,selection:$model.frames[i].bodyOrientation)
+                        .onChange(of:model.frames[i].bodyOrientation) {_,_ in model.frames[i].shiftConfirmed=false}
+                    Button("将此机身方向用于全部照片") {model.applyDirectionToAll(model.frames[i].bodyOrientation)}.controlSize(.small)
+                    Picker("照片方向（RAW）",selection:$model.frames[i].orientation) {
                         ForEach(LCCCaptureOrientation.allCases) { Text($0.title).tag($0) }
-                    }
+                    }.onChange(of:model.frames[i].orientation) {_,_ in model.frames[i].shiftConfirmed=false}
+                    Text("后背相对机身：\(model.frames[i].relativeOrientation.title)").font(.caption).foregroundStyle(.secondary)
                     Text("移轴量（mm）").font(.headline)
                     HStack { Text("水平 H").frame(width:65,alignment:.leading);TextField("mm",value:$model.frames[i].shiftX,format:.number) }
                     HStack { Text("垂直 V").frame(width:65,alignment:.leading);TextField("mm",value:$model.frames[i].shiftY,format:.number) }
-                    Text("右 R / 上 U 为正；左 L / 下 D 为负。按白板拍摄时记录的机身移轴量填写。").font(.caption).foregroundStyle(.secondary)
+                    Text("按画面方向填写：右 R / 上 U 为正；左 L / 下 D 为负。机身旋转后，请先将刻度换算到画面方向。保存时会与白板测量一起转换到机身坐标。").font(.caption).foregroundStyle(.secondary)
                     Toggle("已核对这张的方向和移轴量",isOn:$model.frames[i].shiftConfirmed)
                     Text(model.frames[i].source.camera).font(.caption)
                     Text("ISO \(model.frames[i].iso.map { String(format:"%.0f",$0) } ?? "未知") · \(model.frames[i].exposureSeconds.map { String(format:"%.4g 秒",$0) } ?? "快门未知")").font(.caption).foregroundStyle(.secondary)
