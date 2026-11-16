@@ -942,7 +942,7 @@
   "4a992de52aca": "Over white",
   "c08de948f396": "High clip",
   "63b98ddec268": "Low clip",
-  "6270304d33b8": "Histogram: R/G/B/luminance curves; horizontal axis has {0} SDR code bins plus {1} highlight-tail bins. The readout below follows the pointer: over the image it shows the pixel’s scene R/G/B values, not the display-rendered values (SDR codes 0–255; above-white channels show +x.x stops in clipping magenta). Over the histogram it shows R/G/B sample counts for that bin. Elsewhere it is blank but keeps its height.",
+  "6270304d33b8": "Histogram: three additive R/G/B curves (red plus green is yellow; all three are white). Luminance measures over-white and clipping but is not drawn. The axis has {0} SDR code bins and {1} highlight-tail bins. Over the image, the pointer readout shows R/G/B after the current HDR/SDR preview mapping (SDR codes 0–255; above-white values in stops). Over the histogram, it shows R/G/B sample counts for that bin.",
   "e419b0ff536a": "No frame available to measure",
   "977f178f562a": "Select photos to stitch first",
   "2e0b7140c7cc": "Select at least two photos to stitch",

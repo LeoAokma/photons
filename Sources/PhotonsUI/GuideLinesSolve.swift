@@ -336,12 +336,14 @@ public struct GuideLineFit: Equatable, Sendable {
 
 // MARK: - 367: the pair's verdict, and the 2 × 2 assignment search
 
-/// What **two** lines mean — the rule of 2026-11-10 (see the task's §0):
+/// What **two** lines mean — the rule of 2026-11-10 (see the task's §0), amended by 400:
 ///
 ///   · same axis → always try to correct, however small the angle (0.02°, even 0°, are corrections
 ///     the fit answers with a small value); the card shows the ordinary readout, not a warning;
-///   · one vertical + one horizontal → `insufficient`: **accept, write nothing**, no red, no error.
-///     Two lines can only name one direction each; that is information, not a contradiction;
+///   · one vertical + one horizontal → **400 solves it** (2 rows over 3 unknowns, the least-deforming
+///     point of the family). When the answer would move nothing the pair is still `insufficient` —
+///     accept, write nothing, no red, no error — and a refusal falls back to `insufficient` too: a
+///     turn the dial cannot hold is not the user's error;
 ///   · same axis but the arithmetic cannot move the residual at all → `unsolvable`: keep the line and
 ///     say 「偏轴 X°，校正不了」. The line is not withdrawn.
 ///   · anything else (the travel's end, a rank-deficient pair) is reported as the fit reported it.
@@ -576,6 +578,8 @@ public enum GuideLinesSolve {
     // MARK: the fit (§2b.3)
 
     /// Every pair's angle squared, minimised over the parameters the pairs constrain, then one turn.
+    /// **400** — unless some direction is down to a single line, in which case the fit is 「每条线归到
+    /// 自己的目标轴」 with `s` among the unknowns (`fitWithLoneLine`).
     ///
     /// `current` is the document's `(v, h)` — the starting point's neighbourhood (§2b.3: 初值取当前)
     /// and the value the untouched axis keeps. `tolerance` is injectable **only** so the reverse gate
@@ -590,6 +594,38 @@ public enum GuideLinesSolve {
         guard lines.count >= 2 else { return .rejected(.notEnoughLines) }
         guard lines.count <= maxLines else { return .rejected(.tooManyLines) }
 
+        // 400 — the one door into mode II. A group of **one** line has no pair residual, so 348 could
+        // only either refuse the whole set (1V1H) or solve the axes that happen to have a pair and
+        // leave the lone line's knob untouched (2V1H solved `v` only, leaving the horizontal 3.03°
+        // off). Its own row is 「this line sits on its axis」, and the system needs `s` in the
+        // unknowns — a keystone cannot change the angle between two lines that are not parallel.
+        //
+        // 2 + 2 is *not* in this branch: four lines with no lone group is 348's set, and its answer
+        // must stay bit for bit (`testTwoPlusTwoIsUnchangedBitForBit`). Three lines on one axis is
+        // also 348's (no lone group); a four-line set that happens to hold a lone line is not
+        // reachable from the card (2 per direction) and keeps today's path as well.
+        if lines.count <= 3, hasLoneGroup(lines) {
+            return fitWithLoneLine(lines: lines, current: current, source: source,
+                                   straightenDegrees: straightenDegrees, tolerance: tolerance,
+                                   maxIterations: maxIterations)
+        }
+        return fitPairwise(lines: lines, current: current, source: source,
+                           straightenDegrees: straightenDegrees, tolerance: tolerance,
+                           maxIterations: maxIterations)
+    }
+
+    /// 348's fit, unchanged and named: **pair rows only**, the two keystone knobs, then one turn.
+    ///
+    /// This is mode I. `fit` delegates here whenever no direction is down to a single line, which is
+    /// why 2 + 2 keeps 348's answer to the last bit (400 §5.1's hard boundary — four rows over three
+    /// unknowns would let `s` absorb the residual that 348 proves is zero at the document's true
+    /// value). Exposed so the acceptance can compare the two entries on the same input.
+    public static func fitPairwise(lines: [GuideLine],
+                                   current: PerspectiveMap,
+                                   source: ImageSize,
+                                   straightenDegrees: Double,
+                                   tolerance: Double = GuideLinesSolve.toleranceDegrees,
+                                   maxIterations: Int = GuideLinesSolve.maxIterations) -> GuideLineFit {
         let axes = constrainedAxes(of: lines)
         guard !axes.isEmpty else { return .rejected(.notEnoughLines) }
         let columns = axes.map { $0 == .vertical ? 0 : 1 }
@@ -763,10 +799,456 @@ public enum GuideLinesSolve {
                                          previousStraighten: previousStraighten))
     }
 
+    // MARK: - 400: the lone line enters the fit
+
+    /// 400 — `true` when some direction has exactly **one** line: the 1V1H / 2V1H / 1V2H shapes.
+    ///
+    /// A group of one is what 348 could not use: it has no pair residual, so `constrainedAxes` never
+    /// named its knob and the line was silently dropped. It is also the switch into mode II and
+    /// nothing else — a 2 + 2 set has no lone group and keeps 348's answer bit for bit.
+    public static func hasLoneGroup(_ lines: [GuideLine]) -> Bool {
+        groups(of: lines).contains { $0.indices.count == 1 }
+    }
+
+    /// 400 §5 — the shape 348 could not answer: **每条线的绝对行**, `s` among the unknowns.
+    ///
+    ///     φᵢ(v, h, s) = fold(θ(P(v,h)·R(s)·lineᵢ) − targetᵢ) = 0      for every line
+    ///
+    /// No pair rows and no post-hoc turn: the one goal is 「每条线归到自己的目标轴」, and the turn is
+    /// simply one of the three degrees of freedom that gets there. `s` is the **absolute** angle the
+    /// document would hold, not a delta.
+    ///
+    /// | shape | rows / unknowns | nature |
+    /// |---|---|---|
+    /// | 1V1H | 2 / 3 | a one-dimensional set of answers |
+    /// | 2V1H, 1V2H | 3 / 3 | an isolated answer, damped Newton |
+    ///
+    /// 1V1H picks the point of its set with the smallest **透视变形量** `|v| + |h|` (§5.2 — the same
+    /// measure `PerspectiveMap.coupledTravelBudget` bounds, so the answer is 「画面被拉伸最少」), by
+    /// sweeping `s` over the dial and refining the winner. The other two are one damped Newton solve.
+    /// 2 + 2 never reaches this function (§5.1's hard boundary: four rows over three unknowns would
+    /// let `s` eat the residual and destroy 348's exact recovery).
+    static func fitWithLoneLine(lines: [GuideLine],
+                                current: PerspectiveMap,
+                                source: ImageSize,
+                                straightenDegrees: Double,
+                                tolerance: Double,
+                                maxIterations: Int) -> GuideLineFit {
+        let previousStraighten = straightenDegrees
+        let axes = groups(of: lines).map(\.axis)
+        let travel = PerspectiveMap.limit
+
+        // 348's 「异常线」 rule, applied **before** the solve: a line that is already more than
+        // `mixedDirectionDegrees` off its own axis on screen is not a guide line for that axis — it is
+        // a 45° stroke the fold happened to call 「横」. 367 ⑧ names it as the offending line and 367 ⑩
+        // as 「两个轴」, and both must keep saying so: mode II can always turn a diagonal onto an axis,
+        // and doing that would make every异常线 「correctable」.
+        let offAxis = lines.map {
+            abs(deviation(of: $0, source: source, vertical: current.vertical,
+                          horizontal: current.horizontal, straightenDegrees: previousStraighten))
+        }
+        if let worstOffAxis = offAxis.max(), worstOffAxis > mixedDirectionDegrees {
+            return .rejected(.inconsistent, measured: worstOffAxis)
+        }
+
+        /// The parameters in one vector: `(vertical, horizontal, straighten)`.
+        func rows(_ values: [Double]) -> [Double] {
+            lines.map {
+                deviation(of: $0, source: source, vertical: values[0], horizontal: values[1],
+                          straightenDegrees: values[2])
+            }
+        }
+        func worst(_ values: [Double]) -> Double {
+            rows(values).map(abs).max() ?? .infinity
+        }
+        /// §5.2 — the deformation measure: 「两轴合力的总量」, the number the travel budget is in.
+        func deformation(_ values: [Double]) -> Double { abs(values[0]) + abs(values[1]) }
+
+        /// One point of the 1V1H family: the `s` it was solved at and the `(v, h)` it needed.
+        struct Point {
+            var rotation: Double
+            var vertical: Double
+            var horizontal: Double
+            var residual: Double
+            var iterations: Int
+        }
+        func deformation(of point: Point) -> Double {
+            deformation([point.vertical, point.horizontal, point.rotation])
+        }
+        /// A parameter at the travel's end is pinned, not solved (§367's `endpointFraction`).
+        func insideTravel(_ values: [Double]) -> Bool {
+            abs(values[0]) < endpointFraction * travel && abs(values[1]) < endpointFraction * travel
+        }
+
+        var solved: (vertical: Double, horizontal: Double, straighten: Double)
+        var iterations: Int
+
+        if lines.count == 2 {
+            // ── 1V1H: 2 rows, 3 unknowns ⇒ a one-dimensional set. Sample `s`, solve `(v, h)` at each
+            //    sample, keep the feasible point with the smallest `|v| + |h|`, then refine it.
+            //
+            // The seed for the whole family is the `s = 0` answer, found with a coarse sweep: that is
+            // the middle of the curve, and warm-starting each sample from its neighbour walks the
+            // curve outward in both directions.
+            var seed = (vertical: current.vertical, horizontal: current.horizontal)
+            var seedWorst = worst([seed.vertical, seed.horizontal, 0])
+            var sweepV = -travel
+            while sweepV <= travel {
+                var sweepH = -travel
+                while sweepH <= travel {
+                    let candidate = worst([sweepV, sweepH, 0])
+                    if candidate < seedWorst { seedWorst = candidate; seed = (sweepV, sweepH) }
+                    sweepH += seedStep
+                }
+                sweepV += seedStep
+            }
+
+            var sawPinnedKeystone = false
+
+            /// One point of the family, or `nil` when the sample is not an answer: no convergence, a
+            /// knob pinned at the travel's end, or the pair's travel budget spent.
+            func sample(_ rotation: Double, from start: (vertical: Double, horizontal: Double)) -> Point? {
+                let result = dampedNewton(start: [start.vertical, start.horizontal, rotation],
+                                          free: [0, 1],
+                                          lower: [-travel, -travel, rotation],
+                                          upper: [travel, travel, rotation],
+                                          maxIterations: maxIterations, rows: rows)
+                let residual = result.r.map(abs).max() ?? .infinity
+                guard residual <= solveTargetDegrees else { return nil }
+                let values = [result.x[0], result.x[1], rotation]
+                guard insideTravel(values),
+                      deformation(values) <= PerspectiveMap.coupledTravelBudget else {
+                    // The turn is an answer, but the keystone it needs is beyond the travel: that is
+                    // 「行程不够」, not 「矛盾」 — the two failures print different sentences.
+                    sawPinnedKeystone = true
+                    return nil
+                }
+                return Point(rotation: rotation, vertical: result.x[0], horizontal: result.x[1],
+                             residual: residual, iterations: result.iterations)
+            }
+
+
+            // §5.3 — a sample **on** the dial's end is a truncated set, not a candidate; the other end
+            // may still hold the answer.
+            let interior = straightenLimit - rotationStep
+            var candidates: [Point] = []
+            if let origin = sample(0, from: seed) { candidates.append(origin) }
+            var start = seed
+            var outward = rotationStep
+            while outward <= interior + 1e-9 {
+                for direction in [-1.0, 1.0] {
+                    if let point = sample(direction * outward, from: start) {
+                        candidates.append(point)
+                        start = (vertical: point.vertical, horizontal: point.horizontal)
+                    }
+                }
+                outward += rotationStep
+            }
+
+            guard var best = candidates.min(by: { deformation(of: $0) < deformation(of: $1) }) else {
+                // No feasible point on the whole curve. Two different failures send the card to two
+                // different sentences, so they must not be conflated: if any sample was a real answer
+                // whose keystone was out of the travel, it is 「行程不够」; otherwise the two lines ask
+                // for turns they cannot both have (one turn, two demands) and the set is 「矛盾」.
+                // `.rotationOutOfRange` is deliberately **not** produced here: it means 「透视已应用,
+                // 摆正被跳过」 (348's two-step answer), and mode II has only the one combined write.
+                return .rejected(sawPinnedKeystone ? .outOfRange : .inconsistent,
+                                 measured: seedWorst)
+            }
+            var bestDeformation = deformation(of: best)
+
+            // Golden-section refinement of `s` around the winning sample (§5.3: to 1e-3°). An
+            // infeasible probe is a wall, not a value — only feasible points can win.
+            func cost(_ rotation: Double) -> Double {
+                guard let point = sample(rotation, from: (best.vertical, best.horizontal)) else {
+                    return .infinity
+                }
+                return deformation(of: point)
+            }
+            var low = max(best.rotation - rotationStep, -straightenLimit)
+            var high = min(best.rotation + rotationStep, straightenLimit)
+            let golden = (5.0.squareRoot() - 1) / 2
+            var left = high - golden * (high - low)
+            var right = low + golden * (high - low)
+            var leftCost = cost(left), rightCost = cost(right)
+            for _ in 0..<40 where high - low > 1e-6 {
+                if leftCost < rightCost {
+                    high = right; right = left; rightCost = leftCost
+                    left = high - golden * (high - low); leftCost = cost(left)
+                } else {
+                    low = left; left = right; leftCost = rightCost
+                    right = low + golden * (high - low); rightCost = cost(right)
+                }
+            }
+            for rotation in [left, right, best.rotation] {
+                guard let point = sample(rotation, from: (best.vertical, best.horizontal)) else {
+                    continue
+                }
+                let candidate = deformation(of: point)
+                if candidate < bestDeformation {
+                    bestDeformation = candidate
+                    best = point
+                }
+            }
+            solved = (best.vertical, best.horizontal, best.rotation)
+            iterations = best.iterations
+        } else {
+            // ── 2V1H / 1V2H: 3 rows, 3 unknowns ⇒ an isolated answer. The seed is 348's coarse sweep
+            //    over `(v, h)` with the turn that centres the three rows, then one damped Newton.
+            var seed = [current.vertical, current.horizontal, previousStraighten]
+            var seedWorst = worst(seed)
+            var sweepV = -travel
+            while sweepV <= travel {
+                var sweepH = -travel
+                while sweepH <= travel {
+                    let base = rows([sweepV, sweepH, 0])
+                    let mean = base.reduce(0, +) / Double(max(base.count, 1))
+                    let turn = min(max(-mean, -straightenLimit), straightenLimit)
+                    let candidate = worst([sweepV, sweepH, turn])
+                    if candidate < seedWorst { seedWorst = candidate; seed = [sweepV, sweepH, turn] }
+                    sweepH += seedStep
+                }
+                sweepV += seedStep
+            }
+            let result = dampedNewton(start: seed, free: [0, 1, 2],
+                                      lower: [-travel, -travel, -straightenLimit],
+                                      upper: [travel, travel, straightenLimit],
+                                      maxIterations: maxIterations, rows: rows)
+            solved = (result.x[0], result.x[1], result.x[2])
+            iterations = result.iterations
+        }
+
+        let values = [solved.vertical, solved.horizontal, solved.straighten]
+        let r = rows(values)
+        let achieved = r.map(abs).max() ?? .infinity
+
+        if !insideTravel(values) || deformation(values) > PerspectiveMap.coupledTravelBudget {
+            return .rejected(.outOfRange, measured: achieved)
+        }
+        if achieved > tolerance {
+            // A parameter pinned at the travel's end is 「行程不够」, anything else is the lines
+            // disagreeing. (A turn pinned at ±45° is reported as `.inconsistent` here: unlike 348's
+            // two-step answer, mode II writes `(v, h, s)` as one value, so there is no keystone to
+            // keep and 「透视已应用」 would be a lie.)
+            let atLimit = abs(abs(solved.vertical) - travel) < 1e-9
+                || abs(abs(solved.horizontal) - travel) < 1e-9
+                || abs(abs(solved.straighten) - straightenLimit) < 1e-9
+            return .rejected(atLimit ? .outOfRange : .inconsistent, measured: achieved)
+        }
+        let sigmaMin = smallestSingularValue(of: numericJacobian(at: values, free: [0, 1, 2],
+                                                                  lower: [-travel, -travel,
+                                                                          -straightenLimit],
+                                                                  upper: [travel, travel,
+                                                                          straightenLimit],
+                                                                  rows: rows))
+        if lines.count > 2, sigmaMin <= minimumSingularValue {
+            return .rejected(.degenerate, measured: achieved)
+        }
+
+        return .solved(GuideLineSolution(vertical: solved.vertical, horizontal: solved.horizontal,
+                                         straighten: solved.straighten,
+                                         straightenRequested: solved.straighten,
+                                         rotationFailure: nil,
+                                         residuals: r, pairwiseResiduals: r,
+                                         axes: axes, iterations: iterations,
+                                         smallestSingularValue: sigmaMin,
+                                         lineCount: lines.count,
+                                         previousStraighten: previousStraighten))
+    }
+
+    /// 400 §5.6② — one point of a 1V1H family at a **fixed** turn: the `(v, h)` that puts both lines
+    /// on their axes with `s = rotation`, or `nil` when that sample is not an answer (the 2 × 2 has no
+    /// solution inside the travel, or the pair's budget is spent).
+    ///
+    /// Public because 「求解器真的挑了变形最小的那一点」 can only be judged by comparing it against its
+    /// neighbours: the acceptance solves `s = −8°, 0°, +5°` and requires every one of them to deform
+    /// more than the answer does. `current` seeds the iteration.
+    public static func lonePoint(lines: [GuideLine],
+                                 current: PerspectiveMap,
+                                 source: ImageSize,
+                                 at rotation: Double) -> (vertical: Double, horizontal: Double)? {
+        guard lines.count == 2, lines[0].axis != lines[1].axis else { return nil }
+        let travel = PerspectiveMap.limit
+        func rows(_ values: [Double]) -> [Double] {
+            lines.map {
+                deviation(of: $0, source: source, vertical: values[0], horizontal: values[1],
+                          straightenDegrees: rotation)
+            }
+        }
+        let result = dampedNewton(start: [current.vertical, current.horizontal, rotation],
+                                  free: [0, 1],
+                                  lower: [-travel, -travel, rotation],
+                                  upper: [travel, travel, rotation],
+                                  maxIterations: maxIterations, rows: rows)
+        guard (result.r.map(abs).max() ?? .infinity) <= solveTargetDegrees,
+              abs(result.x[0]) < endpointFraction * travel,
+              abs(result.x[1]) < endpointFraction * travel,
+              abs(result.x[0]) + abs(result.x[1]) <= PerspectiveMap.coupledTravelBudget
+        else { return nil }
+        return (result.x[0], result.x[1])
+    }
+
+    /// 400 §5.3 — the sample spacing of the 1V1H family, in degrees of `s`.
+    static let rotationStep: Double = 0.25
+
+    /// Damped Gauss–Newton (`(JᵀJ + λI)δ = −Jᵀr`) over the **free** parameter indices of `x`, with
+    /// every step clamped to `lower … upper`. The same shape as mode I's loop, but over an arbitrary
+    /// residual vector (mode II's rows are per line, not per pair) and up to three unknowns.
+    private static func dampedNewton(start: [Double], free: [Int],
+                                     lower: [Double], upper: [Double],
+                                     maxIterations: Int,
+                                     rows: ([Double]) -> [Double])
+        -> (x: [Double], r: [Double], iterations: Int) {
+        var x = start
+        for index in x.indices {
+            guard index < lower.count, index < upper.count else { continue }
+            x[index] = min(max(x[index], lower[index]), upper[index])
+        }
+        var r = rows(x)
+        var iterations = 0
+        var lambda = 1e-9
+
+        for step in 0..<max(maxIterations, 1) {
+            iterations = step + 1
+            if (r.map(abs).max() ?? .infinity) <= solveTargetDegrees { break }
+
+            let jacobian = numericJacobian(at: x, free: free, lower: lower, upper: upper, rows: rows)
+            let n = free.count
+            var normal = [[Double]](repeating: [Double](repeating: 0, count: n), count: n)
+            var gradient = [Double](repeating: 0, count: n)
+            for a in 0..<n {
+                for b in 0..<n {
+                    normal[a][b] = jacobian.reduce(0) { $0 + $1[a] * $1[b] }
+                }
+                gradient[a] = zip(jacobian, r).reduce(0) { $0 + $1.0[a] * $1.1 }
+                normal[a][a] += lambda
+            }
+            guard let delta = solveLinear(normal, gradient.map(-)) else { break }
+
+            var next = x
+            for (column, index) in free.enumerated() {
+                let stepValue = min(max(delta[column], -stepLimit), stepLimit)
+                next[index] = min(max(x[index] + stepValue, lower[index]), upper[index])
+            }
+            if (rows(next).map(abs).max() ?? .infinity) > (r.map(abs).max() ?? .infinity) {
+                lambda = max(lambda * 10, 1e-6)
+                continue
+            }
+            lambda = max(lambda / 5, 1e-12)
+            let moved = zip(next, x).map { abs($0 - $1) }.max() ?? 0
+            x = next
+            r = rows(x)
+            if moved < 1e-12 { break }
+        }
+        return (x, r, iterations)
+    }
+
+    /// The finite-difference Jacobian of `rows` at `x`, one column per free parameter — one-sided
+    /// where a parameter sits at its own bound (337's fallback at the slider's end).
+    private static func numericJacobian(at x: [Double], free: [Int],
+                                        lower: [Double], upper: [Double],
+                                        rows: ([Double]) -> [Double]) -> [[Double]] {
+        let r = rows(x)
+        var perRow = [[Double]](repeating: [Double](repeating: 0, count: free.count), count: r.count)
+        for (column, index) in free.enumerated() {
+            let span = upper[index] - lower[index]
+            let h = min(jacobianStep, span / 2)
+            guard h > 1e-12 else { continue }
+            var plus = x, minus = x
+            if x[index] + h > upper[index] {
+                minus[index] = x[index] - h
+            } else if x[index] - h < lower[index] {
+                plus[index] = x[index] + h
+            } else {
+                plus[index] = x[index] + h
+                minus[index] = x[index] - h
+            }
+            let denominator = plus[index] - minus[index]
+            guard abs(denominator) > 1e-12 else { continue }
+            let a = rows(plus), b = rows(minus)
+            for row in r.indices { perRow[row][column] = (a[row] - b[row]) / denominator }
+        }
+        return perRow
+    }
+
+    /// Gaussian elimination with partial pivoting for the small normal equations (`n ≤ 3`).
+    private static func solveLinear(_ matrix: [[Double]], _ rhs: [Double]) -> [Double]? {
+        let n = matrix.count
+        guard n > 0, rhs.count == n else { return nil }
+        var a = matrix
+        var b = rhs
+        for column in 0..<n {
+            var pivot = column
+            for row in (column + 1)..<n where abs(a[row][column]) > abs(a[pivot][column]) {
+                pivot = row
+            }
+            guard abs(a[pivot][column]) > 1e-18 else { return nil }
+            if pivot != column { a.swapAt(pivot, column); b.swapAt(pivot, column) }
+            for row in (column + 1)..<n {
+                let factor = a[row][column] / a[column][column]
+                guard factor != 0 else { continue }
+                for k in column..<n { a[row][k] -= factor * a[column][k] }
+                b[row] -= factor * b[column]
+            }
+        }
+        var out = [Double](repeating: 0, count: n)
+        for row in stride(from: n - 1, through: 0, by: -1) {
+            var sum = b[row]
+            for k in (row + 1)..<n { sum -= a[row][k] * out[k] }
+            out[row] = sum / a[row][row]
+        }
+        return out.allSatisfy { $0.isFinite } ? out : nil
+    }
+
+    /// The smallest singular value of a small `m × n` Jacobian (`n ≤ 3`) — the eigenvalues of `JᵀJ`
+    /// by cyclic Jacobi rotations. 348's rank test, generalised to mode II's three columns.
+    static func smallestSingularValue(of jacobian: [[Double]]) -> Double {
+        let n = jacobian.first?.count ?? 0
+        guard n > 0 else { return 0 }
+        var a = [[Double]](repeating: [Double](repeating: 0, count: n), count: n)
+        for row in jacobian {
+            guard row.count == n else { continue }
+            for i in 0..<n {
+                for j in 0..<n { a[i][j] += row[i] * row[j] }
+            }
+        }
+        for _ in 0..<32 {
+            var offDiagonal = 0.0
+            for i in 0..<n {
+                for j in (i + 1)..<n { offDiagonal += a[i][j] * a[i][j] }
+            }
+            if offDiagonal < 1e-30 { break }
+            for p in 0..<n {
+                for q in (p + 1)..<n {
+                    guard abs(a[p][q]) > 1e-18 else { continue }
+                    let theta = (a[q][q] - a[p][p]) / (2 * a[p][q])
+                    let t = (theta >= 0 ? 1.0 : -1.0)
+                        / (abs(theta) + (theta * theta + 1).squareRoot())
+                    let c = 1 / (t * t + 1).squareRoot()
+                    let s = t * c
+                    for k in 0..<n {
+                        let kp = a[k][p], kq = a[k][q]
+                        a[k][p] = c * kp - s * kq
+                        a[k][q] = s * kp + c * kq
+                    }
+                    for k in 0..<n {
+                        let pk = a[p][k], qk = a[q][k]
+                        a[p][k] = c * pk - s * qk
+                        a[q][k] = s * pk + c * qk
+                    }
+                }
+            }
+        }
+        let smallest = (0..<n).map { a[$0][$0] }.min() ?? 0
+        return max(smallest, 0).squareRoot()
+    }
+
     // MARK: - 367: two lines, then 2 × 2
 
-    /// 367 §2.2 — what a pair means. Same axis → correct it (near-parallel included); one of each →
-    /// accept without writing; same axis but no movable residual → keep the line and say so.
+    /// 367 §2.2 — what a pair means. Two of one axis → correct it (near-parallel included); one of
+    /// each axis → 400's mode II (it is now a real 1V1H system: 「一竖一横」 is 2 rows over 3 unknowns,
+    /// and the answer is the least-deforming point of that set); same axis but no movable residual →
+    /// keep the line and say so.
     public static func pairOutcome(_ lines: [GuideLine],
                                    current: PerspectiveMap,
                                    source: ImageSize,
@@ -774,7 +1256,10 @@ public enum GuideLinesSolve {
                                    tolerance: Double = GuideLinesSolve.toleranceDegrees)
         -> GuideLinePairOutcome {
         guard lines.count == 2 else { return .insufficient }
-        guard lines[0].axis == lines[1].axis else { return .insufficient }
+        if lines[0].axis != lines[1].axis {
+            return mixedAxisOutcome(lines, current: current, source: source,
+                                    straightenDegrees: straightenDegrees, tolerance: tolerance)
+        }
         let fit = fit(lines: lines, current: current, source: source,
                       straightenDegrees: straightenDegrees, tolerance: tolerance)
         if let solution = fit.solution { return .corrected(solution) }
@@ -786,6 +1271,30 @@ public enum GuideLinesSolve {
             return .unsolvable(measured: measured)
         }
         return .rejected(fit.failure ?? .inconsistent, measured: fit.measuredWorstPairwise)
+    }
+
+    /// 400 §2.4 — **一竖一横** is now a real system, and it is the door that used to be closed: 348
+    /// answered `.insufficient` for it (2 rows over 3 unknowns is not a point, so it accepted the
+    /// pair and wrote nothing). The fit now solves it, and:
+    ///
+    ///   · a solution that would move nothing (both axes already true, `|s|` unchanged) is still
+    ///     `.insufficient` — the pair is information and the card keeps saying 「再各画一条」;
+    ///   · a real solution is `.corrected`, which is what lights the feature up;
+    ///   · a refusal (行程不够 / 矛盾) falls back to `.insufficient`: today's silent accept. A pair the
+    ///     solver cannot reach is not the user's error, and 367's rule is 「不要为了让测试变绿去放宽」
+    ///     — but also 「不要为了解不出来就报错」.
+    static func mixedAxisOutcome(_ lines: [GuideLine],
+                                 current: PerspectiveMap,
+                                 source: ImageSize,
+                                 straightenDegrees: Double,
+                                 tolerance: Double) -> GuideLinePairOutcome {
+        let fit = fit(lines: lines, current: current, source: source,
+                      straightenDegrees: straightenDegrees, tolerance: tolerance)
+        guard let solution = fit.solution else { return .insufficient }
+        let writesNothing = abs(solution.vertical - current.vertical) <= toleranceDegrees
+            && abs(solution.horizontal - current.horizontal) <= toleranceDegrees
+            && abs(solution.straighten - straightenDegrees) <= toleranceDegrees
+        return writesNothing ? .insufficient : .corrected(solution)
     }
 
     /// 367 §2.3 — 「2 横 2 竖」 is the only target the card accepts. For three lines there are six

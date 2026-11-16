@@ -386,6 +386,16 @@ public final class WorkspaceRootView: NSView {
     private let browserDivider = WorkspaceDivider()
     private let inspectorDivider = WorkspaceDivider()
     private let inspectorBackdrop = StudioPanelView()
+    /// 402 — 胶片条那一条的底板（与 `inspectorBackdrop` 同款材质）。
+    ///
+    /// 胶片条自己的 `view` 是一个 `drawsBackground = false` 的 `NSScrollView`，`collectionView` 的
+    /// `backgroundColors` 也是 `.clear`：那一块**没有像素**去遮挡画布 overlay 的越界部分（裁切框、
+    /// 引导线画到 `canvasHost` 之外后继续向下画到窗口底部）。层次本来是对的（胶片条在画布之上），
+    /// 缺的是这一层不透明的采样板。放在 `filmstripController.view` 之前、`canvasHost` 之后。
+    ///
+    /// 不用「把 `collectionView.backgroundColors` 设成不透明」：那只盖住 collectionView 的可见矩形，
+    /// 滚动条区与 `sectionInset` 外的留白仍会漏——正是用户看到的「背景上」。
+    let filmstripBackdrop = NSVisualEffectView()
     /// 顶栏那条（含红绿灯所在的标题栏区域）背后的系统材质。见 `HeaderGlassView`。
     public let headerGlass = HeaderGlassView()
     private let bridge = ObservationBridge()
@@ -448,23 +458,31 @@ public final class WorkspaceRootView: NSView {
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
 
+        // 402 — same material as the inspector's plate, for the same reasons (light/dark and inactive
+        // windows follow the system, nothing is hard-coded, and `.behindWindow` samples the window
+        // behind so the plate itself is fully opaque — an overlay cannot draw through it).
+        filmstripBackdrop.material = .underWindowBackground
+        filmstripBackdrop.blendingMode = .behindWindow
+        filmstripBackdrop.state = .followsWindowActiveState
+
         canvasHost.wantsLayer = true
         canvasHost.layer?.backgroundColor = NSColor.black.cgColor
 
-        // 玻璃**最先加**：它必须在最底层（`subviews[0]`），顶栏控件和红绿灯都在它上面。
-        // 红绿灯本身由 AppKit 画在 contentView 之上，所以这里只要保证不在按钮上方盖任何不透明层。
-        //
-        // 394 — **侧栏在画布之上.** `addSubview` 把视图加在最上层，所以这个数组是"从底到上"。
-        // `browserPane.view` 与 `browserDivider` 曾经排在 `canvasHost` 前面，于是画布（连它的
-        // overlay：裁切框、引导线）压在了左侧栏之上——用户看到的就是「裁剪框以及引导线都会浮在
-        // 左侧侧栏上方」。画布里的 overlay 不裁剪（用户：「超出画布边界没问题」），所以唯一的
-        // 修法是层次：把这两个视图挪到 `canvasHost` 之后，让侧栏**遮挡**越界的那部分。
-        //
+        // 402 — **顶栏在画布之上.** 394 只修了左侧栏，顶栏仍排在 `canvasHost` 前面（即之下），
+        // 于是越界的裁切框/引导线（连同 `canvasHost` 自己的黑底）盖住了顶栏与红绿灯。
         // 面板级元素从上到下：通知/进度条 > 顶栏 = 左侧栏 = 右侧检查器 > 胶片条 > 画布及其 overlay。
-        for v: NSView in [headerGlass, topBar, canvasHost,
+        //
+        // `headerGlass` 仍排在 `topBar` 之前（玻璃衬托按钮）；它铺满顶栏那条的整宽，但下沿只到
+        // `topBar.maxY` == `g.canvas.minY`，所以正常路径下不遮画布（见 402 验收 ①）。
+        //
+        // 402 — 胶片条缺的是底板而不是层次：`filmstripBackdrop` 插在 `filmstripController.view`
+        // 之前、`canvasHost` 之后，让那块透明滚动视图底下终于有不透明像素。
+        for v: NSView in [canvasHost,
+                          headerGlass, topBar,
                           browserPane.view, browserDivider,
                           inspectorDivider, inspectorBackdrop, inspectorHost,
-                          filmstripController.view, importProgressBar, forwardCompatNotice] {
+                          filmstripBackdrop, filmstripController.view,
+                          importProgressBar, forwardCompatNotice] {
             addSubview(v)
         }
 
@@ -746,8 +764,16 @@ public final class WorkspaceRootView: NSView {
         if let strip = g.filmstrip {
             filmstripController.view.frame = strip
             filmstripController.view.isHidden = false
+            // 402 — the plate is the strip's own rect, field for field (the test compares them
+            // exactly), so it can never end up as a stale 86 pt band over the canvas.
+            filmstripBackdrop.frame = strip
+            filmstripBackdrop.isHidden = false
         } else {
             filmstripController.view.isHidden = true
+            // ② not a strip → no plate: the whole band would otherwise sit over the canvas' bottom
+            // edge with nothing behind it (the same bug this lane fixes, just inverted).
+            filmstripBackdrop.isHidden = true
+            filmstripBackdrop.frame = .zero
         }
         // The import line floats over the canvas' bottom edge — above the filmstrip, inside the
         // canvas, so it cannot cover a thumbnail it is counting. Fixed height, width capped so a

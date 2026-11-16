@@ -134,7 +134,11 @@ final class CropOverlayAboveBrowser394Tests: XCTestCase {
         for (i, d) in dividerIndices.enumerated() {
             XCTAssertGreaterThan(d, canvas, "④ divider[\(i)] 必须在画布之上才能抓住")
         }
-        XCTAssertEqual(glass, 0, "⑥ headerGlass 必须留在最底（红绿灯要与它一致）")
+        // ⑥ was 「headerGlass 必须留在最底」. 402 reversed that on purpose: the glass sits **above**
+        // the canvas (an overhanging crop frame used to paint over the top bar and the traffic
+        // lights), still below the tool controls. See `CropOverlayAboveChrome402Tests.①`.
+        XCTAssertGreaterThan(glass, canvas,
+                             "⑥ 402：玻璃必须在画布之上，否则越界 overlay 会盖住红绿灯")
     }
 
     // MARK: - ② the crop frame overhangs the canvas and the panel covers it

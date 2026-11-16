@@ -151,14 +151,20 @@ final class NativeTrafficLightsTests: XCTestCase {
             print("\n=== \(Int(size.width))×\(Int(size.height)) ===")
             print("top bar band (root, flipped) \(NSStringFromRect(band))")
 
-            // ① 材质：.headerView / .behindWindow / followsWindowActiveState，且在最底层。
+            // ① 材质：.headerView / .behindWindow / followsWindowActiveState，且压在画布之上、顶栏之下。
             guard let glass = headerGlass(in: root) else {
                 let inventory = root.subviews.map { "\(type(of: $0)) \(NSStringFromRect($0.frame))" }
                 return XCTFail("顶栏没有 .headerView 材质：\(inventory)")
             }
             XCTAssertTrue(glass.isOpaque, "The studio header has an opaque neutral surround")
             XCTAssertNil(glass.hitTest(.zero), "Header must preserve native traffic-light hit testing")
-            XCTAssertTrue(root.subviews.first === glass, "玻璃不是最底层子视图")
+            // 402 — 玻璃**不再是最底层**：它必须排在 `canvasHost` 之后（画布 overlay 的越界部分
+            // 以前连着画布的黑底一起盖住了顶栏与红绿灯），但仍排在 `topBar` 之前（它是按钮的衬托）。
+            let glassIndex = root.subviews.firstIndex { $0 === glass } ?? -1
+            let canvasIndex = root.subviews.firstIndex { $0 === root.loupeController.view.superview } ?? -1
+            let barIndex = root.subviews.firstIndex { $0 === root.topBar } ?? -1
+            XCTAssertGreaterThan(glassIndex, canvasIndex, "玻璃在画布之下：越界 overlay 会盖住红绿灯")
+            XCTAssertLessThan(glassIndex, barIndex, "玻璃必须仍在顶栏控件之下")
             XCTAssertEqual(glass.frame.minX, band.minX, accuracy: 0.001)
             XCTAssertEqual(glass.frame.minY, band.minY, accuracy: 0.001)
             XCTAssertEqual(glass.frame.width, band.width, accuracy: 0.001)
@@ -256,8 +262,16 @@ final class NativeTrafficLightsTests: XCTestCase {
             // 顶栏空白处：命中必须落在 AppKit 的窗体（titlebar / theme frame）上，不是我们的视图，
             // 否则窗口既拖不动、点下去也没人接。拖动契约仍是「只有顶栏那条能拖」。
             XCTAssertFalse(window.isMovableByWindowBackground)
-            for local in [NSPoint(x: 700, y: 8), NSPoint(x: root.bounds.width - 40, y: 8),
-                          NSPoint(x: root.bounds.width / 2, y: 6)] {
+            // The task queue button can occupy the old centre probe in compact windows.
+            // Its click is checked above; only genuinely blank probes must reach the title bar.
+            let blankProbes = [NSPoint(x: 700, y: 8), NSPoint(x: root.bounds.width - 40, y: 8),
+                               NSPoint(x: root.bounds.width / 2, y: 6)].filter { local in
+                !root.topBar.subviews.contains { control in
+                    !control.isHidden && control.convert(control.bounds, to: root).contains(local)
+                }
+            }
+            XCTAssertGreaterThanOrEqual(blankProbes.count, 2, "Keep two independent title-bar drag probes")
+            for local in blankProbes {
                 let point = root.convert(local, to: themeFrame)
                 let hit = themeFrame.hitTest(point)
                 print("blank @\(NSStringFromPoint(local)) → \(hit.map { "\(type(of: $0))" } ?? "nil")"

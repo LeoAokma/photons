@@ -371,7 +371,8 @@ final class GuideLineTolerance367Tests: XCTestCase {
         }
     }
 
-    /// 80 px apart (0.84 %): the travel needed is beyond ±400, and the card must blame the gap.
+    /// 80 px apart (0.84 %): the travel needed is beyond ±`PerspectiveMap.limit`, and the card must
+    /// blame the gap.
     func testVeryClosePairBlamesTheGapNotTheTravel() throws {
         let lines = splayedPair(x1: 3000, x2: 3080, delta: 0.5)
         let (_, tool) = try makeTool()
@@ -388,14 +389,24 @@ final class GuideLineTolerance367Tests: XCTestCase {
     /// A **wide** pair whose correction lands on the slider's end is an endpoint answer, not a
     /// solution: `fit` rejects it as `.outOfRange`, and the message still blames the travel because
     /// 31 % spacing is not 「挨太近」.
+    ///
+    /// The travel is ±`PerspectiveMap.limit`, not a number written here: at this spacing the pair asks
+    /// for a `v` that grows with `delta`, and `delta = 44` puts it past the end, so the iteration is
+    /// clamped onto the boundary and the endpoint check refuses it. Measured on the way here:
+    /// `delta = 40` needs −475.98 (inside the travel) and solves to a 1.2e−05° residual, i.e. a real
+    /// solution; the last solved step is 42.84 (−499.43) and 42.85 is the first refusal. `delta` stays
+    /// a concrete number on purpose — the endpoint hit is guaranteed by the fixture, not by reading
+    /// the product constant back.
     func testAPairPinnedAtTheTravelEndIsNotASolution() throws {
-        let lines = splayedPair(x1: 3000, x2: 6000, delta: 40)
+        let delta = 44.0
+        let lines = splayedPair(x1: 3000, x2: 6000, delta: delta)
         let fit = GuideLinesSolve.fit(lines: lines, current: PerspectiveMap(vertical: 0, horizontal: 0),
                                       source: source, straightenDegrees: 0)
-        print("367 ⑤端点 40° @31%: v "
+        print("367 ⑤端点 \(delta)° @31%: v "
               + (fit.solution.map { String(format: "%+.4f", $0.vertical) } ?? "nil")
               + " · 残差 " + (fit.solution.map { String(format: "%.6f", $0.worstResidual) } ?? "nil")
-              + " · 失败 " + String(describing: fit.failure))
+              + " · 失败 " + String(describing: fit.failure)
+              + " · 量的角度 " + (fit.measuredWorstPairwise.map { String(format: "%.4f", $0) } ?? "nil"))
         XCTAssertNil(fit.solution, "367 ⑤ 钉在量程端点的不是解")
         XCTAssertEqual(fit.failure, .outOfRange)
 
