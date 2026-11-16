@@ -1137,10 +1137,6 @@ public struct ExportSheetView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Picker(L10n.tr("1e5b3b2d1762"), selection: Binding(get:{model.hdrEnabled || model.usesLinearDNG},set:{ value in
-                model.selectOutputTab(hdr:value)
-            })) { Text("HDR").tag(true);Text("SDR").tag(false) }
-                .pickerStyle(.segmented).padding(.bottom,14).disabled(model.phase == .running)
             form
             if !model.rows.isEmpty {
                 results
@@ -1329,7 +1325,16 @@ public struct ExportSheetView: View {
             value: { EmptyView() },
             unit: { EmptyView() },
             accessory: {
-                EmptyView()
+                Toggle(isOn: hdrEnabledBinding) {
+                    Text("HDR")
+                        .font(.system(size: ExportRowGrid.Font.label, weight: .medium))
+                        .foregroundStyle(model.availableHDRKinds.isEmpty
+                                         ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+                }
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .disabled(model.phase == .running || model.availableHDRKinds.isEmpty)
+                .help("HDR 输出；曲线与增益图在「HDR 与色调映射」里选")
             })
             .background(ExportLayoutProbeHost(kind: .hdrRow))
     }
