@@ -321,7 +321,22 @@ public enum StageAlgorithmVersion {
     /// number; `dehaze < 0` (the haze-adding branch, which never reads the recovery) and `dehaze == 0`
     /// (no stage) are **bit-identical** to 10 — the four negative `E = 0` hashes in
     /// `DehazeExposureTests` are unchanged, and only the three positive ones moved.
-    public static let dehaze = 11
+    ///
+    /// **12** — 417: the fog participation is the **dark channel**, not the luminance. 374's band
+    /// (`[0.75·A, 1.33·A]` in log luminance) assumed "brighter ⇒ more likely a highlight to protect";
+    /// on a uniform-fog frame the brightest pixels *are* the fog, so the fog sat at `w ≈ 0.003` and
+    /// was left alone while the darker objects under it took the full `1/t` recovery. `w` is now
+    /// `smoothstep(0.55, 0.75, min_c(I)/A)` — a pixel whose three channels all sit near the airlight
+    /// is fog (`L1030600`: p50 1.20) and a specular highlight has at least one dark channel (0.39) —
+    /// and `t0` goes 0.1 → 0.05. Measured on `L1030600` at `dehaze = 100`: the mid band 0.30–0.50 goes
+    /// −34.68 % → **0.00 %** (it was being crushed, which is the "发灰发脏" complaint) and the fog band
+    /// 0.70–0.85 goes −7.34 % → **−16.43 %**, while the dark band stays 0.00 % and 280's ceiling on
+    /// `L1030433` is untouched (`L > A` still never lifted — the per-pixel ceiling above 1.0 that the
+    /// task proposed was measured and rejected: it lifts 102 425 pixels on `L1030433` and makes the fog
+    /// band *worse*, −12.57 %). Every document with `effects.dehaze > 0` renders different pixels for
+    /// the same stored number; `dehaze < 0` (the haze-adding branch) and `dehaze == 0` (no stage) are
+    /// **bit-identical** to 11.
+    public static let dehaze = 12
     /// **2** — 249: 修复搬到 S1 源像素（透视/旋转/裁切之前），spot 坐标从帧空间改为源空间。
     /// 同样的 spot 数字覆盖不同的像素（旋转/裁切不再带动它），旧文档按 `canvasV1` 迁移，所以这一代
     /// 的像素与 1 不同。

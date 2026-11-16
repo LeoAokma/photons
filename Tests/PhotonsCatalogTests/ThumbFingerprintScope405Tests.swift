@@ -108,9 +108,15 @@ final class ThumbFingerprintScope405Tests: XCTestCase {
                        "3befa1a35dadd9b05a423700118231aef22978f0c842f1b7a7b8bfca38e76c78")
     }
 
+    /// ③ today's key of a document that **runs** dehaze. 417 re-recorded it: `dehaze` moved 11 → 12
+    /// (the verdict 「天空先压暗试试看」 changes the pixels of every `dehaze > 0` document), and
+    /// `ThumbRecipe.editFingerprint` spells a *used* stage's live version — so this key must move, while
+    /// ① and ② (documents that do not run S1.9, which read `ThumbFingerprintBaseline`) stay byte-identical.
+    /// The baseline table itself is untouched: its `.dehaze: 11` entry is the neutral placeholder for
+    /// non-dehaze documents and never follows a bump.
     func testADehazeOnlyEditChangesTheFingerprint() {
         XCTAssertEqual(ThumbRecipe.editFingerprint(dehazed),
-                       "33a5a19a38bf869be07b0762874ebdb78abff5045cba6ca223e03c8af36582f5")
+                       "0d7c9794b1ec56d05c6d0401a086eda8905cdfd1b8e58f1626afa4e1ed6dc271")
         // …and it is genuinely a different key from neutral, i.e. ① is not passing by accident.
         XCTAssertNotEqual(ThumbRecipe.editFingerprint(dehazed),
                           ThumbRecipe.editFingerprint(.neutral))
@@ -120,7 +126,7 @@ final class ThumbFingerprintScope405Tests: XCTestCase {
 
     func testABumpOfAStageTheDocumentDoesNotRunDoesNotChangeItsFingerprint() {
         let bumpedDehaze = { (s: RenderStage) -> Int in
-            s == .dehaze ? 12 : StageAlgorithmVersion.version(of: s)
+            s == .dehaze ? StageAlgorithmVersion.dehaze + 1 : StageAlgorithmVersion.version(of: s)
         }
         // Neutral and cropped/rotated do **not** run S1.9, so the dehaze bump must not reach them.
         XCTAssertEqual(ThumbRecipe.editFingerprint(.neutral, versions: bumpedDehaze),

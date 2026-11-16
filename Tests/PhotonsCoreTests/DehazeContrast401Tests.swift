@@ -106,15 +106,21 @@ final class DehazeContrast401Tests: XCTestCase {
     }
 
     /// One render of the fixture: the neutral luma per column, the `dehaze` luma per amount, the
-    /// airlight the apply pass uses, and the `t` inverted out of the legacy (unbounded) recovery.
+    /// airlight the apply pass uses, and the `t` inverted out of the legacy (unbounded) recovery —
+    /// **per column**, so a closed form can be evaluated with the exact sample it is asserted against.
     private struct Fixture {
         var ins: [Double]
         var outs: [Double: [Double]]
+        var ts: [Double]
         var A: Double
         var airlightRaw: Double
-        var tMin: Double
-        var tMed: Double
-        var tAt09: Double
+
+        var finiteT: [Double] { ts.filter { $0.isFinite } }
+        var tMin: Double { finiteT.min() ?? .nan }
+        var tMed: Double {
+            let v = finiteT.sorted()
+            return v.isEmpty ? .nan : v[v.count / 2]
+        }
 
         func column(_ target: Double) -> Int {
             (0..<ins.count).min(by: { abs(ins[$0] - target) < abs(ins[$1] - target) })!
@@ -123,6 +129,12 @@ final class DehazeContrast401Tests: XCTestCase {
         func gain(_ amount: Double, _ target: Double) -> Double {
             let k = column(target)
             return outs[amount]![k] / max(ins[k], 1e-9)
+        }
+
+        /// The sample's own input luma and the transmission inverted from the unbounded render.
+        func sample(_ target: Double) -> (L: Double, t: Double) {
+            let k = column(target)
+            return (ins[k], ts[k])
         }
     }
 
@@ -151,19 +163,13 @@ final class DehazeContrast401Tests: XCTestCase {
         var full = EditModel.neutral
         full.effects.dehaze = 100
         let unb = try linearRender(graph, full, unbounded: true)
-        var ts: [Double] = []
-        var tAt09 = Double.nan
+        var ts = [Double](repeating: .nan, count: Self.levels)
         for k in 0..<Self.levels {
             let L = ins[k], J = luma(unb, k, y)
             guard L < 0.99 * A, abs(J - A) > 1e-4, abs(L - A) > 1e-4 else { continue }
-            let t = (L - A) / (J - A)
-            ts.append(t)
-            if abs(L - 0.9) < 0.01 { tAt09 = t }
+            ts[k] = (L - A) / (J - A)
         }
-        ts.sort()
-        return Fixture(ins: ins, outs: outs, A: A, airlightRaw: airlightRaw,
-                       tMin: ts.first ?? .nan, tMed: ts.isEmpty ? .nan : ts[ts.count / 2],
-                       tAt09: tAt09)
+        return Fixture(ins: ins, outs: outs, ts: ts, A: A, airlightRaw: airlightRaw)
     }
 
     private func columnRange(_ f: Fixture, _ lo: Double, _ hi: Double) -> [Int] {
@@ -177,7 +183,7 @@ final class DehazeContrast401Tests: XCTestCase {
     func testTheFixtureIsTheOneTheSymptomNeeds() throws {
         let f = try measure()
         print(String(format: "401-FIXTURE · A_raw %.4f · A_used %.4f · ramp [%.2f, %.2f] · t min %.4f / med %.4f / @0.9 %.4f",
-                     f.airlightRaw, f.A, Self.rampLo, Self.rampHi, f.tMin, f.tMed, f.tAt09))
+                     f.airlightRaw, f.A, Self.rampLo, Self.rampHi, f.tMin, f.tMed, f.sample(0.9).t))
         XCTAssertEqual(f.A, 0.95, accuracy: 0.02,
                        String(format: "fixture 的 A 必须在 0.95 ± 0.02（实测 %.4f）", f.A))
         XCTAssertLessThanOrEqual(f.tMed, 0.45,
@@ -228,27 +234,41 @@ final class DehazeContrast401Tests: XCTestCase {
 
     // MARK: - 2. the user's two sample points
 
-    /// `A = 0.95` 上 `L = 0.9` 与 `L = 1.4` 的 gain。
+    /// `gain(0.9)` at `A ≈ 0.95` and `gain(1.4)`, the user's two sample points.
     ///
-    /// 规格 §3 的判据 2（两者比值 ≤ 2.0）在本 fixture 上**测不出东西**：今天就是 `1.0000/0.9605 =
-    /// 1.0411`（§8.5），改后也一样。按 §8.4 把它换成一个**更强的回归钉**：401 的封顶**不许咬到
-    /// `L = 0.9`**（§7.2 的警告 —— 封顶的作用面是 `L ≲ 0.8`），所以 `gain(0.9)` 必须与 401 前的
-    /// 数值逐档一致，而 `gain(1.4)` 必须仍是 `1.0000`（280/374 的契约）。真正能红的是 ③a / ③b。
-    func testNineAndFourteenKeepTheirRatio() throws {
+    /// **417 replaced the 401 pin.** 401 said "the floor must not bite at `L = 0.9`", because the
+    /// defect it fixed was the *depth* (`gain(0.5·A)` 0.2406 → 0.4000). Under 417's verdict
+    /// (「天空先压暗试试看」) `L = 0.9` sits 3.5 % **below** `A = 0.949` — it is fog, or something seen
+    /// through fog — so it is *supposed* to darken. The assertion is now the model's closed form
+    ///
+    ///     gain(0.9) = 1 + α·(clamp((0.9 − A(1 − t))/(t·0.9), kDehazeGainFloor, 1.0) − 1)
+    ///
+    /// with `t` the transmission the stage itself used at that sample (inverted out of the
+    /// `legacyDehazeUnboundedRecovery` render) and `α = amount/100` the final `mix`. Tolerance
+    /// `±0.02`: the sample is one column of a 0.006-wide ramp, so the band's `t` distribution is in
+    /// the number (`±0.014` measured).
+    ///
+    /// `gain(1.4) ≡ 1.0000` is unchanged: `L > A` is never lifted (280 / 117), and 401's ceiling of
+    /// `1.0` is a hard boundary of this task.
+    func testNineAndFourteenFollowTheModelAndTheCeiling() throws {
         let f = try measure()
-        // Measured on this exact fixture before 401 (`dehaze = 20/50/100`).
-        let before: [Double: Double] = [20: 0.9919, 50: 0.9800, 100: 0.9605]
+        let floor = Self.gainFloor
         for amount in [20.0, 50.0, 100.0] {
+            let alpha = amount / 100.0
             let g09 = f.gain(amount, 0.9)
+            let t = f.sample(0.9).t
+            XCTAssertTrue(t.isFinite, "0.9 那一列必须有反演出的 t（实测 \(t)）")
+            let model = max(min((0.9 - f.A * (1 - t)) / (t * 0.9), 1.0), floor)
+            let expected = 1 + alpha * (model - 1)
             let g14 = f.gain(amount, 1.4)
-            print(String(format: "401-NINE-14 · amount %3d · gain(0.9) %.4f（401 前 %.4f）· gain(1.4) %.4f · 比值(1.4/0.9) %.4f",
-                         Int(amount), g09, before[amount]!, g14, g14 / max(g09, 1e-9)))
+            print(String(format: "401-NINE-14 · amount %3d · gain(0.9) %.4f（闭式 %.4f，t %.4f）· gain(1.4) %.4f · 比值(1.4/0.9) %.4f",
+                         Int(amount), g09, expected, t, g14, g14 / max(g09, 1e-9)))
             XCTAssertEqual(g14, 1.0, accuracy: 1e-3,
                            String(format: "dehaze %d：L = 1.4 的高光不许被抬亮（280 契约，实测 %.4f）",
                                   Int(amount), g14))
-            XCTAssertEqual(g09, try XCTUnwrap(before[amount]), accuracy: 5e-3,
-                           String(format: "dehaze %d：封顶不许咬到 L = 0.9（401 前 %.4f，实测 %.4f）",
-                                  Int(amount), before[amount]!, g09))
+            XCTAssertEqual(g09, expected, accuracy: 0.02,
+                           String(format: "dehaze %d：gain(0.9) 必须走模型的闭式 %.4f（t %.4f，实测 %.4f）",
+                                  Int(amount), expected, t, g09))
         }
     }
 
@@ -323,15 +343,30 @@ final class DehazeContrast401Tests: XCTestCase {
 
     // MARK: - 6. no step
 
-    /// No cliff: `max |d(gain)/dL|` is bounded by `4·sMax/A`, where `sMax = 1/gLo − 1 = 1.5` is the
-    /// largest darkening the cap allows and `A/4` is the narrowest span it may spend it over. This is
-    /// a **contract pin** and not a gate: the steepest rise on this fixture is `w`'s own shoulder at
-    /// `L ≈ 0.84·A` (`≈ 4.5`), which 374 already smoothed and 401 does not touch — the pre-401 curve
-    /// passes this line too. What 401 removes is the *plateau drop* above `A` (criterion 1).
+    /// No cliff, and the bound is the **model's own slope**, not 374's shoulder.
+    ///
+    /// 401 wrote `4·sMax/A` (`sMax = 1/gLo − 1 = 1.5`) as "the narrowest span the cap may spend its
+    /// depth over". That span was an artefact of 374's shoulder, not a physical limit, and with
+    /// `L ≤ A` fully participating there is no shoulder left to multiply the slope down. The
+    /// transmission floor's own slope is the bound:
+    ///
+    ///     t = t0 ⇒ gModel(L) = (L − A(1 − t0))/(t0·L)
+    ///     ⇒ d(gModel)/dL = A(1 − t0)/(t0·L²)
+    ///     ⇒ over the interval where `gModel` climbs from `gLo` to `1`,
+    ///        ΔL = A·t0(1 − gLo)/(1 − gLo·t0)   ⇒   sup |Δgain/ΔL| = (1 − gLo·t0)/(t0·A)
+    ///
+    /// evaluated with the **shipped** `t0` (`RenderGraph.dehazeTransmissionFloor`) and 401's floor
+    /// (`kDehazeGainFloor = 0.4`). At `t0 = 0.05` that is `19.6/A`; 401's limit was `6/A`, i.e. 69 %
+    /// too strict. The measured steepest rise on this fixture is the capped leg's own (9.31 at
+    /// `A = 0.95`, i.e. `8.85/A`, under the `19.6/A` bound and over the old one — which is exactly the
+    /// cost of full participation; see the report's two-`t0` table).
     func testTheGainHasNoStep() throws {
         let f = try measure()
+        let t0 = RenderGraph.dehazeTransmissionFloor
         let sMax = 1 / Self.gainFloor - 1
-        let limit = 4 * sMax / f.A
+        let limit = (1 - Self.gainFloor * t0) / (t0 * f.A)
+        print(String(format: "401-STEP · 闭式上限 (1 − %.1f·%.2f)/(%.2f·%.4f) = %.4f/A · 旧 4·sMax/A = %.4f/A（t0 实际传参 %.2f）",
+                     Self.gainFloor, t0, t0, f.A, limit, 4 * sMax / f.A, t0))
         for amount in [20.0, 50.0, 100.0] {
             var worst = 0.0
             var worstAt = 0.0
@@ -344,10 +379,10 @@ final class DehazeContrast401Tests: XCTestCase {
                     / max(f.ins[k] - f.ins[k - 1], 1e-9)
                 if abs(d) > worst { worst = abs(d); worstAt = Lm }
             }
-            print(String(format: "401-STEP · amount %3d · max |d gain/dL| %.4f @ L %.3f（上限 4·sMax/A = %.4f）",
+            print(String(format: "401-STEP · amount %3d · max |d gain/dL| %.4f @ L %.3f（闭式上限 %.4f）",
                          Int(amount), worst, worstAt, limit))
             XCTAssertLessThanOrEqual(worst, limit,
-                                     String(format: "dehaze %d：gain 的斜率 %.4f 超过 4·sMax/A = %.4f（L = %.3f）",
+                                     String(format: "dehaze %d：gain 的斜率 %.4f 超过闭式上限 %.4f（L = %.3f）",
                                             Int(amount), worst, limit, worstAt))
         }
     }
