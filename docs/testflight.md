@@ -8,9 +8,10 @@
 
 - 本机已安装 Xcode 27.2，Apple Developer Program 已激活，应用及安装包分发证书已创建且通过本机信任校验。显式 App ID `com.leoaokma.photons`、App Store Connect 应用记录及 Mac App Store provisioning profile 均已创建，证书／描述文件匹配检查通过。
 - 应用首次启动默认英语，设置中的默认选项保持一致；用户保存的中文选择会保留。App Store Connect 的主要语言为 English (U.S.)。
-- `0.3.0 (5)` 已包含功能分支 `86d58dc` 的更新；release 主程序与 helper 编译成功，10 项签名门禁测试和沙盒诊断通过。沙盒诊断覆盖授权目录、GPU、降噪、HDR 及全景任务回导。正式签名 `.pkg` 和 Xcode archive 导出已通过本机检查；尚未完成 Apple 上传验证。
+- `0.3.0 (5)` 已包含功能分支 `86d58dc` 的更新，以及英语默认语言修正；上传包的源码标记为 `17dc9cd`。release 主程序与 helper 编译成功，10 项签名门禁测试和沙盒诊断通过。沙盒诊断覆盖书签往返、GPU、降噪、HDR 及全景任务回导；真实外部目录的首次授权仍需交互验证。
+- 2026-11-16 已通过 Xcode 使用登录账号上传，Apple 返回 **Upload succeeded**。App Store Connect 应用记录为 `6835570029`；服务器处理和 Beta App Review 是后续独立状态，上传成功不代表已允许外部测试。
 - `prepare` 生成的是**本机临时签名的沙盒测试应用**，不会上传，也不是可交给 TestFlight 的正式分发包。
-- `package` 只有在证书、私钥、Team、显式 App ID、描述文件及有效期检查通过后才创建签名 `.pkg`。Apple 服务器最终验证仍需在账号开通后实际运行，不能用本地签名校验代替。
+- `package` 只有在证书、私钥、Team、显式 App ID、描述文件及有效期检查通过后才创建签名 `.pkg`。本轮 Apple 上传验证已通过；后续构建仍需实际运行服务器验证，不能用本地签名校验代替。
 - 首轮构建只支持 Apple Silicon / macOS 14+。Intel 版本尚未编译和测试。
 - 本轮 beta 不启用订阅限制或应用内邀请码。使用 TestFlight 邮箱定向邀请，不启用公开链接；构建自身的有效期是 90 天。
 
@@ -52,7 +53,9 @@ App Store 分发时，Xcode 和 Apple 还会重新签名二进制。此版本把
 
 ## 上传与邀请
 
-可以用 Transporter 登录并上传，也可以使用 App Store Connect API key：
+本轮使用已登录的 Xcode 完成上传，没有创建 App Store Connect API key。对应 `.xcarchive`、导出选项和符号保存在本机 `.build/testflight/`。`xcodebuild -exportArchive` 使用 `method=app-store-connect`、`destination=upload`、显式描述文件和手动分发签名；关闭自动修改 build number，保留符号上传。不要把包含个人签名配置的选项文件提交到仓库。
+
+也可以用 Transporter 登录并上传脚本生成的 `.pkg`，或使用 App Store Connect API key：
 
 ```sh
 # 私钥保存在 ~/.appstoreconnect/private_keys/AuthKey_KEYID.p8，不能放进仓库。
