@@ -25,6 +25,7 @@ public struct PanoramaManifest: Codable {
     public var profileName: String?
     public var profileOffsetMM: CGPoint?
     public var bodyOrientation: PanoramaBodyOrientation
+    public var cameraBody: PanoramaCameraBody? = nil
     public var correctionApplied: Bool
     public var correctionMethod: String?
     public var options: PanoramaOptions
@@ -39,7 +40,7 @@ public struct PanoramaManifest: Codable {
 
     public init(plan: PanoramaPlan, profileID: UUID? = nil, profileName: String? = nil,
                 offsetMM: CGPoint? = nil, sensor: SensorSize? = nil,
-                bodyOrientation: PanoramaBodyOrientation = .degrees0) {
+                bodyOrientation: PanoramaBodyOrientation = .degrees0, cameraBody: PanoramaCameraBody? = nil) {
         canvas=plan.size
         version=plan.warps == nil ? 1:2
         projection=plan.warps == nil ? "translation":"projective"
@@ -51,6 +52,7 @@ public struct PanoramaManifest: Codable {
         self.profileName=plan.lccState?.profileName ?? profileName
         self.profileOffsetMM=plan.lccState?.offsetMM ?? offsetMM
         self.bodyOrientation=plan.lccState?.bodyOrientation ?? bodyOrientation
+        self.cameraBody=plan.lccState?.cameraBody ?? cameraBody
         correctionApplied=plan.lccState != nil
         correctionMethod=correctionApplied ? "profile-before-blending" : nil
         options=plan.options

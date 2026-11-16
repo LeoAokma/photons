@@ -19,17 +19,17 @@ public enum LCCCorrectionEngine {
         for orientation in profile.orientations {fields[orientation]=try LCCCorrectionField(profile:profile,orientation:orientation,cancellation:cancellation)}
         return fields
     }
-    public static func single(scene:PanoramaSource,profile:LCCLensProfile,position:CGPoint,refine:Bool,
+    public static func single(scene:PanoramaSource,profile:LCCLensProfile,position:CGPoint? = nil,refine:Bool,
                               body:PanoramaCameraBody = .alpa12Max,orientation:PanoramaBodyOrientation = .degrees0,
                               cancellation:PanoramaCancellation = .init(),progress:PanoramaEngine.Progress = {_ in}) throws->(plan:PanoramaPlan,position:CGPoint) {
         guard let sensor=scene.sensor else {throw PanoramaFailure(L10n.tr("2b2e356aa95e"))}
-        guard position.x.isFinite,position.y.isFinite else {throw PanoramaFailure(L10n.tr("9d273dbe67b9"))}
+        guard position.map({$0.x.isFinite && $0.y.isFinite}) ?? true else {throw PanoramaFailure(L10n.tr("9d273dbe67b9"))}
         let engine=PanoramaEngine(),fields=try fields(profile,cancellation:cancellation)
         let plan=try engine.prepareLCCImages(engine.singlePhoto(scene,cancellation:cancellation),cancellation:cancellation,progress:progress)
-        var offset=CGPoint(x:-position.x,y:-position.y)
-        if refine {
+        var offset=position.map {CGPoint(x:-$0.x,y:-$0.y)} ?? .zero
+        if refine || position == nil {
             offset=try LCCPositionSolver.solve(plan:plan,fields:fields,sensor:sensor,cameraBody:body,bodyOrientation:orientation,
-                allowPairedFlats:false,approximateOffset:offset,searchRadius:3,cancellation:cancellation,progress:progress).offsetMM
+                approximateOffset:position == nil ? nil:offset,searchRadius:3,cancellation:cancellation,progress:progress).offsetMM
         }
         let corrected=try engine.applyingLCC(plan,profile:profile,fields:fields,offsetMM:offset,sensor:sensor,crop:false,
             cancellation:cancellation,rebuildSeams:false,protectHighlights:false,whiteBalanceOverride:plan.whiteBalance,cameraBody:body,bodyOrientation:orientation)
@@ -39,7 +39,7 @@ public enum LCCCorrectionEngine {
     /// fields, never misinterpret a CFA map as an RGB map. Recorded blend weights handle mixed
     /// orientations; normalized canvas/crop coordinates survive output resizing.
     public static func postProcess(scene:PanoramaSource,manifest original:PanoramaManifest,profile:LCCLensProfile,
-                                   offset:CGPoint? = nil,cancellation:PanoramaCancellation = .init(),
+                                   offset:CGPoint? = nil,cameraBody:PanoramaCameraBody = .alpa12Max,cancellation:PanoramaCancellation = .init(),
                                    progress:PanoramaEngine.Progress = {_ in}) throws->(plan:PanoramaPlan,manifest:PanoramaManifest) {
         try original.validate()
         guard original.geometryUnrecoverable != true else {throw PanoramaFailure(L10n.tr("fc7ac1c0b0ab"))}
@@ -54,17 +54,13 @@ public enum LCCCorrectionEngine {
         var plan=try engine.singlePhoto(scene,cancellation:cancellation)
         let w=512,h=max(2,Int(512*scene.size.height/scene.size.width))
         guard h<=2048 else {throw PanoramaFailure(L10n.tr("759292c5a6ab"))}
-        let chosenOffset=offset ?? original.profileOffsetMM
-        guard chosenOffset != nil || original.frames.allSatisfy({$0.shiftMM != nil}) else {
-            throw PanoramaFailure(L10n.tr("0fb1925587ba"))
+        let chosenOffset=try offset ?? resolvePostProcessPosition(scene:scene,manifest:original,profile:profile,
+            cameraBody:cameraBody,cancellation:cancellation,progress:progress).offsetMM
+        guard chosenOffset.x.isFinite,chosenOffset.y.isFinite else {throw PanoramaFailure(L10n.tr("9d273dbe67b9"))}
+        let calibrations=try original.frames.map {frame -> LCCOrientedField in
+            try postProcessField(frame:frame,profile:rendered,fields:fields,body:original.cameraBody ?? cameraBody,orientation:original.bodyOrientation)
         }
-        let calibrations=try original.frames.map {frame -> LCCCorrectionField in
-            guard LCCProfileSummary.cameraKey(frame.camera)==LCCProfileSummary.cameraKey(profile.camera),
-                  let orientation=LCCCaptureOrientation(rawValue:frame.orientation),
-                  let field=fields[orientation.relative(to:original.bodyOrientation)] else {throw PanoramaFailure(L10n.tr("f397a44809b0"))}
-            return field
-        }
-        var values=[Float](repeating:1,count:w*h*4),uncovered=0
+        var values=[Float](repeating:1,count:w*h*4),uncovered=0,contributingPixels=0
         for y in 0..<h {
             try cancellation.check();if y%32==0 {progress(L10n.tr("f8cd32a1d0e0" , String(describing: (y)), String(describing: (h))))}
             for x in 0..<w {
@@ -72,42 +68,42 @@ public enum LCCCorrectionEngine {
                 guard point.x.isFinite,point.y.isFinite,(0...1).contains(point.x),(0...1).contains(point.y) else {continue}
                 let mx=min(original.maskWidth-1,max(0,Int(point.x*Double(original.maskWidth))))
                 let my=min(original.maskHeight-1,max(0,Int(point.y*Double(original.maskHeight))))
-                var sum=SIMD3<Double>.zero,total=0.0,missing=false
+                var sum=SIMD3<Double>.zero,total=0.0,sourceWeight=0.0,missing=false
                 for (i,frame) in original.frames.enumerated() {
                     let weight=Double(original.weights[i][my*original.maskWidth+mx])/255
                     guard weight>0.001 else {continue}
+                    sourceWeight += weight
                     guard let sensor=frame.sensor else {throw PanoramaFailure(L10n.tr("e184fba3ced0"))}
                     let rect=frame.sensorRect ?? frame.rect
                     let local=frame.imageToCanvas?.inverse?.point(point) ?? CGPoint(x:(point.x-rect.minX)/rect.width,y:(point.y-rect.minY)/rect.height)
                     let unwarped=CGPoint(x:rect.minX+local.x*rect.width,y:rect.minY+local.y*rect.height)
                     let physical:CGPoint
-                    if let chosenOffset {
-                        physical=CGPoint(x:(unwarped.x-0.5)*sensor.width/rect.width-chosenOffset.x,
-                                         y:(0.5-unwarped.y)*sensor.height/rect.height-chosenOffset.y)
-                    } else {
-                        let shift=frame.shiftMM!
-                        physical=CGPoint(x:shift.x+(local.x-0.5)*sensor.width,
-                                         y:shift.y+(0.5-local.y)*sensor.height)
-                    }
-                    if let g=calibrations[i].gain(at:original.bodyOrientation.inverse.rotate(physical)) {sum += g*weight;total += weight}
+                    physical=CGPoint(x:(unwarped.x-0.5)*sensor.width/rect.width-chosenOffset.x,
+                                     y:(0.5-unwarped.y)*sensor.height/rect.height-chosenOffset.y)
+                    if let g=calibrations[i].gain(at:physical) {sum += g*weight;total += weight}
                     else {missing=true}
                 }
+                // Warped panoramas have empty canvas corners. Those pixels do not need a lens
+                // calibration, and must not count as missing measured profile coverage.
+                guard sourceWeight>0.001 else {continue}
+                contributingPixels += 1
                 if total>0 && !missing {
                     let gain=sum/total,o=(y*w+x)*4
                     values[o]=Float(gain.x);values[o+1]=Float(gain.y);values[o+2]=Float(gain.z)
                 } else {uncovered += 1}
             }
         }
-        guard Double(uncovered)<Double(w*h)*0.01 else {throw PanoramaFailure(L10n.tr("511abfcff05c"))}
+        guard contributingPixels>0,Double(uncovered)<Double(contributingPixels)*0.01 else {throw PanoramaFailure(L10n.tr("511abfcff05c"))}
         let image=CIImage(bitmapData:values.withUnsafeBytes {Data($0)},bytesPerRow:w*16,size:CGSize(width:w,height:h),format:.RGBAf,colorSpace:PanoramaEngine.linearSpace)
             .transformed(by:CGAffineTransform(scaleX:scene.size.width/Double(w),y:scene.size.height/Double(h)))
         let sensor=original.frames.first!.sensor!
-        plan.lccState=PanoramaLCCState(profileID:profile.id,profileName:profile.name,offsetMM:chosenOffset ?? .zero,
+        plan.lccState=PanoramaLCCState(profileID:profile.id,profileName:profile.name,offsetMM:chosenOffset,
             gainImages:[image],usesFixedDecode:[true],complete:true,coveredFraction:1,suggestedCropRect:nil,cropRect:nil,footprintRects:[],sensor:sensor,
             exposureEV:0,protectHighlights:false)
         plan.previewImages=[engine.applyGain(plan.previewImages[0],gain:image,scale:plan.previewScale)]
         engine.renderPreview(&plan)
         var manifest=original;manifest.profileID=profile.id;manifest.profileName=profile.name
+        manifest.cameraBody=original.cameraBody ?? cameraBody
         manifest.profileOffsetMM=chosenOffset;manifest.correctionApplied=true;manifest.correctionMethod="rendered-rgb-post-correction"
         return (plan,manifest)
     }

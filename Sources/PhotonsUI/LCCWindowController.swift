@@ -14,8 +14,8 @@ public final class LCCWindowController: NSWindowController, NSWindowDelegate {
     }
     public init(urls: [URL], showProfiles: Bool = false) {
         model = LCCWindowModel(urls:urls)
-        let window = NSWindow(contentRect:NSRect(x:0,y:0,width:980,height:730),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
-        window.title = L10n.tr("4070f55d9a88"); window.minSize = NSSize(width:800,height:560); window.isReleasedWhenClosed = false
+        let window = NSWindow(contentRect:NSRect(x:0,y:0,width:1240,height:820),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+        window.title = L10n.tr("4070f55d9a88"); window.minSize = NSSize(width:1000,height:650); window.isReleasedWhenClosed = false
         super.init(window:window); window.delegate = self; model.window = window
         window.contentView = NSHostingView(rootView:LCCWorkspaceView(model:model,showProfiles:showProfiles || urls.isEmpty)); window.center(); model.load()
     }
@@ -24,7 +24,7 @@ public final class LCCWindowController: NSWindowController, NSWindowDelegate {
 }
 
 @MainActor
-private final class LCCWindowModel: ObservableObject {
+final class LCCWindowModel: ObservableObject {
     weak var window: NSWindow?
     var closed = false
     @Published var urls: [URL]
@@ -45,6 +45,12 @@ private final class LCCWindowModel: ObservableObject {
     @Published var positionConfirmed = false
     @Published var refine = true
     @Published var manifests:[Int:PanoramaManifest] = [:]
+    @Published var profilePreview:PanoramaPlan?
+    @Published var correctedManifest:PanoramaManifest?
+    @Published var resolvedOffset:CGPoint?
+    @Published var positionExplanation=""
+    @Published var referenceFrame=0
+    private var uncorrectedPreview:PanoramaPlan?
     private var resultWindow:NSWindow?
     private var exportWindow:PanoramaExportController?
     private var cancellation=PanoramaCancellation()
@@ -76,7 +82,7 @@ private final class LCCWindowModel: ObservableObject {
                     guard let self, !self.closed else { return }
                     self.sourceAccess += flatAccess
                     self.manifests=manifests;self.profiles=profiles
-                    self.scenes = scenes; self.flats = flats; self.assignments = assignments; self.busy = false
+                    self.scenes = scenes; self.selected=0; self.flats = flats; self.assignments = assignments; self.busy = false
                     self.saved = !scenes.isEmpty && assignments.allSatisfy { $0 >= 0 }
                     self.status = self.saved ? L10n.tr("cd392f12e4da") : L10n.tr("f3a2a43f5215")
                 }
@@ -130,18 +136,16 @@ private final class LCCWindowModel: ObservableObject {
         guard !busy,scenes.indices.contains(selected) else {return}
         if traditional {guard canSave else {return};save()}
         let index=selected,source=scenes[index],manifest=manifests[index]
-        if !traditional && manifest?.profileOffsetMM == nil && !positionConfirmed {
-            error=L10n.tr("fca64867d785");return
-        }
         let flat=traditional ? flats[assignments[index]].source.url:nil
         let id=UUID(uuidString:profileID),position=CGPoint(x:shiftX,y:shiftY),refine=self.refine
-        let suppliedPosition=positionConfirmed,body=cameraBody,orientation=bodyOrientation
+        let suppliedPosition=positionConfirmed,body=cameraBody,orientation=bodyOrientation,reference=referenceFrame
         busy=true;error=nil;status=L10n.tr("c7bbd14f9634");cancellation=PanoramaCancellation()
         let token=cancellation
         queue.async { [weak self] in
             do {
                 let progress:PanoramaEngine.Progress={message in DispatchQueue.main.async {self?.status=message}}
                 let plan:PanoramaPlan,provenance:PanoramaManifest
+                var explanation="",solvedOffset:CGPoint?
                 if let flat {
                     plan=try LCCCorrectionEngine.traditional(scene:source,flatURL:flat,cancellation:token,progress:progress)
                     var data=PanoramaManifest(plan:plan);data.correctionMethod="strict-flat-field";provenance=data
@@ -149,22 +153,92 @@ private final class LCCWindowModel: ObservableObject {
                     guard let id else {throw PanoramaFailure(L10n.tr("18758dce1d62"))}
                     let profile=try LCCProfileStore().load(id)
                     if let manifest {
+                        let offset:CGPoint
+                        if suppliedPosition {
+                            guard let value=manifest.offset(reference:reference,position:position) else {throw PanoramaFailure(L10n.tr("lcc.position.geometry"))}
+                            offset=value;explanation=L10n.tr("lcc.position.manual")
+                        } else {
+                            let solution=try LCCCorrectionEngine.resolvePostProcessPosition(scene:source,manifest:manifest,profile:profile,cameraBody:body,cancellation:token,progress:progress)
+                            offset=solution.offsetMM;explanation=solution.explanation
+                        }
                         let result=try LCCCorrectionEngine.postProcess(scene:source,manifest:manifest,profile:profile,
-                            offset:suppliedPosition ? CGPoint(x:-position.x,y:-position.y):nil,cancellation:token,progress:progress)
+                            offset:offset,cameraBody:body,cancellation:token,progress:progress)
                         plan=result.plan;provenance=result.manifest
+                        solvedOffset=offset
                     } else {
-                        let result=try LCCCorrectionEngine.single(scene:source,profile:profile,position:position,refine:refine,body:body,orientation:orientation,cancellation:token,progress:progress)
+                        let result=try LCCCorrectionEngine.single(scene:source,profile:profile,position:suppliedPosition ? position:nil,refine:refine,body:body,orientation:orientation,cancellation:token,progress:progress)
                         plan=result.plan;provenance=PanoramaManifest(plan:plan)
-                        DispatchQueue.main.async {self?.shiftX=result.position.x;self?.shiftY=result.position.y}
+                        solvedOffset=CGPoint(x:-result.position.x,y:-result.position.y)
+                        explanation=L10n.tr(suppliedPosition && !refine ? "lcc.position.manual":"lcc.position.estimated")
                     }
                 }
                 DispatchQueue.main.async {
-                    guard let self,!self.closed else {return}
+                    guard let self,!self.closed,(try? token.check()) != nil else {return}
                     self.busy=false;self.status=L10n.tr("f31f21c22b68")
-                    self.showResult(plan,manifest:provenance)
+                    if traditional {self.showResult(plan,manifest:provenance)}
+                    else {self.profilePreview=plan;self.correctedManifest=provenance;self.resolvedOffset=solvedOffset;self.positionExplanation=explanation}
                 }
-            } catch {DispatchQueue.main.async {self?.busy=false;self?.error=error.localizedDescription}}
+            } catch {DispatchQueue.main.async {guard (try? token.check()) != nil else {return};self?.busy=false;self?.error=error.localizedDescription}}
         }
+    }
+    var placementManifest:PanoramaManifest? {
+        if let manifest=manifests[selected] {return manifest}
+        return uncorrectedPreview.map {PanoramaManifest(plan:$0,bodyOrientation:bodyOrientation,cameraBody:cameraBody)}
+    }
+    func invalidateCorrection() {
+        correctedManifest=nil;profilePreview=uncorrectedPreview
+        if positionConfirmed {
+            resolvedOffset=placementManifest?.offset(reference:referenceFrame,position:CGPoint(x:shiftX,y:shiftY))
+            positionExplanation=L10n.tr("lcc.position.manual")
+        } else {
+            let manifest=manifests[selected]
+            resolvedOffset=manifest?.profileOffsetMM
+            if resolvedOffset == nil,let manifest,let i=manifest.frames.firstIndex(where:{$0.shiftMM != nil}),let shift=manifest.frames[i].shiftMM {
+                resolvedOffset=manifest.offset(reference:i,position:shift)
+            }
+            positionExplanation=L10n.tr(resolvedOffset == nil ? "lcc.position.relative":"lcc.position.recorded")
+        }
+    }
+    func selectReference(_ index:Int) {
+        referenceFrame=index
+        let position=placementManifest?.position(of:index,offset:resolvedOffset) ?? placementManifest?.relativePosition(of:index) ?? .zero
+        shiftX=position.x;shiftY=position.y
+        if positionConfirmed {invalidateCorrection()}
+    }
+    func loadProfilePreview() {
+        guard scenes.indices.contains(selected) else {return}
+        cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
+        let source=scenes[selected],manifest=manifests[selected]
+        profilePreview=nil;uncorrectedPreview=nil;correctedManifest=nil;referenceFrame=0;positionConfirmed=false
+        resolvedOffset=manifest?.profileOffsetMM
+        if let manifest {
+            bodyOrientation=manifest.bodyOrientation
+            if let id=manifest.profileID,profiles.contains(where:{$0.id==id}) {profileID=id.uuidString}
+            if let body=manifest.cameraBody {cameraBody=body}
+            if resolvedOffset == nil,let i=manifest.frames.firstIndex(where:{$0.shiftMM != nil}),let shift=manifest.frames[i].shiftMM {
+                resolvedOffset=manifest.offset(reference:i,position:shift)
+            }
+        }
+        positionExplanation=L10n.tr(resolvedOffset == nil ? "lcc.position.relative":"lcc.position.recorded")
+        busy=true;status=L10n.tr("5ce551a5f536")
+        queue.async { [weak self] in
+            do {
+                let plan=try PanoramaEngine().singlePhoto(source,cancellation:token)
+                DispatchQueue.main.async {
+                    guard let self,!self.closed,(try? token.check()) != nil else {return}
+                    self.profilePreview=plan;self.uncorrectedPreview=plan;self.busy=false;self.status=""
+                    self.selectReference(0)
+                }
+            } catch {DispatchQueue.main.async {guard (try? token.check()) != nil else {return};self?.busy=false;self?.error=error.localizedDescription}}
+        }
+    }
+    func exportProfileCorrection() {
+        guard let plan=profilePreview,let manifest=correctedManifest,let window,!busy else {return}
+        let controller=PanoramaExportController(plan:plan,manifest:manifest)
+        controller.model.preset.nameTemplate=sourceNameForLCC(plan)
+        controller.onExported=onExported
+        controller.onQueued={ [weak self] in self?.window?.close() }
+        exportWindow=controller;controller.present(in:window)
     }
     private func showResult(_ plan:PanoramaPlan,manifest:PanoramaManifest) {
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1000,height:760),styleMask:[.titled,.closable,.resizable],backing:.buffered,defer:false)
@@ -262,7 +336,8 @@ private struct LCCWorkspaceView: View {
                 Text(L10n.tr("17b409bc4ecb")).tag(0);Text(L10n.tr("36be15abd92b")).tag(1);Text(L10n.tr("bba6488b8640")).tag(2)
             }.pickerStyle(.segmented).frame(width:510).padding(.top,16)
             if selection==0 {LCCPairingView(model:model)} else if selection==1 {LCCProfileCorrectionView(model:model)} else {LCCProfileLibraryView(model:libraryModel)}
-        }
+        }.onChange(of:model.manifests.count) {_,count in if count>0 {selection=1}}
+
     }
 }
 
@@ -284,35 +359,96 @@ private struct LCCResultView:View {
         }
     }
 }
-private struct LCCProfileCorrectionView:View {
+struct LCCProfileCorrectionView:View {
     @ObservedObject var model:LCCWindowModel
     var body:some View {
-        VStack(alignment:.leading,spacing:18) {
-            HStack {Text(L10n.tr("36be15abd92b")).font(.title.bold());Spacer();Button(L10n.tr("ac8ccd7914cd")) {model.choose(scenes:true)}}
-            Picker(L10n.tr("7b50017ae47e"),selection:$model.selected) {ForEach(model.scenes.indices,id:\.self) {Text(model.scenes[$0].url.lastPathComponent).tag($0)}}
-            Picker(L10n.tr("5c30b533510f"),selection:$model.profileID) {ForEach(model.profiles) {Text($0.name).tag($0.id.uuidString)}}
-            if let manifest=model.manifests[model.selected] {
-                Text(L10n.tr("6255d52c9bfe" , String(describing: (manifest.frames.count)), String(describing: (manifest.profileName ?? L10n.tr("854f821696ae"))))).font(.headline)
-                Text(manifest.correctionApplied ? L10n.tr("14f6c2f69469"):L10n.tr("40c001b76410"))
-                    .foregroundStyle(.secondary)
-            } else {Text(L10n.tr("15b15c887158")).foregroundStyle(.secondary)}
-            if model.manifests[model.selected] == nil {
-                Picker(L10n.tr("ee38b80c37d9"),selection:$model.cameraBody) {ForEach(PanoramaCameraBody.allCases) {Text($0.name).tag($0)}}
-                PanoramaBodyOrientationPicker(cameraBody:model.cameraBody,selection:$model.bodyOrientation)
-            } else {
-                Text(L10n.tr("64f1d2691e0c")).font(.caption).foregroundStyle(.secondary)
+        VStack(spacing:0) {
+            HStack(spacing:0) {
+                ZStack {
+                    Color(nsColor:.canvasMatte)
+                    if let image=model.profilePreview?.preview {
+                        PanoramaHDRPreview(image:image)
+                    } else {Text(L10n.tr("lcc.preview.empty")).foregroundStyle(.secondary)}
+                    if model.busy {ProgressView().padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:8))}
+                }.frame(maxWidth:.infinity,maxHeight:.infinity)
+                Divider()
+                ScrollView {
+                    VStack(alignment:.leading,spacing:18) {
+                        Text(L10n.tr("36be15abd92b")).font(.title2.bold())
+                        Button(L10n.tr("ac8ccd7914cd")) {model.choose(scenes:true)}.disabled(model.busy)
+                        Picker(L10n.tr("7b50017ae47e"),selection:$model.selected) {
+                            ForEach(model.scenes.indices,id:\.self) {Text(model.scenes[$0].url.lastPathComponent).tag($0)}
+                        }.disabled(model.busy)
+                        Picker(L10n.tr("5c30b533510f"),selection:Binding(get:{model.profileID},set:{model.profileID=$0;model.invalidateCorrection()})) {
+                            ForEach(model.profiles) {Text($0.name).tag($0.id.uuidString)}
+                        }.disabled(model.busy)
+                        Divider()
+                        Picker(L10n.tr("ee38b80c37d9"),selection:Binding(get:{model.cameraBody},set:{model.cameraBody=$0;model.invalidateCorrection()})) {
+                            ForEach(PanoramaCameraBody.allCases) {Text($0.name).tag($0)}
+                        }.disabled(model.busy || model.manifests[model.selected]?.cameraBody != nil)
+                        PanoramaBodyOrientationPicker(cameraBody:model.cameraBody,selection:Binding(get:{model.bodyOrientation},set:{model.bodyOrientation=$0;model.invalidateCorrection()}))
+                            .disabled(model.busy || model.manifests[model.selected] != nil)
+                        placement
+                        Divider()
+                        Text(L10n.tr("lcc.position.title")).font(.headline)
+                        Text(model.positionExplanation).font(.caption).foregroundStyle(.secondary)
+                        Toggle(L10n.tr("lcc.position.useReference"),isOn:Binding(get:{model.positionConfirmed},set:{model.positionConfirmed=$0;model.invalidateCorrection()}))
+                            .toggleStyle(.checkbox).disabled(model.busy)
+                        HStack {
+                            TextField("X (mm)",value:Binding(get:{model.shiftX},set:{model.shiftX=$0;model.invalidateCorrection()}),format:.number.precision(.fractionLength(2)))
+                            TextField("Y (mm)",value:Binding(get:{model.shiftY},set:{model.shiftY=$0;model.invalidateCorrection()}),format:.number.precision(.fractionLength(2)))
+                        }.textFieldStyle(.roundedBorder).disabled(!model.positionConfirmed || model.busy)
+                        if model.manifests[model.selected] == nil {
+                            Toggle(L10n.tr("3d0cb62afa54"),isOn:Binding(get:{model.refine},set:{model.refine=$0;model.invalidateCorrection()})).disabled(model.busy)
+                        }
+                        Text(L10n.tr("lcc.position.hint")).font(.caption).foregroundStyle(.secondary)
+                        if let manifest=model.manifests[model.selected] {
+                            Text(L10n.tr("6255d52c9bfe",String(manifest.frames.count),manifest.profileName ?? L10n.tr("854f821696ae"))).font(.caption)
+                            Text(manifest.correctionApplied ? L10n.tr("14f6c2f69469"):L10n.tr("7b9fc5d84c0d")).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.padding(20)
+                }.frame(width:370)
             }
-            Toggle(L10n.tr("6ddef7f6075c"),isOn:$model.positionConfirmed)
-            HStack {TextField(L10n.tr("4995b90d72fc"),value:$model.shiftX,format:.number);TextField(L10n.tr("1777a1e5f3a5"),value:$model.shiftY,format:.number)}.disabled(!model.positionConfirmed)
-            Toggle(L10n.tr("3d0cb62afa54"),isOn:$model.refine).disabled(model.manifests[model.selected] != nil)
-            Text(L10n.tr("7a9cfbc9eceb")).font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            HStack {if model.busy {ProgressView().controlSize(.small)};Text(model.status).foregroundStyle(.secondary);Spacer()
-                Button(L10n.tr("19e40f9ff2dc")) {model.correct(traditional:false)}.buttonStyle(.borderedProminent)
-                    .disabled(model.scenes.isEmpty || model.manifests[model.selected]?.correctionApplied == true)
-            }
-        }.padding(24).disabled(model.busy)
-        .onChange(of:model.selected) {_,_ in model.positionConfirmed=false}
+            Divider()
+            HStack {
+                Text(model.status).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                Spacer()
+                Button(L10n.tr("lcc.preview.calculate")) {model.correct(traditional:false)}
+                    .disabled(model.busy || model.scenes.isEmpty || model.manifests[model.selected]?.correctionApplied == true)
+                    .accessibilityIdentifier("lcc.calculate")
+                Button(L10n.tr("1405051c6675")) {model.exportProfileCorrection()}
+                    .buttonStyle(.borderedProminent).disabled(model.busy || model.correctedManifest == nil)
+                    .accessibilityIdentifier("lcc.export")
+            }.padding(16)
+        }
+        .onAppear {model.loadProfilePreview()}
+        .onChange(of:model.selected) {_,_ in model.loadProfilePreview()}
+        .onChange(of:model.scenes.map(\.url)) {_,_ in model.loadProfilePreview()}
         .alert(L10n.tr("91a5d44e3599"),isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})) {Button(L10n.tr("f867f3417859")) {model.error=nil}} message:{Text(model.error ?? "")}
+    }
+    @ViewBuilder private var placement:some View {
+        if let manifest=model.placementManifest {
+            let offset=model.resolvedOffset
+            let frames=manifest.frames.indices.compactMap {i -> CapturePositionDiagram.Frame? in
+                guard let sensor=manifest.frames[i].sensor,
+                      let center=manifest.position(of:i,offset:offset) ?? manifest.relativePosition(of:i) else {return nil}
+                return .init(name:manifest.frames[i].filename,center:center,sensor:sensor,sourceIndex:i)
+            }
+            CapturePositionDiagram(frames:frames,cameraBody:model.cameraBody,orientation:model.bodyOrientation,
+                absolute:offset != nil,selected:model.referenceFrame) {model.selectReference($0)}
+                .frame(height:260).padding(8).background(.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:10))
+            VStack(alignment:.leading,spacing:6) {
+                ForEach(manifest.frames.indices,id:\.self) {i in
+                    let p=manifest.position(of:i,offset:offset) ?? manifest.relativePosition(of:i)
+                    Button {model.selectReference(i)} label: {
+                        HStack {
+                            Text(manifest.frames[i].filename).lineLimit(1)
+                            Spacer()
+                            if let p {Text(String(format:offset == nil ? "Δ %+.1f, %+.1f mm":"%+.1f, %+.1f mm",p.x,p.y)).monospacedDigit()}
+                        }.font(.caption).foregroundStyle(model.referenceFrame==i ? Color.accentColor:Color.primary)
+                    }.buttonStyle(.plain).disabled(model.busy)
+                }
+            }
+        }
     }
 }

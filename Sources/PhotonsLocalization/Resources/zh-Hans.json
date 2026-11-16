@@ -1313,5 +1313,21 @@
   "previews.title": "生成初始预览",
   "previews.progress": "生成预览 · {0}/{1}",
   "previews.failed": "共 {1} 张，{0} 张预览生成失败",
-  "panorama.geometry": "验证几何匹配 {0} ↔ {1}"
+  "panorama.geometry": "验证几何匹配 {0} ↔ {1}",
+  "settings.historyDepth": "历史记录长度",
+  "settings.historyCount": "%@ 条记录",
+  "settings.historyHint": "每张照片显示及可撤销的历史记录数，默认 20 条。导入状态单独保留，可在历史记录面板中还原。",
+  "history.resetImport": "还原到导入状态",
+  "history.resetImportHint": "恢复这张照片导入时的全部编辑参数；此操作可撤销。",
+  "lcc.position.recorded": "已读取拼接时记录的光轴与移轴位置。",
+  "lcc.position.inconsistent": "记录的移轴位置不一致，请指定一张源照片作为位置基准。",
+  "lcc.position.geometry": "缺少可用的传感器或相对位置记录，请检查拼接信息。",
+  "lcc.position.estimated": "已根据镜头配置与画面估算位置。场景颜色可能影响结果，可选择源照片手动微调基准。",
+  "lcc.position.manual": "使用所选源照片的手动位置基准。",
+  "lcc.position.relative": "已读取相对布局；预览校正时将自动估算光轴位置。",
+  "lcc.position.title": "光轴与移轴位置",
+  "lcc.position.useReference": "手动指定所选照片的位置",
+  "lcc.position.hint": "默认优先使用拼接记录，否则自动估算。手动指定一张源照片后，其余照片保持原有相对位置。",
+  "lcc.preview.empty": "选择照片以预览镜头配置校正",
+  "lcc.preview.calculate": "解算并预览校正"
 }

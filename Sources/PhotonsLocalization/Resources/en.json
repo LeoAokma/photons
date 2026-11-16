@@ -1313,5 +1313,21 @@
   "previews.title": "Generate previews",
   "previews.progress": "Generating previews · {0}/{1}",
   "previews.failed": "Preview generation failed for {0} of {1} photos",
-  "panorama.geometry": "Validate geometry {0} ↔ {1}"
+  "panorama.geometry": "Validate geometry {0} ↔ {1}",
+  "settings.historyDepth": "History length",
+  "settings.historyCount": "%@ records",
+  "settings.historyHint": "Number of visible, undoable states per photo; 20 by default. The import state remains available from the History panel.",
+  "history.resetImport": "Restore Import State",
+  "history.resetImportHint": "Restore every editing parameter to its import state. This action can be undone.",
+  "lcc.position.recorded": "Using the optical origin and shift positions recorded during stitching.",
+  "lcc.position.inconsistent": "Recorded shift positions are inconsistent. Choose one source frame as the position reference.",
+  "lcc.position.geometry": "Usable sensor or relative placement information is missing. Check the stitch metadata.",
+  "lcc.position.estimated": "Position estimated from the lens profile and image. Scene colors can affect the result; select a source frame to refine the reference manually.",
+  "lcc.position.manual": "Using the selected source frame as a manual position reference.",
+  "lcc.position.relative": "Relative layout loaded. The optical origin will be estimated when calculating the correction.",
+  "lcc.position.title": "Optical Origin and Shift",
+  "lcc.position.useReference": "Set the selected frame position manually",
+  "lcc.position.hint": "Recorded positions take priority; otherwise position is estimated automatically. Setting one source frame preserves the relative placement of all other frames.",
+  "lcc.preview.empty": "Select a photo to preview lens-profile correction",
+  "lcc.preview.calculate": "Calculate and Preview Correction"
 }

@@ -122,6 +122,9 @@ public final class CatalogSession {
     /// The undo stack (D10: snapshots plus a cursor, not a command log). Seeded with the state the
     /// document was opened in, so the floor of undo is "Original", never "neutral".
     public private(set) var history = EditHistory()
+    public private(set) var importedEdit: EditModel?
+    @ObservationIgnored private var historyPreferences: ApplicationPreferences
+    @ObservationIgnored private var historyPreferenceObserver: NSObjectProtocol?
 
     /// The asset whose document is loaded in `edit` / `history`.
     public private(set) var loadedEditAssetID: String?
@@ -395,7 +398,9 @@ public final class CatalogSession {
     public init(filterStore: FilterPersistence.Store = UserDefaults.standard,
                 sortPreferenceStore: PhotoSortPreferences.Store = UserDefaults.standard,
                 recentLibraryStore: RecentLibrary.Store = UserDefaults.standard,
-                remembersRecentLibrary: Bool = true) {
+                remembersRecentLibrary: Bool = true,
+                preferences: ApplicationPreferences = .shared) {
+        historyPreferences = preferences
         filterPersistence = FilterPersistence.Writer(store: filterStore)
         self.sortPreferenceStore = sortPreferenceStore
         self.recentLibraryStore = recentLibraryStore
@@ -403,7 +408,14 @@ public final class CatalogSession {
         // Restored before the first `open()`, so a session's very first query already lands in the
         // order the user chose last time — there is no "restore after the first paint" flicker.
         sortOrder = PhotoSortPreferences.recall(from: sortPreferenceStore)
+        history.setMaxDepthPreservingCurrent(preferences.historyDepth)
+        historyPreferenceObserver = NotificationCenter.default.addObserver(forName:.photonsPreferencesDidChange,object:preferences,queue:.main) { [weak self] note in
+            guard note.userInfo?["key"] as? String == ApplicationPreferences.Key.historyDepth else {return}
+            MainActor.assumeIsolated {self?.history.setMaxDepthPreservingCurrent(preferences.historyDepth)}
+        }
     }
+
+    deinit {if let historyPreferenceObserver {NotificationCenter.default.removeObserver(historyPreferenceObserver)}}
 
     // MARK: lifecycle
 
@@ -2195,7 +2207,8 @@ public final class CatalogSession {
     public func loadEditForAnchor(force: Bool = false) {
         guard let a = anchorAsset else {
             edit = .neutral
-            history = EditHistory(baseline: .neutral)
+            history = EditHistory(baseline: .neutral,maxDepth:historyPreferences.historyDepth)
+            importedEdit = nil
             loadedEditAssetID = nil
             selectedMaskID = nil
             pendingMaskShape = nil
@@ -2207,7 +2220,7 @@ public final class CatalogSession {
         var stack: EditHistory?
         if let catalog {
             model = (try? catalog.develop(forAsset: a.id)) ?? .neutral
-            stack = try? catalog.editHistory(forAsset: a.id)
+            stack = try? catalog.editHistory(forAsset: a.id,maxDepth:historyPreferences.historyDepth)
         } else if let data = a.developJson.data(using: .utf8),
                   let decoded = try? JSONDecoder().decode(EditModel.self, from: data) {
             model = decoded
@@ -2220,8 +2233,9 @@ public final class CatalogSession {
         if let stack, !stack.isEmpty {
             history = stack
         } else {
-            history = EditHistory(baseline: model)
+            history = EditHistory(baseline: model,maxDepth:historyPreferences.historyDepth)
         }
+        importedEdit = catalog.flatMap {try? $0.importedDevelop(forAsset:a.id)} ?? (stack == nil || stack?.isEmpty == true ? model:nil)
         loadedEditAssetID = a.id
         selectedMaskID = edit.masks.first?.id
         maskTool = .off
@@ -2229,6 +2243,20 @@ public final class CatalogSession {
         // describe the picture that is no longer on screen.
         pendingMaskShape = nil
         recordHistogram(nil)
+    }
+
+    /// Restore every develop parameter as one ordinary, undoable edit. Ratings and source files
+    /// remain catalog data, outside the photo's develop history.
+    @discardableResult
+    public func resetToImportedState() -> Bool {
+        guard let importedEdit,loadedEditAssetID != nil else {return false}
+        endToolSession()
+        let original=MaskViewState.documentOnly(importedEdit)
+        guard !EditHistory.isSemanticallyIdentical(edit,original) else {return false}
+        applyEdit {$0=original}
+        let committed=commitEdit(label:L10n.tr("history.resetImport"),coalesce:false)
+        selectedMaskID=edit.masks.first?.id;maskTool = .off;pendingMaskShape=nil
+        return committed
     }
 
     /// 249 — convert a legacy (`canvasV1`) heal document to S1 source coordinates once the **exact**
