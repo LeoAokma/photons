@@ -2444,7 +2444,7 @@ public struct InspectorView: View {
                 else { commitWhiteBalance(isTemperature: isTemperature) }
             }
             SliderNumberField(value: shown, range: row.range, format: row.format,
-                              fontSize: 11, width: StudioTheme.valueWidth - 10,
+                              fontSize: 11, width: StudioTheme.valueWidth,
                               accessibilityID: "inspector.whiteBalance.\(row.title)",
                               onCommit: { typed in
                                   let revisionBefore = session.editRevision
@@ -3168,8 +3168,6 @@ struct SliderNumberField: View {
                         accessibilityID: accessibilityID,
                         onCommit: onCommit)
             .frame(width: width, height: fontSize + 4)
-            .padding(.horizontal, 5).padding(.vertical, 4)
-            .background(Color(nsColor: StudioTheme.well), in: RoundedRectangle(cornerRadius: 4))
             .accessibilityIdentifier(accessibilityID ?? "")
             .help(L10n.tr("3fa8bd7acc8d"))
     }

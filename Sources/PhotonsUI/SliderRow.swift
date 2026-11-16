@@ -71,7 +71,7 @@ struct SliderRow: View {
             if editable {
                 SliderNumberField(value: value.wrappedValue, range: range, format: format,
                                   decimals: decimals, rounding: rounding,
-                                  fontSize: style.readoutSize, width: StudioTheme.valueWidth - 10,
+                                  fontSize: style.readoutSize, width: StudioTheme.valueWidth,
                                   accessibilityID: accessibilityID,
                                   onCommit: { typed in
                                       value.wrappedValue = typed
