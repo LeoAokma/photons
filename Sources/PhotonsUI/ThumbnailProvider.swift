@@ -195,6 +195,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
     public static var defaultConcurrency: Int { ProcessingPreferences.thumbnailConcurrency }
 
     public let cache: ThumbnailCache
+    public let histograms: PreviewHistogramService
     /// The one scheduler. Public so a probe can read `stats()`/`pendingCount`; no view should
     /// enqueue into it directly (they go through `request`, which also feeds the memory layer).
     public let service: ThumbnailService
@@ -301,6 +302,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
     public init(cache: ThumbnailCache, maxConcurrent: Int? = nil) {
         let adapter = ProducerAdapter()
         self.cache = cache
+        self.histograms = PreviewHistogramService(thumbnails: cache)
         self.adapter = adapter
         self.followsProcessingPolicy = maxConcurrent == nil
         self.service = ThumbnailService(cache: cache,
@@ -311,6 +313,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
         recent.countLimit = 64
         recent.totalCostLimit = 32 * 1024 * 1024
         adapter.provider = self
+        histograms.provider = self
     }
 
     // MARK: - one instance per cache
@@ -482,7 +485,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
                          height: max(1, Int((max(1, swatch.height) * scale).rounded())))
     }
 
-    private func rememberDocument(_ document: EditModel, for digest: String) {
+    func rememberDocument(_ document: EditModel, for digest: String) {
         lock.lock(); defer { lock.unlock() }
         if documentsByKey[digest] == nil { documentOrder.append(digest) }
         documentsByKey[digest] = document
@@ -492,7 +495,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
     }
 
     /// Hand the producer the source's long edge so it does not re-open the RAW to measure it (351).
-    private func rememberSourceEdge(_ edge: Int?, for digest: String) {
+    func rememberSourceEdge(_ edge: Int?, for digest: String) {
         guard let edge, edge > 0 else { return }
         lock.lock(); defer { lock.unlock() }
         if sourceEdges[digest] == nil { sourceEdgeOrder.append(digest) }
@@ -797,6 +800,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
             DispatchQueue.main.async { completion(index, result.key, nil) }
             return
         }
+        if result.key.spec == .hdJPEG { histograms.ensurePreview(key: result.key, data: data) }
         // 223 — the two decode doors are counted separately, so "the HEIC path used ImageIO" is a
         // number a test can refute rather than a claim in a comment.
         // 308 — three now: HEIC (Core Image → texture), 1920 PQ JPEG (ImageIO downsample), and the
@@ -1026,9 +1030,15 @@ public final class ThumbnailProvider: @unchecked Sendable {
         let linearOptions = RenderOptions(canvas: nil, scale: scale,
                                           display: DisplayOptions(primaries: .displayP3, bitDepth: 16,
                                                                   headroom: 1, linearOutput: true),
-                                          useCache: false, wantsPixels: true)
+                                          useCache: false, wantsPixels: true,
+                                          histogramSampleLongEdge: 256)
         let frameStart = CACurrentMediaTime()
-        let frame = try? graph.render(document, options: linearOptions).display
+        let result = try graph.render(document, options: linearOptions)
+        let frame = result.display
+        if let sample = result.histogramSample {
+            histograms.cache.store(HistogramSnapshot(sample: sample, canvas: result.canvas),
+                                   for: HistogramCacheKey(thumbnail: key))
+        }
         let frameMs = (CACurrentMediaTime() - frameStart) * 1000
         lock.lock()
         Self.append(rawDecodeMs, to: &phaseTimesStore.rawDecode)

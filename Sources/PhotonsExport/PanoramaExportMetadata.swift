@@ -35,7 +35,7 @@ enum PanoramaExportMetadata {
     }
     static func data(for item:ExportItem,source:SourceMetadata?,trimX:Double,trimY:Double)throws->Data? {
         let packet=item.panoramaMetadata ?? source?.xmp.flatMap {
-            (CGImageMetadataCopyStringValueWithPath($0,nil,"photonsPano:Manifest" as CFString) as String?).flatMap {Data(base64Encoded:$0)}
+            (CGImageMetadataCopyStringValueWithPath($0,nil,"photonsPano:Manifest" as CFString) as String?).flatMap {PanoramaMetadataPacket.data($0)}
         }
         guard let packet else {return nil}
         var manifest=try JSONDecoder().decode(PanoramaManifest.self,from:packet)

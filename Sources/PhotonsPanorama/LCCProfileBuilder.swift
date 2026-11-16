@@ -1,3 +1,4 @@
+import PhotonsCore
 import PhotonsLocalization
 import Foundation
 import CoreImage
@@ -135,7 +136,8 @@ public enum LCCProfileBuilder {
     static func linearImage(source:PanoramaSource,scale:Double,whiteBalance:(Float,Float)?=nil) throws -> CIImage {
         try source.checkUnchanged()
         let output:CIImage
-        if source.isRAW,let raw=CIRAWFilter(imageURL:source.url) {
+        if source.isRAW,let initial=CIRAWFilter(imageURL:source.url) {
+            let raw=try LinearDNGCompatibility.filter(for:source.url,initial:initial)
             raw.isLensCorrectionEnabled=false;raw.isGamutMappingEnabled=false
             raw.boostAmount=0;raw.boostShadowAmount=0;raw.localToneMapAmount=0
             raw.exposure=0;if !source.camera.hasPrefix("Photons Linear") {raw.baselineExposure=0};raw.shadowBias=0;raw.sharpnessAmount=0

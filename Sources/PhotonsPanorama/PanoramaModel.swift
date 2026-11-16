@@ -1,3 +1,4 @@
+import PhotonsCore
 import PhotonsLocalization
 import Foundation
 import CoreGraphics
@@ -82,7 +83,8 @@ public struct PanoramaSource: Codable {
         let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
         camera = tiff[kCGImagePropertyTIFFModel as String] as? String ?? L10n.tr("1e3818fd0c54")
         var identified = SensorSize.identify(properties: props)
-        if isRAW, let f = CIRAWFilter(imageURL: url) {
+        if isRAW, let initial = CIRAWFilter(imageURL: url) {
+            let f = try LinearDNGCompatibility.filter(for: url, initial: initial)
             f.isLensCorrectionEnabled = false
             guard let image = f.outputImage else { throw PanoramaFailure(L10n.tr("ae0e8fc37498" , String(describing: (url.lastPathComponent)))) }
             size = image.extent.size
@@ -145,6 +147,7 @@ public struct OpticalEstimate {
 /// only the Core Image compositor converts them to lower-left coordinates.
 public struct PanoramaPlan {
     public var isRegistered = true
+    public var warps: [PanoramaTransform]? = nil
     public let sources: [PanoramaSource]
     public let origins: [CGPoint]
     public let size: CGSize
@@ -172,8 +175,13 @@ public struct PanoramaPlan {
     public var outputSize: CGSize { lccState?.cropRect?.size ?? size }
 
     public var megapixels: Double { size.width * size.height / 1_000_000 }
+    public func sourcePoint(_ index:Int, panorama point:CGPoint) -> CGPoint {
+        if let inverse=warps?[index].inverse {return inverse.point(point)}
+        return CGPoint(x:point.x-origins[index].x,y:point.y-origins[index].y)
+    }
     public func sourceRect(_ index: Int, scale: Double = 1) -> CGRect {
-        CGRect(origin: origins[index], size: sources[index].size).applying(CGAffineTransform(scaleX: scale, y: scale))
+        let rect = warps?[index].bounds(sources[index].size) ?? CGRect(origin: origins[index], size: sources[index].size)
+        return rect.applying(CGAffineTransform(scaleX: scale, y: scale))
     }
 }
 

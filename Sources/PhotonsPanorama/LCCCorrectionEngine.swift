@@ -77,14 +77,17 @@ public enum LCCCorrectionEngine {
                     let weight=Double(original.weights[i][my*original.maskWidth+mx])/255
                     guard weight>0.001 else {continue}
                     guard let sensor=frame.sensor else {throw PanoramaFailure(L10n.tr("e184fba3ced0"))}
+                    let rect=frame.sensorRect ?? frame.rect
+                    let local=frame.imageToCanvas?.inverse?.point(point) ?? CGPoint(x:(point.x-rect.minX)/rect.width,y:(point.y-rect.minY)/rect.height)
+                    let unwarped=CGPoint(x:rect.minX+local.x*rect.width,y:rect.minY+local.y*rect.height)
                     let physical:CGPoint
                     if let chosenOffset {
-                        physical=CGPoint(x:(point.x-0.5)*sensor.width/frame.rect.width-chosenOffset.x,
-                                         y:(0.5-point.y)*sensor.height/frame.rect.height-chosenOffset.y)
+                        physical=CGPoint(x:(unwarped.x-0.5)*sensor.width/rect.width-chosenOffset.x,
+                                         y:(0.5-unwarped.y)*sensor.height/rect.height-chosenOffset.y)
                     } else {
                         let shift=frame.shiftMM!
-                        physical=CGPoint(x:shift.x+(point.x-frame.rect.midX)*sensor.width/frame.rect.width,
-                                         y:shift.y+(frame.rect.midY-point.y)*sensor.height/frame.rect.height)
+                        physical=CGPoint(x:shift.x+(local.x-0.5)*sensor.width,
+                                         y:shift.y+(0.5-local.y)*sensor.height)
                     }
                     if let g=calibrations[i].gain(at:original.bodyOrientation.inverse.rotate(physical)) {sum += g*weight;total += weight}
                     else {missing=true}

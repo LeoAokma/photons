@@ -1306,5 +1306,12 @@
   "fc7ac1c0b0ab": "This image has transformations that cannot be mapped back. Apply LCC before those transformations.",
   "538a8818a398": "Existing file skipped",
   "3e6886d17a1c": "Export complete",
-  "64f1d2691e0c": "The manual position is the panorama center relative to the lens axis, in mm. Right and up are positive."
+  "64f1d2691e0c": "The manual position is the panorama center relative to the lens axis, in mm. Right and up are positive.",
+  "grid.thumbnailSize": "Thumbnail size",
+  "import.skipDuplicates": "Don’t import duplicates",
+  "import.duplicateCopies": "When unchecked, import independent copies with their own edits and ratings. Original files are shared.",
+  "previews.title": "Generate previews",
+  "previews.progress": "Generating previews · {0}/{1}",
+  "previews.failed": "Preview generation failed for {0} of {1} photos",
+  "panorama.geometry": "Validate geometry {0} ↔ {1}"
 }

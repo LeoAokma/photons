@@ -334,7 +334,7 @@ extension Catalog {
 
     public func asset(contentHash: String) throws -> Asset? {
         try dbQueue.read { db in
-            try Asset.fetchOne(db, sql: "SELECT * FROM assets WHERE content_hash = ?", arguments: [contentHash])
+            try Asset.fetchOne(db, sql: "SELECT * FROM assets WHERE content_hash = ? ORDER BY imported_at, id LIMIT 1", arguments: [contentHash])
         }
     }
 
@@ -506,6 +506,12 @@ extension Catalog {
     }
 
     /// Resolve the on-disk location of an asset (copy roots live inside the package).
+    public func folderURL(rootID: String, path: String = "") throws -> URL {
+        guard let root = try root(id: rootID) else { throw CatalogError.noSuchSourceRoot(rootID) }
+        let base = root.managementMode == .copy ? layout.originalsURL : sourceURL(for: root)
+        return path.isEmpty ? base : base.appendingPathComponent(path, isDirectory: true)
+    }
+
     public func fileURL(for asset: Asset) throws -> URL {
         guard let root = try root(id: asset.sourceRootId) else {
             throw CatalogError.noSuchSourceRoot(asset.sourceRootId)

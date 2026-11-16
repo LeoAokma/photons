@@ -1,3 +1,4 @@
+import AppKit
 import PhotonsLocalization
 import Foundation
 import Observation
@@ -2967,6 +2968,27 @@ public final class CatalogSession {
 
     public func fileURL(for asset: Asset) -> URL? {
         try? catalog?.fileURL(for: asset)
+    }
+
+    public func prepareImportedPreviews(_ ids: [String]) {
+        guard let catalog, let cache = thumbnailCache else { return }
+        let imported = ids.compactMap { try? catalog.asset(id: $0) }
+        BackgroundTasks.shared.preparePreviews(assets: imported, provider: ThumbnailProvider.shared(for: cache)) {
+            try? catalog.fileURL(for: $0)
+        }
+    }
+
+    public func folderURL(rootID: String, path: String) -> URL? {
+        try? catalog?.folderURL(rootID: rootID, path: path)
+    }
+
+    public func revealAssetsInFinder(_ ids: [String]) {
+        guard let catalog else { return }
+        let urls = ids.compactMap { id -> URL? in
+            guard let asset = try? catalog.asset(id: id), !asset.isMissing else { return nil }
+            return try? catalog.fileURL(for: asset)
+        }
+        if !urls.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(urls) }
     }
 
     public var currentPhotoURL: URL? {

@@ -56,7 +56,7 @@ public enum LinearDNGWriter {
         if let manifest {
             let metadata=CGImageMetadataCreateMutable()
             CGImageMetadataRegisterNamespaceForPrefix(metadata,"https://photons.app/ns/panorama/1.0/" as CFString,"photonsPano" as CFString,nil)
-            CGImageMetadataSetValueWithPath(metadata,nil,"photonsPano:Manifest" as CFString,manifest.base64EncodedString() as CFString)
+            CGImageMetadataSetValueWithPath(metadata,nil,"photonsPano:Manifest" as CFString,PanoramaMetadataPacket.string(manifest) as CFString)
             if let xmp=CGImageMetadataCreateXMPData(metadata,nil) as Data? {
                 tags.append(Entry(tag:700,type:1,count:xmp.count,bytes:xmp))
             }

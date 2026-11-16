@@ -813,7 +813,8 @@ public final class RAWDecoder {
     private func decodeDetailed(_ url: URL, options: DecodeOptions,
                                 measurement: Bool) throws -> DecodeOutcome {
         let tStart = CACurrentMediaTime()
-        guard let filter = CIRAWFilter(imageURL: url) else { throw DecodeError.unsupportedFile(url) }
+        guard let initialFilter = CIRAWFilter(imageURL: url) else { throw DecodeError.unsupportedFile(url) }
+        let filter = try LinearDNGCompatibility.filter(for: url, initial: initialFilter)
         var ph = DecodePhases()
         ph.scale = options.scale
         ph.queueID = queueIdentity

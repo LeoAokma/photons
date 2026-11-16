@@ -1306,5 +1306,12 @@
   "fc7ac1c0b0ab": "此图片经过无法还原位置的变换，请在变换前应用 LCC 校正。",
   "538a8818a398": "已跳过现有文件",
   "3e6886d17a1c": "导出完成",
-  "64f1d2691e0c": "手动位置表示全景画面中心相对镜头光轴的偏移，右／上为正，单位 mm。"
+  "64f1d2691e0c": "手动位置表示全景画面中心相对镜头光轴的偏移，右／上为正，单位 mm。",
+  "grid.thumbnailSize": "缩略图大小",
+  "import.skipDuplicates": "不重复导入",
+  "import.duplicateCopies": "取消勾选后，创建可独立编辑、评分的图库副本，共用原始文件。",
+  "previews.title": "生成初始预览",
+  "previews.progress": "生成预览 · {0}/{1}",
+  "previews.failed": "共 {1} 张，{0} 张预览生成失败",
+  "panorama.geometry": "验证几何匹配 {0} ↔ {1}"
 }

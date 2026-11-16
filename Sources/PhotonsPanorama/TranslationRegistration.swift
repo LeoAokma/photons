@@ -4,7 +4,7 @@ import CoreGraphics
 /// Translation-only registration: corner descriptors, a robust displacement vote, then subpixel
 /// normalized correlation. No rotation, scale or perspective degrees of freedom exist here.
 enum TranslationRegistration {
-    struct Match { var offset: CGPoint; var score: Double; var inliers: Int }
+    struct Match { var offset: CGPoint; var score: Double; var inliers: Int; var anchors: [CGPoint] = [] }
     private struct Corner { let x: Int; let y: Int; let strength: Double; let descriptor: [Double] }
 
     private static func corners(_ image: GrayRaster) -> [Corner] {
@@ -42,9 +42,9 @@ enum TranslationRegistration {
         return result
     }
 
-    static func align(_ a: GrayRaster, _ b: GrayRaster, cancellation: PanoramaCancellation) throws -> Match? {
+    static func correspondences(_ a:GrayRaster,_ b:GrayRaster,cancellation:PanoramaCancellation) throws -> [ProjectiveRegistration.Pair] {
         let ac = corners(a), bc = corners(b)
-        var offsets: [CGPoint] = []
+        var pairs: [ProjectiveRegistration.Pair] = []
         for (idx, point) in ac.enumerated() {
             if idx % 50 == 0 { try cancellation.check() }
             var best = 10.0, next = 10.0, winner: Corner?
@@ -57,19 +57,26 @@ enum TranslationRegistration {
                 else if distance < next { next = distance }
             }
             if best < 0.5, best < next * 0.78, let winner {
-                offsets.append(CGPoint(x:point.x-winner.x,y:point.y-winner.y))
+                pairs.append(.init(a:CGPoint(x:point.x,y:point.y),b:CGPoint(x:winner.x,y:winner.y)))
             }
         }
-        var cluster: [CGPoint] = []
+        return pairs
+    }
+
+    static func align(_ a: GrayRaster, _ b: GrayRaster, cancellation: PanoramaCancellation) throws -> Match? {
+        let pairs = try correspondences(a,b,cancellation:cancellation)
+        let offsets = pairs.map { (offset:CGPoint(x:$0.a.x-$0.b.x,y:$0.a.y-$0.b.y),anchor:$0.a) }
+        var cluster: [(offset: CGPoint, anchor: CGPoint)] = []
         for seed in offsets {
-            let near = offsets.filter { hypot($0.x-seed.x,$0.y-seed.y) < 4 }
+            let near = offsets.filter { hypot($0.offset.x-seed.offset.x,$0.offset.y-seed.offset.y) < 4 }
             if near.count > cluster.count { cluster = near }
         }
         guard cluster.count >= 5 else { return nil }
-        let initial = CGPoint(x:median(cluster.map { Double($0.x) }), y:median(cluster.map { Double($0.y) }))
-        let refined = refine(a,b,offset:initial,radius:3)
+        let initial = CGPoint(x:median(cluster.map { Double($0.offset.x) }), y:median(cluster.map { Double($0.offset.y) }))
+        let anchors = stride(from: 0, to: cluster.count, by: max(1, cluster.count / 64)).map { cluster[$0].anchor }
+        let refined = refine(a,b,offset:initial,radius:3,anchors:anchors)
         guard refined.score > 0.72 else { return nil }
-        return Match(offset:refined.offset,score:refined.score,inliers:cluster.count)
+        return Match(offset:refined.offset,score:refined.score,inliers:cluster.count,anchors:anchors)
     }
 
     /// Bounded image search around measured shift differences. A measurement supplies a
@@ -112,18 +119,42 @@ enum TranslationRegistration {
         return ab/sqrt(aa*bb)
     }
 
-    static func refine(_ a: GrayRaster, _ b: GrayRaster, offset: CGPoint, radius: Int) -> Match {
-        var best = offset, score = correlation(a,b,offset:offset)
+    /// Each verified corner contributes one normalized patch vote. Moving water, sky, or a
+    /// single high-contrast foreground object must not dominate the whole overlap's score.
+    private static func localCorrelation(_ a: GrayRaster, _ b: GrayRaster, offset: CGPoint, anchors: [CGPoint]) -> Double {
+        var scores: [Double] = []
+        for p in anchors {
+            guard p.x >= 8, p.y >= 8, p.x < Double(a.width-8), p.y < Double(a.height-8),
+                  p.x-offset.x >= 8, p.y-offset.y >= 8,
+                  p.x-offset.x < Double(b.width-8), p.y-offset.y < Double(b.height-8) else { continue }
+            var aa=0.0, bb=0.0, ab=0.0
+            for dy in stride(from:-6,through:6,by:3) { for dx in stride(from:-6,through:6,by:3) {
+                let x=p.x+Double(dx), y=p.y+Double(dy), u=x-offset.x, v=y-offset.y
+                let gx=a.sample(x+1,y)-a.sample(x-1,y), gy=a.sample(x,y+1)-a.sample(x,y-1)
+                let hx=b.sample(u+1,v)-b.sample(u-1,v), hy=b.sample(u,v+1)-b.sample(u,v-1)
+                aa += gx*gx+gy*gy; bb += hx*hx+hy*hy; ab += gx*hx+gy*hy
+            }}
+            if aa > 1e-6, bb > 1e-6 { scores.append(ab/sqrt(aa*bb)) }
+        }
+        guard !scores.isEmpty else { return -1 }
+        return median(scores)
+    }
+
+    static func refine(_ a: GrayRaster, _ b: GrayRaster, offset: CGPoint, radius: Int, anchors: [CGPoint] = []) -> Match {
+        func scoreAt(_ point: CGPoint) -> Double {
+            anchors.isEmpty ? correlation(a,b,offset:point) : localCorrelation(a,b,offset:point,anchors:anchors)
+        }
+        var best = offset, score = scoreAt(offset)
         for dy in -radius...radius { for dx in -radius...radius {
             let p = CGPoint(x:offset.x+Double(dx),y:offset.y+Double(dy))
-            let s = correlation(a,b,offset:p)
+            let s = scoreAt(p)
             if s > score { best = p; score = s }
         }}
         for step in [0.5,0.25,0.125,0.0625] {
             let center = best
             for dy in -1...1 { for dx in -1...1 {
                 let p = CGPoint(x:center.x+Double(dx)*step,y:center.y+Double(dy)*step)
-                let s = correlation(a,b,offset:p)
+                let s = scoreAt(p)
                 if s > score { best = p; score = s }
             }}
         }

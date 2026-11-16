@@ -161,7 +161,7 @@ public enum ThumbRecipe {
     public static func editFingerprint(_ document: EditModel, spec: ThumbSpec = .hd) -> String {
         let stageKeys = RenderStage.order.map { document.keyMaterial($0) }.joined(separator: "|")
         var material = "\(stageKeys)|\(StageAlgorithmVersion.material)|\(spec.rawValue)"
-            + "|sv\(spec.schemaVersion)"
+            + "|sv\(spec.schemaVersion)|decode=\(LinearDNGCompatibility.recipeVersion)|ceiling=\(HighlightCeiling.currentEV)"
         let inputs = document.decodeInputs
         if let version = inputs.versionComponent { material += "|\(version)" }
         if let detail = inputs.detailComponent { material += "|\(detail)" }

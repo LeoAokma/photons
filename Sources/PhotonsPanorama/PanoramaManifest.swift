@@ -13,6 +13,8 @@ public struct PanoramaManifest: Codable {
         public var rect: CGRect
         public var sensor: SensorSize?
         public var shiftMM: CGPoint?
+        public var imageToCanvas: PanoramaTransform? = nil
+        public var sensorRect: CGRect? = nil
     }
     public var version = 1
     public var projection = "translation"
@@ -39,6 +41,8 @@ public struct PanoramaManifest: Codable {
                 offsetMM: CGPoint? = nil, sensor: SensorSize? = nil,
                 bodyOrientation: PanoramaBodyOrientation = .degrees0) {
         canvas=plan.size
+        version=plan.warps == nil ? 1:2
+        projection=plan.warps == nil ? "translation":"projective"
         whiteBalance=plan.whiteBalance.map {[$0.0,$0.1]}
         exposureGains=plan.gains
         let transform=CGAffineTransform(scaleX:1/canvas.width,y:1/canvas.height)
@@ -52,14 +56,20 @@ public struct PanoramaManifest: Codable {
         options=plan.options
         frames=plan.sources.indices.map { i in
             let source=plan.sources[i],rect=plan.sourceRect(i)
+            let sensorRect=CGRect(origin:plan.origins[i],size:source.size)
             let physical=plan.lccState?.sensor ?? sensor ?? source.sensor
             var shift:CGPoint?
             if let physical,let offset=plan.lccState?.offsetMM ?? offsetMM {
-                shift=CGPoint(x:(rect.midX-plan.size.width/2)*physical.width/rect.width-offset.x,
-                              y:(plan.size.height/2-rect.midY)*physical.height/rect.height-offset.y)
+                shift=CGPoint(x:(sensorRect.midX-plan.size.width/2)*physical.width/sensorRect.width-offset.x,
+                              y:(plan.size.height/2-sensorRect.midY)*physical.height/sensorRect.height-offset.y)
             }
-            return Frame(filename:source.url.lastPathComponent,camera:source.camera,orientation:source.orientation,
-                         rect:rect.applying(transform),sensor:physical,shiftMM:shift)
+            var frame=Frame(filename:source.url.lastPathComponent,camera:source.camera,orientation:source.orientation,
+                            rect:rect.applying(transform),sensor:physical,shiftMM:shift)
+            if let warp=plan.warps?[i] {
+                frame.imageToCanvas=PanoramaTransform.scale(1/plan.size.width,1/plan.size.height).multiplied(by:warp).multiplied(by:.scale(source.size.width,source.size.height))
+                frame.sensorRect=sensorRect.applying(transform)
+            }
+            return frame
         }
         maskWidth=plan.maskWidth;maskHeight=plan.maskHeight
         // Preserve the actual seam weights, independent of exported pixel dimensions.
@@ -75,7 +85,7 @@ public struct PanoramaManifest: Codable {
     public func metadata() throws -> CGImageMetadata {
         let result=CGImageMetadataCreateMutable()
         CGImageMetadataRegisterNamespaceForPrefix(result,"https://photons.app/ns/panorama/1.0/" as CFString,"photonsPano" as CFString,nil)
-        CGImageMetadataSetValueWithPath(result,nil,"photonsPano:Manifest" as CFString,try encoded().base64EncodedString() as CFString)
+        CGImageMetadataSetValueWithPath(result,nil,"photonsPano:Manifest" as CFString,PanoramaMetadataPacket.string(try encoded()) as CFString)
         return result
     }
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }
@@ -90,17 +100,22 @@ public struct PanoramaManifest: Codable {
         guard let source=CGImageSourceCreateWithURL(url as CFURL,nil),
               let metadata=CGImageSourceCopyMetadataAtIndex(source,0,nil),
               let value=CGImageMetadataCopyStringValueWithPath(metadata,nil,"photonsPano:Manifest" as CFString) as String? else {return nil}
-        guard value.utf8.count<=32*1024*1024,let data=Data(base64Encoded:value) else {throw PanoramaFailure(L10n.tr("fa397c8d29a6"))}
+        guard let data=PanoramaMetadataPacket.data(value) else {throw PanoramaFailure(L10n.tr("fa397c8d29a6"))}
         let result=try JSONDecoder().decode(Self.self,from:data)
         try result.validate();return result
     }
     public func validate() throws {
-        guard version==1,projection=="translation",(1...16).contains(frames.count),
+        guard (version==1 && projection=="translation" || version==2 && projection=="projective"),(1...16).contains(frames.count),
               canvas.width.isFinite,canvas.height.isFinite,canvas.width>0,canvas.height>0,
               crop.width>0,crop.height>0,crop.minX>=0,crop.minY>=0,crop.maxX<=1.001,crop.maxY<=1.001,
               maskWidth>0,maskHeight>0,maskWidth<=8192,maskHeight<=8192,
               outputTransform.map({$0.count==9 && $0.allSatisfy(\.isFinite)}) ?? true,
               weights.count==frames.count,weights.allSatisfy({$0.count==maskWidth*maskHeight}),
+              frames.allSatisfy({frame in
+                  guard let warp=frame.imageToCanvas else {return projection=="translation"}
+                  guard warp.isValid,let sensor=frame.sensorRect,sensor.width.isFinite,sensor.height.isFinite,sensor.width>0,sensor.height>0 else {return false}
+                  return warp.corners(CGSize(width:1,height:1)).allSatisfy {$0.x.isFinite && $0.y.isFinite && (-0.001...1.001).contains($0.x) && (-0.001...1.001).contains($0.y)}
+              }),
               frames.allSatisfy({$0.rect.width>0 && $0.rect.height>0 && $0.rect.minX>=0 && $0.rect.minY>=0 && $0.rect.maxX<=1.001 && $0.rect.maxY<=1.001}) else {
             throw PanoramaFailure(L10n.tr("43898da0de51"))
         }

@@ -7,6 +7,32 @@ import PhotonsPanorama
 @testable import PhotonsJobs
 
 final class PanoramaJobTests:XCTestCase {
+    func testBostonCorrectedGeometryWorker() throws {
+        guard let path=ProcessInfo.processInfo.environment["PHOTONS_BOSTON_CORRECTED_EXPORT"] else {throw XCTSkip("External corrected-geometry RAW export")}
+        let output=URL(fileURLWithPath:FileManager.default.currentDirectoryPath).appendingPathComponent("local/audit/corrected-panorama-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
+        for range in [641...643,644...646] {
+            let urls=range.map {URL(fileURLWithPath:path).appendingPathComponent(String(format:"B%07d.3FR",$0))}
+            let plan=try PanoramaEngine().analyze(urls:urls)
+            XCTAssertNotNil(plan.warps)
+            let preset=ExportPreset(format:.tiff,longEdge:4000,bitDepth:16,colorSpace:.displayP3,hdr:HDRExport(enabled:true),nameTemplate:"{name}",sizingMode:.longEdge)
+            let job=PanoramaJob(snapshot:try PanoramaSnapshot(plan:plan),manifest:PanoramaManifest(plan:plan),preset:preset,linearDNG:true,outputDirectory:output,bookmarks:[])
+            let request=output.appendingPathComponent("request-\(range.lowerBound).json")
+            try JSONEncoder().encode(job).write(to:request)
+            let worker=Process(),pipe=Pipe()
+            worker.executableURL=URL(fileURLWithPath:FileManager.default.currentDirectoryPath).appendingPathComponent(".build/release/photons-panorama-worker")
+            worker.arguments=[request.path];worker.standardOutput=pipe
+            try worker.run();let data=pipe.fileHandleForReading.readDataToEndOfFile();worker.waitUntilExit()
+            XCTAssertEqual(worker.terminationStatus,0,String(decoding:data,as:UTF8.self))
+            let events=data.split(separator:10).compactMap {try? JSONDecoder().decode(PanoramaWorkerEvent.self,from:Data($0))}
+            let url=try XCTUnwrap(events.last?.result,String(decoding:data,as:UTF8.self))
+            let read=try XCTUnwrap(PanoramaManifest.read(from:url));XCTAssertEqual(read.version,2)
+            XCTAssertEqual(read.frames.count,3);XCTAssertNotNil(read.frames[2].imageToCanvas)
+            let filter=try XCTUnwrap(CIRAWFilter(imageURL:url));XCTAssertEqual(max(filter.nativeSize.width,filter.nativeSize.height),4000,accuracy:1)
+            print("CORRECTED_PANORAMA_OUTPUT",url.path)
+        }
+    }
+
     func testBostonHDRWorker() throws {
         guard let sourceFolder=ProcessInfo.processInfo.environment["PHOTONS_BOSTON_EXPORT"] else {throw XCTSkip("External Boston RAW export")}
         let folder=URL(fileURLWithPath:FileManager.default.currentDirectoryPath).appendingPathComponent("local/audit/boston-export-\(UUID().uuidString)")

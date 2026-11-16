@@ -131,6 +131,7 @@ public final class ImportCoordinator {
         // Reload first, then select: `selectImported` does both, and an empty `addedAssetIDs`
         // (duplicates only, or cancelled before the first file) leaves the selection untouched.
         session.selectImported(summary.addedAssetIDs)
+        session.prepareImportedPreviews(summary.addedAssetIDs)
 
         if let message = lastError { onError?(message) }
         completion?(summary)

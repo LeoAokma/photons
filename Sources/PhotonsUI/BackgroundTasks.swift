@@ -6,6 +6,7 @@ import PhotonsExport
 import PhotonsPanorama
 import PhotonsJobs
 import PhotonsFileAccess
+import PhotonsCatalog
 
 @MainActor
 final class BackgroundTask:ObservableObject,Identifiable {
@@ -18,9 +19,10 @@ final class BackgroundTask:ObservableObject,Identifiable {
     @Published var output:URL?
     let token=CancellationToken()
     var process:Process?
+    var onCancel:(()->Void)?
     init(_ title:String) {self.title=title}
     var active:Bool {state == .waiting || state == .running}
-    func cancel() {token.cancel();if process?.isRunning == true {process?.terminate()};message=L10n.tr("e8e08b0f61dd")}
+    func cancel() {token.cancel();message=L10n.tr("e8e08b0f61dd");onCancel?();if process?.isRunning == true {process?.terminate()}}
 }
 
 /// Owns jobs after all tool windows close. One large panorama at a time bounds memory/GPU
@@ -29,12 +31,25 @@ final class BackgroundTask:ObservableObject,Identifiable {
 final class BackgroundTasks:ObservableObject {
     static let shared=BackgroundTasks()
     @Published var tasks:[BackgroundTask]=[]
+    private var previewJobs:[UUID:PreviewPreparation]=[:]
     private let workerOverride:URL?
     init(worker:URL? = nil) {workerOverride=worker}
     private let work=DispatchQueue(label:"photons.panorama.jobs",qos:.utility)
     static let changed=Notification.Name("photons.backgroundTasksChanged")
     func changed() {objectWillChange.send();NotificationCenter.default.post(name:Self.changed,object:self)}
     var activeCount:Int {tasks.filter(\.active).count}
+    func preparePreviews(assets:[Asset], provider:ThumbnailProvider, source:(Asset)->URL?) {
+        let entries=assets.compactMap { asset -> (Asset,URL)? in source(asset).map {(asset,$0)} }
+        guard !entries.isEmpty else {return}
+        let task=BackgroundTask(L10n.tr("previews.title"))
+        let job=PreviewPreparation(task:task,provider:provider,entries:entries) { [weak self] in
+            self?.previewJobs.removeValue(forKey:task.id)
+            self?.changed()
+        }
+        previewJobs[task.id]=job;tasks.append(task)
+        task.onCancel = { [weak job] in job?.cancel() }
+        job.start();changed()
+    }
     func submit(plan:PanoramaPlan,manifest:PanoramaManifest,preset:ExportPreset,dng:Bool,directory:URL,
                 completion:@escaping(URL,@escaping(String?)->Void)->Void) throws {
         let worker=Bundle.main.resourceURL?.appendingPathComponent("bin/photons-panorama-worker")
