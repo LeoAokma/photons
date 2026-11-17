@@ -1730,5 +1730,9 @@
   "ipad.ff75b3b3ea64": "Scene-based LCC placement is an estimate. Check the source positions and, if necessary, specify a measured reference before exporting.",
   "ipad.ff89b23fe243": "No detail pixels returned.",
   "ipad.renderingBackend": "Rendering engine",
-  "ipad.lightAdjustments": "Light"
+  "ipad.lightAdjustments": "Light",
+  "04684189cbd7": "Shear",
+  "886fc2719d25": "Auto tone",
+  "a0dc4ea6b223": "Auto tone: exposure, highlights, whites, blacks and contrast, arranged by texture loss",
+  "187f2e7d1e49": "Light · Auto"
 }

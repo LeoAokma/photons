@@ -126,3 +126,11 @@
 - 分发归档：0.1.0 (3) Release archive 成功，应用源码 `f2176a1599771306f76eb71837a57c8ab25dd812`，构建时应用文件无未提交修改，只有文档在整理。严格签名、仅 iPad、en/zh-Hans、App Store profile、dSYM UUID、隐私/许可/标定资源及私有 RAW 排除均通过。源码图标 1024×1024、无 alpha。归档验证 JSON：`09-archive-validation.json`。
 - 当前归档不代表已经上传或分发，发布结果另行记录。实体 iPad 的 HDR、可用内存、持续温度/耗电尚待 beta 验证。
 - 本项修改完整流程的手势等待断言、更新 `docs/ipad-preview.md` 与本追踪记录；不修改应用逻辑。依赖 IPAD-01…08、10、11。提交标题含 IPAD-09-QA。
+
+## IPAD-09-MAIN — 同步新上游 main
+
+- 来源：上游 `737f92d54056bf4f77fe93daa1c366e6bae639a1`，包含解码自动版本、去雾、透视、Mac 直方图与 NLMF 依赖更新。以普通 merge 保留新 main 和全部独立 iPad 提交。PR： https://github.com/chemharuka/photons/pull/3 。
+- 冲突只涉及 en/zh-Hans JSON 尾部；按三方逐 key 合并并验证无同 key 不同值冲突，保留双方全部翻译。iPad Package.resolved 重新解析，GRDB 保持 7.11.1，新增 NonlocalMatchFilter 1.0.0 / `52a6e4f4edd48f6b9b34882327e3a838a0f69d54`，与上游锁定一致。
+- 验证：合并后的 Debug app 与测试目标已编译成功，正在运行完整引擎/UI 回归；首批 Close、HDR、直方图、导入持久化、LCC、镜头详情测试已通过。最初固定依赖解析因新 package 缺少 iPad pin 而失败，重新解析后构建通过。最终完整结果在后续验收记录中追加，不将运行中测试记为通过。日志 `09-main-resolve.log`、`09-main-full-suite.log`。
+- build 3 已上传，但不加入测试组；它使用旧 main。最终发布改为合并后 build 4。需要追加预览缓存算法版本失效修正，并同步最新 Mac 直方图绘制规则，各自单独提交。
+- 依赖：IPAD-09-BASE (`5644147`)；无历史改写。回退此 merge 需要明确第一父提交并评估依赖新引擎的后续修正，不自动删除分支。

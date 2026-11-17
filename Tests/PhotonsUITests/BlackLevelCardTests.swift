@@ -3,6 +3,7 @@ import SwiftUI
 import AppKit
 import PhotonsCatalog
 import PhotonsCore
+import PhotonsLocalization
 @testable import PhotonsUI
 
 /// 派单 071 —— 「黑电平」卡的面板侧。
@@ -183,8 +184,16 @@ final class BlackLevelCardTests: XCTestCase {
         XCTAssertEqual(LoupeController.autoBlackOffset(for: 0.05), 0, "0.05 不是负值，仍是 0")
 
         // 钳位不许静默：动作里有一行日志，说明它被写满了量程。
+        //
+        // 本地化之后那行日志的文案在 `zh-Hans.json` 里（键 `e388d0ebca8d`），源码只剩
+        // `L10n.tr("e388d0ebca8d", …)`，所以断言只能认「这条日志文案」本身，不能认某个语言的字面量。
+        // 语义完全等价：以前钉的是「源码里有 AUTO BLACK · min 这串字」，现在钉的是
+        // 「有一条日志用的是 AUTO BLACK · min 这条文案」——文案搬到资源表里，钉的对象跟着搬。
         let source = try String(contentsOf: Self.loupeSource, encoding: .utf8)
-        XCTAssertTrue(source.contains("AUTO BLACK · min"), "越界时必须有日志，不许静默")
+        XCTAssertTrue(L10n.tr("e388d0ebca8d").contains("AUTO BLACK · min"),
+                      "日志文案本身必须仍是 AUTO BLACK · min（资源表 e388d0ebca8d）")
+        XCTAssertTrue(source.contains("L10n.tr(\"e388d0ebca8d\")") || source.contains("L10n.tr(\"d0a516ec35a8\")"),
+                      "越界时必须有日志，不许静默")
 
         for min: Float in [-0.0014, -0.0027, -0.01] {
             let offset = LoupeController.autoBlackOffset(for: min)

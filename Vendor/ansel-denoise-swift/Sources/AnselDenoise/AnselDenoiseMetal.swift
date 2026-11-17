@@ -17,10 +17,22 @@ public final class AnselDenoiseMetal {
     let model: AnselDenoiseModel
     let cfg: AnselModelConfig
     let metal: MetalConv
+
+    /// Convolution weights packed once per layer, keyed by the layer's tensor name.
+    ///
+    /// Owned by this instance and this instance's model: two models with colliding
+    /// layer names cannot see each other's packed weights, because there is no
+    /// process-wide cache to collide in.
     private var preparedLayers: [String: MetalConv.PreparedConvolution] = [:]
+    /// `preparedLayers` is mutable state reachable from any thread that calls
+    /// `denoise`, so every access is behind this lock.
     private let preparedLock = NSLock()
+
+    /// Number of layers whose weights are currently packed. Grows on the first
+    /// inference and stays put after that.
     var preparedLayerCount: Int {
-        preparedLock.lock(); defer { preparedLock.unlock() }
+        preparedLock.lock()
+        defer { preparedLock.unlock() }
         return preparedLayers.count
     }
 
@@ -129,22 +141,36 @@ public final class AnselDenoiseMetal {
         return slice
     }
 
-    private func convolution(_ input: MetalConv.Tensor, weight: String, bias: String,
-                             kind: MetalConv.ConvKind, cmd: MTLCommandBuffer) throws -> MetalConv.Tensor {
-        let layer = try preparedLayer(weight: weight, bias: bias)
-        return try metal.conv(input, prepared: layer, kind: kind, cmd: cmd)
+    /// Packed weights for one layer, packing on first use.
+    ///
+    /// Double-checked under the lock: the pack itself happens outside it so a
+    /// second thread that arrives mid-pack does not block on GPU buffer allocation
+    /// it does not need.
+    private func preparedLayer(weight: String, bias: String) throws -> MetalConv.PreparedConvolution {
+        preparedLock.lock()
+        let cached = preparedLayers[weight]
+        preparedLock.unlock()
+        if let cached { return cached }
+
+        let prepared = try metal.prepare(w: try model.weights(weight),
+                                         b: model.tensors[bias]?.values)
+
+        preparedLock.lock()
+        // A concurrent call may have packed the same layer while we were packing;
+        // keep whichever landed first so every caller uses one set of buffers.
+        let existing = preparedLayers[weight]
+        if existing == nil { preparedLayers[weight] = prepared }
+        let result = existing ?? prepared
+        preparedLock.unlock()
+        return result
     }
 
-    private func preparedLayer(weight: String, bias: String) throws -> MetalConv.PreparedConvolution {
-        preparedLock.lock(); defer { preparedLock.unlock() }
-        let layer: MetalConv.PreparedConvolution
-        if let cached = preparedLayers[weight] {
-            layer = cached
-        } else {
-            layer = try metal.prepare(w: model.weights(weight), b: model.tensors[bias]?.values)
-            preparedLayers[weight] = layer
-        }
-        return layer
+    /// Convolve using this model's packed weights for `weight`/`bias`.
+    private func convolution(_ input: MetalConv.Tensor, weight: String, bias: String,
+                             kind: MetalConv.ConvKind,
+                             cmd: MTLCommandBuffer) throws -> MetalConv.Tensor {
+        try metal.conv(input, prepared: try preparedLayer(weight: weight, bias: bias),
+                       kind: kind, cmd: cmd)
     }
 
     private func block(_ x: MetalConv.Tensor,

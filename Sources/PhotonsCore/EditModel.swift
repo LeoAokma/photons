@@ -447,6 +447,29 @@ public struct EditModel: Sendable, Equatable, Codable {
     /// the card must keep the pre-S3.8 chain byte for byte.
     public var hasGrade: Bool { !colorGrading.isIdentity }
 
+    /// 405 — the stages this document will actually run. Pure CPU (no graph, no GPU), because the
+    /// thumbnail fingerprint is computed in the grid's fast path as well.
+    ///
+    /// The judgement lives in exactly one place, `RenderStage.pipeline`; this only wires up the
+    /// twelve booleans from the sources `RenderKeyChain.links` already uses (see the line references
+    /// in `Stage.swift`). Nothing here decides *whether* a stage runs — if a source changes, it
+    /// changes in `Stage.swift` first and this call site follows.
+    public var renderStages: [RenderStage] {
+        RenderStage.pipeline(
+            hasMasks: hasActiveMasks,                                      // Stage.swift:659
+            hasLocalColor: hasLocalColor,                                  // :771
+            hasHSL: hasHSL,                                                // :783
+            hasPointColor: hasPointColor,                                  // :795
+            hasGrain: hasGrain,                                            // :850
+            hasBW: hasBlackAndWhite,                                       // :757
+            hasGrade: hasGrade,                                            // :809
+            hasDetailFX: hasDetailFX,                                      // :822
+            hasHeal: hasHeal,                                              // :613
+            hasContrast: hasContrastStage || hasLocalContrast,             // :741
+            hasDehaze: hasDehaze,                                          // :679
+            hasSharpen: hasSharpen)                                        // :835
+    }
+
     public init(from decoder: any Decoder) throws {
         // 205: the raw tree is what lets the keys this build does not know survive the decode. Read
         // before the keyed container and independently of it — a value of the wrong type still falls
@@ -922,6 +945,30 @@ public struct EditModel: Sendable, Equatable, Codable {
             if geometry.perspectiveHorizontal != 0 {
                 s += ";phx=\(Int((geometry.perspectiveHorizontal * 10).rounded()))"
             }
+            // 407: the shear, **only when non-zero** (`asp`/`car`/`q` discipline). A document that never
+            // moved the slider keeps the pre-407 geometry material byte for byte, so every pinned key
+            // vector and recorded golden holds and the neutral document's cache entry is untouched.
+            //
+            // The unit is **thousandths of `k`**: the slider's own grid is 0…100 for `k` 0…0.5, i.e.
+            // 0.005 per position, so thousandths cannot collide (`;shk=5` is position 1, `;shk=500`
+            // the travel's end). `k()`'s `%.5f` would also be fine here, but the integer spelling is
+            // the one `;pvy`/`;phx`/`;car` already use for "a slider position in the key".
+            if geometry.perspectiveShear != 0 {
+                s += ";shk=\(Int((geometry.perspectiveShear * 1000).rounded()))"
+            }
+            // 408: 宽高比, **only when it is not 1.0** (the `asp`/`car`/`q`/`shk` discipline). A
+            // document that never moved the slider keeps the pre-408 geometry material byte for byte,
+            // so the pinned key vectors, the recorded goldens and the neutral document's cache entry
+            // all hold.
+            //
+            // The token is `asp2`, **not** `asp`: `;asp=` already names `aspectLock.code` above, and
+            // two meanings in one token is exactly the key collision this file forbids. The unit is
+            // **thousandths of `a`**: the row's grid is 0.01 (and the aspect travel is 0.5…2.0), so
+            // thousandths separate two adjacent positions with a factor of ten to spare
+            // (`;asp2=1105` is the 自动 value for `v = 100`).
+            if geometry.perspectiveAspect != 1 {
+                s += ";asp2=\(Int((geometry.perspectiveAspect * 1000).rounded()))"
+            }
             // 330: the crop's space. Appended **only for the canvas**, so every pre-330 document (and
             // every keystone-free one, where the two spaces are the same picture) keeps the geometry
             // material — and therefore the whole chain — byte for byte.
@@ -1160,6 +1207,38 @@ public struct GeometryGroup: Sendable, Equatable, Codable {
     public var perspectiveVertical: Double
     public var perspectiveHorizontal: Double
 
+    /// **407 — 切变**, the fourth geometry degree of freedom: the coefficient `k` of the horizontal
+    /// shear `(x, y) → (x + k·y, y)` in the normalized frame. It rides with the two keystones (one
+    /// `PerspectiveMap`, one S0 stage), and 0 is the identity.
+    ///
+    /// **Why a scalar and not a direction.** 407 §0 measured it: `shear(φ, k)` is `R(−φ)·shear(0, k′)·R(φ)`,
+    /// and `s` (摆正) is free, so a direction would be the same dimension counted twice — the fit with
+    /// and without φ lands on the same 0.00000° residual. Fixed horizontal is the whole feature.
+    ///
+    /// Range ±`PerspectiveMap.shearLimit` (0.5), the clamp in `PerspectiveMap`. Written **only when
+    /// non-zero** (the `quarterTurns`/`pvy` discipline), so every document written before 407 — and
+    /// every document that never touches the new slider — re-encodes byte for byte, keeps its
+    /// geometry key material, and renders through the pre-407 `forwardMatrix` (`S(0)`'s early
+    /// return). That is what makes 407 an **additive** schema change with no
+    /// `StageAlgorithmVersion.geometry` bump.
+    public var perspectiveShear: Double
+
+    /// **408 — 宽高比**, the fifth number of the same map: the horizontal scale `x ↦ ½ + (x − ½)·a`
+    /// about the frame's centre, `1.0` = the identity.
+    ///
+    /// **Not `aspectLock`.** The lock constrains the *crop rectangle* (3:2, 16:9 …); this is a degree
+    /// of freedom of the perspective correction itself, and the UI calls the lock 「比例」 and this
+    /// 「宽高比」 so the two cannot be confused. It is the knob that undoes the stretch a symmetric
+    /// keystone puts on the picture, and darktable/ART/RapidRAW all spell it `aspect`.
+    ///
+    /// Range `[1/aspectLimit, aspectLimit]` = `[0.5, 2.0]`, the clamp in `PerspectiveMap`. Written
+    /// **only when it is not 1.0** (the `quarterTurns`/`pvy`/`shk` discipline), so every document
+    /// written before 408 — and every document that never touches the new slider — re-encodes byte
+    /// for byte, keeps its geometry key material, and renders through the pre-408 `forwardMatrix`
+    /// (`A(1)`'s early return). That is what makes 408 additive with **no**
+    /// `StageAlgorithmVersion.geometry` bump.
+    public var perspectiveAspect: Double
+
     /// 330 — **which space `crop` is measured in.** `.source` (0) is every document written before
     /// 330 and keeps that meaning byte for byte; `.canvas` (1) says the rect is a rectangle of the
     /// **document canvas** (324's `photoCanvas`, i.e. the photograph after `P → R`), which is what
@@ -1200,6 +1279,8 @@ public struct GeometryGroup: Sendable, Equatable, Codable {
                 quarterTurns: Int = 0,
                 perspectiveVertical: Double = 0,
                 perspectiveHorizontal: Double = 0,
+                perspectiveShear: Double = 0,
+                perspectiveAspect: Double = 1,
                 cropSpace: CropSpace = .source,
                 guideLines: [StoredGuideLine] = []) {
         self.crop = crop
@@ -1210,6 +1291,8 @@ public struct GeometryGroup: Sendable, Equatable, Codable {
         self.quarterTurns = GeometryGroup.normalizedQuarterTurns(quarterTurns)
         self.perspectiveVertical = perspectiveVertical
         self.perspectiveHorizontal = perspectiveHorizontal
+        self.perspectiveShear = perspectiveShear
+        self.perspectiveAspect = perspectiveAspect
         self.cropSpace = cropSpace
         self.guideLines = guideLines
     }
@@ -1238,6 +1321,12 @@ public struct GeometryGroup: Sendable, Equatable, Codable {
         // 183: absent on every document written before this task, which reads as 0 (= no warp).
         v.perspectiveVertical = c.val("perspectiveVertical", v.perspectiveVertical)
         v.perspectiveHorizontal = c.val("perspectiveHorizontal", v.perspectiveHorizontal)
+        // 407: absent on every document written before this task, which reads as 0 (= no shear, and
+        // the pre-407 matrix). Additive — the version is not stamped.
+        v.perspectiveShear = c.val("perspectiveShear", v.perspectiveShear)
+        // 408: absent on every document written before this task, which reads as 1.0 (= no aspect
+        // correction, and the pre-408 matrix). Also additive — the version is not stamped.
+        v.perspectiveAspect = c.val("perspectiveAspect", v.perspectiveAspect)
         // 330: absent on every document written before this task, which reads as `.source` (= the
         // crop is a rectangle of the photograph, the pre-330 meaning). The *conversion* of such a
         // rect to a canvas rect needs the image's pixel size, so it is not done here — see
@@ -1272,6 +1361,16 @@ public struct GeometryGroup: Sendable, Equatable, Codable {
         }
         if perspectiveHorizontal != 0 {
             try c.encode(perspectiveHorizontal, forKey: AnyCodingKey("perspectiveHorizontal"))
+        }
+        // 407: the shear, **only when non-zero** — the same discipline, so every document that never
+        // touched the slider keeps its bytes (and its key) exactly.
+        if perspectiveShear != 0 {
+            try c.encode(perspectiveShear, forKey: AnyCodingKey("perspectiveShear"))
+        }
+        // 408: 宽高比, **only when it is not 1.0** — the same discipline, so a document that never
+        // touched the slider re-encodes byte for byte (`1.0` is the identity, not a value to store).
+        if perspectiveAspect != 1 {
+            try c.encode(perspectiveAspect, forKey: AnyCodingKey("perspectiveAspect"))
         }
         // 330: the crop's space, **only when it is the canvas** — the `quarterTurns`/`pvy` discipline.
         // A `.source` document (every document written before 330, and every keystone-free one — the
@@ -1382,8 +1481,12 @@ public struct GeometryGroup: Sendable, Equatable, Codable {
     /// entirely (the flag in `S0Params` is 0), the canvas is the crop's own pixel size, and the key
     /// material grows no token. The clamp lives in `PerspectiveMap` (finite, ±200 — 347).
     public var perspective: PerspectiveMap? {
-        guard perspectiveVertical != 0 || perspectiveHorizontal != 0 else { return nil }
-        return PerspectiveMap(vertical: perspectiveVertical, horizontal: perspectiveHorizontal)
+        guard perspectiveVertical != 0 || perspectiveHorizontal != 0
+            || perspectiveShear != 0 || perspectiveAspect != 1 else {
+            return nil
+        }
+        return PerspectiveMap(vertical: perspectiveVertical, horizontal: perspectiveHorizontal,
+                              shear: perspectiveShear, aspect: perspectiveAspect)
     }
 
     /// **The one geometry fingerprint** of the low-resolution whole picture — `344`'s key half and
@@ -1417,7 +1520,8 @@ public struct GeometryGroup: Sendable, Equatable, Codable {
     var hasNeutralGeometry: Bool {
         !flipHorizontal && !flipVertical
             && straightenDegrees == 0 && quarterTurns == 0
-            && perspectiveVertical == 0 && perspectiveHorizontal == 0
+            && perspectiveVertical == 0 && perspectiveHorizontal == 0 && perspectiveShear == 0
+            && perspectiveAspect == 1
             && cropSpace == .source && cropRect.coversFrame
     }
 
@@ -1432,6 +1536,16 @@ public struct GeometryGroup: Sendable, Equatable, Codable {
         }
         if perspectiveHorizontal != 0 {
             s += ";phx=\(Int((perspectiveHorizontal * 10).rounded()))"
+        }
+        // 407: the shear. Same token as the key material, and for the same reason — `344`/`366` ask
+        // this string to name *every* dimension the renderer reads, and `S(k)` moves pixels.
+        if perspectiveShear != 0 {
+            s += ";shk=\(Int((perspectiveShear * 1000).rounded()))"
+        }
+        // 408: 宽高比. Same token as the key material, and for the same reason — `344`/`366` ask this
+        // string to name *every* dimension the renderer reads, and `A(a)` moves pixels.
+        if perspectiveAspect != 1 {
+            s += ";asp2=\(Int((perspectiveAspect * 1000).rounded()))"
         }
         if let token = cropSpace.keyToken { s += ";\(token)" }
         return s
@@ -1488,6 +1602,8 @@ public struct GeometryGroup: Sendable, Equatable, Codable {
                                     quarterTurns: 0,
                                     perspectiveVertical: perspectiveVertical,
                                     perspectiveHorizontal: perspectiveHorizontal,
+                                    perspectiveShear: perspectiveShear,
+                                    perspectiveAspect: perspectiveAspect,
                                     cropSpace: .canvas),
             source: oriented)
         let e = geometry.photoQuadExtent

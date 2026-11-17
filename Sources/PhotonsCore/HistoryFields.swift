@@ -194,6 +194,13 @@ extension EditHistory {
             before.geometry.perspectiveVertical, after.geometry.perspectiveVertical)
         num("geometry.perspectiveHorizontal", .geometry,
             before.geometry.perspectiveHorizontal, after.geometry.perspectiveHorizontal)
+        // 407: 切变 — same rule, and the same group, so its row is 「透视」's neighbour in the timeline.
+        num("geometry.perspectiveShear", .geometry,
+            before.geometry.perspectiveShear, after.geometry.perspectiveShear)
+        // 408: 宽高比 — same rule and the same group; 1.0 is identity, so `num` writes no row for an
+        // untouched document.
+        num("geometry.perspectiveAspect", .geometry,
+            before.geometry.perspectiveAspect, after.geometry.perspectiveAspect)
         // 2026-10-28 (P0-10): the 90° turn is a number, not a flag — "旋转 90° ×2" is a step a user
         // wants to see named, and the history row reads its label from here.
         if before.geometry.quarterTurns != after.geometry.quarterTurns {
@@ -636,6 +643,7 @@ extension EditHistory {
         "geometry.flipVertical": L10n.tr("fcd75ef0a054"),
         "geometry.perspectiveVertical": L10n.tr("d12fead12279"),
         "geometry.perspectiveHorizontal": L10n.tr("c858cb3c11d4"),
+        "geometry.perspectiveShear": L10n.tr("04684189cbd7"),
         "geometry.quarterTurns": L10n.tr("1a9d08f722bd"),
         "geometry.aspectLock": L10n.tr("82a59f3d1c16"),
         "light.exposure": L10n.tr("bc7dacff87db"),
@@ -694,6 +702,7 @@ extension EditHistory {
         "effects.nonBayerLuminanceNR": L10n.tr("da6c0db97b87"),
         "effects.nonBayerColorNR": L10n.tr("ad51d63abfc2"),
         "effects.dehaze": L10n.tr("0665cca26772"),
+        "geometry.perspectiveAspect": "宽高比校正",   // 421 分支缺此 key（408 新增），值仍为中文待补 L10n
         // 185 — S3.10. Deliberately distinct from the decoder's 锐化 pair below: this is the
         // 显示域 pass, and a history row that said 「锐化」 for both would hide which of the two moved.
         "sharpen.amount": L10n.tr("b0dbdc47bcc2"),

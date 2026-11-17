@@ -1730,5 +1730,9 @@
   "ipad.ff75b3b3ea64": "根据场景估计的 LCC 位置仅供参考。导出前请检查源照片位置，必要时指定实测参考位置。",
   "ipad.ff89b23fe243": "未返回局部细节像素。",
   "ipad.renderingBackend": "渲染引擎",
-  "ipad.lightAdjustments": "明暗"
+  "ipad.lightAdjustments": "明暗",
+  "04684189cbd7": "切变",
+  "886fc2719d25": "自动调节",
+  "a0dc4ea6b223": "自动调节：按纹理损失安排曝光、高光、白色、黑色与对比",
+  "187f2e7d1e49": "明暗 · 自动"
 }

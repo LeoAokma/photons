@@ -169,7 +169,11 @@ public final class TopBarView: NSView {
         modeControl.target = self
         modeControl.action = #selector(modeChanged)
         modeControl.segmentStyle = .rounded
+        // 423 — 顺序有讲究：`controlSize` 会顺手把字体换成该系统号的默认字体，所以字体必须钉在它**之后**。
+        // `.small` 保留（它决定段内边距与分段高度，改了回去会变矮），只把字号与字重对齐到邻居
+        // `ToolButton` 的 11 pt medium —— 用户的原话是「网格单图相比其他文字更高」。
         modeControl.controlSize = .small
+        modeControl.font = .systemFont(ofSize: 11, weight: .medium)
         modeControl.selectedSegment = 0
 
         for v: NSView in [openButton, importButton, exportButton, modeControl, stripButton, sortButton, tasksButton, statusCluster] {
@@ -238,6 +242,14 @@ public final class TopBarView: NSView {
     /// 它左边那个邻居（胶片条）——「同款」是拿这两个按钮量出来的，不是形容词。
     public var filmstripButtonView: ToolButton { stripButton }
 
+    /// 423 — 顶栏**七个**控件，按从左到右。统一性（11 pt medium / 28 pt 命中高 / 无系统边框）就是
+    /// 拿这一串量出来的：一个一个读 `font` 与 `frame.height`，不靠「看着一样」。
+    var chromeControlViews: (open: NSButton, importButton: NSButton, exportButton: NSButton,
+                             mode: NSSegmentedControl, strip: NSButton, sort: NSButton,
+                             tasks: BackgroundTaskButton) {
+        (openButton, importButton, exportButton, modeControl, stripButton, sortButton, tasksButton)
+    }
+
     public override func layout() {
         super.layout()
         let h = bounds.height
@@ -268,7 +280,10 @@ public final class TopBarView: NSView {
         x += 10
         place(sortButton, width: sortButton.intrinsicContentSize.width)
         x += 10
-        place(tasksButton, width: 86)
+        // 423 — 宽度不再写死 86：字号/外观换成 `ToolButton` 同款之后，86 是否贴合内容取决于本地化文案。
+        // 取 `max(86, intrinsic)`：更宽的文案不被截断，更窄的文案也不会把状态簇往左挪（86 是原来的下界）。
+        // `controlsTrailingEdge` 就是它的右边缘，所以这条下界也是状态簇左移与否的判据。
+        place(tasksButton, width: max(86, tasksButton.intrinsicContentSize.width))
 
         // 状态四段：整块右对齐，右边缘 = 顶栏右边距（= 检查器列的右边），整块落在检查器列上方。
         //
@@ -357,7 +372,6 @@ public final class WorkspaceRootView: NSView {
     public let browserPane: BrowserPaneController
     public let gridController: AssetGridController
     public let loupeController: LoupeController
-    public private(set) var gridHistogramController: GridHistogramController?
     public let filmstripController: FilmstripController
     /// 303 — the one coalescer behind all three browsers' HD thumbnail refresh: an edit calls
     /// `noteEdit`, and 0.25 s after the last tick the edited photo's visible cells re-request.
@@ -585,9 +599,6 @@ public final class WorkspaceRootView: NSView {
         updateForwardCompatNotice()
         applyBrowserMode()
         observeModel()
-        gridHistogramController = GridHistogramController(session: session) { [weak loupe = loupeController] in
-            loupe?.readHeadroom().headroom ?? 1
-        }
 
         // 303 — weak on both sides: the session does not keep the workspace (or its refresher) alive.
         session.addEditObserver { [weak self, weak refresher = editThumbnailRefresher] assetID in

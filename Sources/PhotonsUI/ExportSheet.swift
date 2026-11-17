@@ -1016,7 +1016,6 @@ public final class ExportSheetModel {
     /// never exported anything saves its current draft, which is what makes a preference survive a
     /// close without a run.
     public func saveDraftOnClose() {
-        rememberOutputTab()
         let draft = lastSuccessfulDraft ?? ExportDraftPersistence.Draft(
             preset: effectivePreset, outputDirectory: outputDirectory)
         ExportDraftPersistence.save(preset: draft.preset,
@@ -1164,10 +1163,6 @@ public struct ExportSheetView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Picker(L10n.tr("1e5b3b2d1762"), selection: Binding(get:{model.hdrEnabled || model.usesLinearDNG},set:{ value in
-                model.selectOutputTab(hdr:value)
-            })) { Text("HDR").tag(true);Text("SDR").tag(false) }
-                .pickerStyle(.segmented).padding(.bottom,14).disabled(model.phase == .running)
             form
             if !model.rows.isEmpty {
                 results
@@ -1356,7 +1351,16 @@ public struct ExportSheetView: View {
             value: { EmptyView() },
             unit: { EmptyView() },
             accessory: {
-                EmptyView()
+                Toggle(isOn: hdrEnabledBinding) {
+                    Text("HDR")
+                        .font(.system(size: ExportRowGrid.Font.label, weight: .medium))
+                        .foregroundStyle(model.availableHDRKinds.isEmpty
+                                         ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+                }
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .disabled(model.phase == .running || model.availableHDRKinds.isEmpty)
+                .help("HDR 输出；曲线与增益图在「HDR 与色调映射」里选")
             })
             .background(ExportLayoutProbeHost(kind: .hdrRow))
     }
@@ -1450,9 +1454,6 @@ public struct ExportSheetView: View {
                 // 335 —— 按钮回到主列**左端**（138 起），文案去掉省略号（「更改…」→「更改」：
                 // 它开的是同一个目录面板，省略号在这里只占了 15 pt 的宽度）。路径拿剩下的宽度。
                 HStack(spacing: ExportRowGrid.readoutGap) {
-                    Picker(L10n.tr("f6727cfa6281"), selection: $model.preset.destination) {
-                        ForEach(ExportDestination.allCases, id: \.self) { Text($0.displayName).tag($0) }
-                    }.labelsHidden().frame(width:150)
                     Button(L10n.tr("6b01fce4dbea")) { model.onChooseDirectory?() }
 
                         .controlSize(.small)
@@ -1467,6 +1468,12 @@ public struct ExportSheetView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(ExportRowGridProbeHost(kind: .accessory,
                                                            rowID: "export.location.directory.path"))
+                    // 导出目标：源文件夹 / 指定目录。这个控件**必须留着** —— 删了它用户就没法
+                    // 在两种目标之间切换（那是功能，不是布局）。放在行尾、宽度收到 90，是为了让
+                    // 「更改」按钮仍从主列起点 138 起排（335），且路径拿到足够宽度不被截（322）。
+                    Picker(L10n.tr("f6727cfa6281"), selection: $model.preset.destination) {
+                        ForEach(ExportDestination.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }.labelsHidden().frame(width: 90)
                 }
             },
             value: { EmptyView() },
