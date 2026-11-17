@@ -26,8 +26,14 @@ Selection mode now uses a single-tap recognizer directly. Each checkbox updates 
 
 Validation: simulator build and 2 tests passed: 40 model toggles preserve the editor without touching missing originals; UI selection/deselection and rapid double-taps stay in the grid, and normal double-tap opening works after leaving selection mode. No physical-device latency benchmark; this removes the identified blocking paths rather than promising a measured frame-time target. `git diff --check` passed. Revert independently.
 
-## PANO-UI-04
+## PANO-UI-04 — `09cf2a1`
 
 Memory warnings previously erased every grid thumbnail and cancelled its loader; neither panorama dismissal nor a completed job reliably restarted the loader. Preserve currently visible (and pre-panorama visible) thumbnails plus the active photo under pressure. Load only missing visible cells, with a small recent cache (64 entries unless the visible set itself is larger). Coalesce appearances, skip ready images, recover cancelled loads after jobs/dismissal/cache clearing, and make root startup idempotent. HDR/SDR changes mark display variants stale while retaining existing images until their cached counterparts arrive. Files: MobileWorkspaceModel, MobileWorkspaceView, iPad engine tests. Depends on PR #3 caching; PANO-UI-02 also removes a source of avoidable memory pressure but is not required for recovery.
 
 Validation: iPad simulator build; 3 engine tests passed (pressure retention, disk-backed recovery after a cancelling job, idempotent restart, HDR/SDR cached reuse, missing-load recovery without panorama, transient panorama close). Two existing UI tests passed: full grid/inspector/panorama/tone/export/close workflow and cache measurement/clearing. Recovery assertions verified unchanged renderCount and retained CGImage identities. `git diff --check` passed. Tests inject memory warnings with generated fixtures; the reported physical-iPad memory-pressure event was not directly captured. Revert independently; no library/original/edit deletion.
+
+## PANO-UI-05
+
+The Mac panorama overlay now uses `HistogramCardView.contentHeight` (90 pt) instead of a fixed 126 pt. Width and padding are unchanged; the plot, clipping statistics and readout row retain their existing geometry. The background loses 36 pt of unused bottom space. File: Sources/PhotonsUI/PanoramaHDRPreview.swift. No behavioral dependencies and no histogram/HDR arithmetic changes.
+
+Validation: `swift test --skip-update --filter 'HistogramCardHeightTests|PanoramaHDRTests'` built the Mac package and passed all 10 tests, 0 skipped, including drawn content bounds, readout visibility, EDR surface pixels and HDR export. Existing pinned dependency checkouts were reused locally. `git diff --check` passed. No new tests for the one-line layout change; existing measured layout tests cover its sizing source. Revert independently.

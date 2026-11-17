@@ -22,7 +22,7 @@ struct PanoramaHDRPreview: View {
             }
             .overlay(alignment: .topTrailing) {
                 PanoramaPreviewHistogram(image:image,hdr:preferences.hdrPreview,headroom:headroom.headroom)
-                    .frame(width:230,height:126).padding(6)
+                    .frame(width:230,height:HistogramCardView.contentHeight).padding(6)
                     .background(.regularMaterial,in:RoundedRectangle(cornerRadius:8)).padding(12)
             }
             .overlay(alignment: .bottomLeading) {
