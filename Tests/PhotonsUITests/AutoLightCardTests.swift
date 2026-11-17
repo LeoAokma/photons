@@ -38,7 +38,7 @@ final class AutoLightCardTests: XCTestCase {
         let icon = probe.convert(probe.bounds, to: host)
 
         let field = try XCTUnwrap(Self.firstView(in: host) {
-            $0.accessibilityIdentifier() == "inspector.light.曝光"
+            $0.accessibilityIdentifier() == "inspector.light." + L10n.tr("bc7dacff87db")
         }, "Light 卡的曝光数值框没有渲染出来")
         let value = field.convert(field.bounds, to: host)
         print(String(format: "422 AUTO · icon (%.1f, %.1f, %.1f×%.1f) · value (%.1f, %.1f, %.1f×%.1f)",
@@ -72,10 +72,10 @@ final class AutoLightCardTests: XCTestCase {
 
         // 行表没变：七行，名字里没有 自动调节。
         XCTAssertEqual(InspectorView.lightRows.count, 7, "自动调节 是卡头按钮，不是 明暗 的第八行")
-        XCTAssertFalse(InspectorView.lightRows.map(\.title).contains("自动调节"))
+        XCTAssertFalse(InspectorView.lightRows.map(\.title).contains(L10n.tr("886fc2719d25")))
         // 卡头 accessory 存在，且是 light 卡自己的分支（不是「唯一那张带注记的卡」了）。
         let ids = Self.allViews(in: host).compactMap { $0.accessibilityIdentifier() }
-        XCTAssertTrue(ids.contains("inspector.light.曝光"), "七行仍然在：\(ids.sorted())")
+        XCTAssertTrue(ids.contains("inspector.light." + L10n.tr("bc7dacff87db")), "七行仍然在：\(ids.sorted())")
     }
 
     /// 按钮的 action 走控制器，控制器一次写一条快照；五步算法在 `AutoLight` 里，控制器里没有。
@@ -131,7 +131,7 @@ final class AutoLightCardTests: XCTestCase {
                      plan.blacks, plan.contrast, plan.report.renderCount, plan.report.milliseconds))
 
         XCTAssertEqual(session.history.count, historyBefore + 1, "一次点击 = 一条历史")
-        XCTAssertEqual(session.history.currentSnapshot?.label, "明暗 · 自动")
+        XCTAssertEqual(session.history.currentSnapshot?.label, L10n.tr("187f2e7d1e49"))
         XCTAssertEqual(session.edit.light.blackOffset, before.light.blackOffset, "blackOffset 逐位不变")
         XCTAssertEqual(session.edit.light.exposure, plan.exposure)
         XCTAssertEqual(session.edit.light.highlights, plan.highlights)
