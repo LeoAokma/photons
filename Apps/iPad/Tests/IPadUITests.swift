@@ -2,6 +2,27 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testPanoramaHistogramStaysInsidePreviewAndFolds() throws {
+        continueAfterFailure=false
+        let app=XCUIApplication();app.launchArguments=["--demo","--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"]="en";app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first=app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout:60));first.press(forDuration:0.7)
+        app.buttons["photo-Sample-02.tiff"].tap();app.buttons["panorama-tool"].tap()
+        app.buttons["choose-panorama-shift"].tap()
+        let toggle=app.buttons["panorama-histogram-toggle"],plot=app.otherElements["panorama-histogram"].descendants(matching:.any)["histogram-plot"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout:60));XCTAssertTrue(plot.exists)
+        let controls=app.scrollViews["panorama-controls"]
+        XCTAssertLessThanOrEqual(plot.frame.maxX,controls.frame.minX)
+        let shot=XCTAttachment(screenshot:app.screenshot());shot.name="Histogram inside preview";shot.lifetime = .keepAlways;add(shot)
+        toggle.tap();XCTAssertTrue(plot.waitForNonExistence(timeout:5));XCTAssertTrue(toggle.exists)
+        toggle.tap();XCTAssertTrue(plot.waitForExistence(timeout:5))
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertLessThanOrEqual(plot.frame.maxX,controls.frame.minX)
+        app.buttons["close-panorama"].tap()
+    }
+    @MainActor
     func testLanguagePreferenceAppliesOnRestartAndCanReturnToEnglish() throws {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]
         app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()

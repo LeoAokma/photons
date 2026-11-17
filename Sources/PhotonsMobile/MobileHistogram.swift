@@ -159,4 +159,21 @@ struct MobileHistogram: View {
         }.accessibilityElement(children: .combine)
     }
 }
+/// Preview-local overlay: intrinsic content height prevents overlap with unrelated controls.
+struct MobilePanoramaHistogram:View {
+    let histogram:Histogram
+    let hdr:Bool
+    @State private var collapsed=false
+    var body:some View {
+        VStack(alignment:.leading,spacing:8) {
+            Button {collapsed.toggle()} label: {
+                Label(L10n.tr("panorama.histogram.title"),systemImage:collapsed ? "chevron.up":"chevron.down")
+                    .font(.caption.weight(.semibold))
+            }.buttonStyle(.plain).accessibilityIdentifier("panorama-histogram-toggle")
+            if !collapsed {MobileHistogram(histogram:histogram,hdr:hdr).frame(width:260)}
+        }.padding(10).fixedSize(horizontal:false,vertical:true)
+            .background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
+            .accessibilityElement(children:.contain).accessibilityIdentifier("panorama-histogram")
+    }
+}
 #endif

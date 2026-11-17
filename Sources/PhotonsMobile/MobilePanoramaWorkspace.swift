@@ -172,6 +172,11 @@ struct MobilePanoramaWorkspace: View {
                     ContentUnavailableView(L10n.tr("slices.preview"), systemImage: "pano", description: Text(model.busy ? L10n.tr("ipad.25afb41e1b07") : L10n.tr("ipad.0d16cdbf4439")))
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .bottomLeading) {
+                if let histogram=model.frame?.histogram,model.plan != nil {
+                    MobilePanoramaHistogram(histogram:histogram,hdr:model.hdr).padding(12)
+                }
+            }
             if model.plan?.isRegistered == true {
                 Divider()
                 VStack(spacing: 6) {
@@ -284,7 +289,6 @@ struct MobilePanoramaWorkspace: View {
                 if let lcc = model.plan?.lccState { Label(lcc.profileName, systemImage: "checkmark.seal"); Text(String(format: L10n.tr("ipad.0858f5e8bf0a"), lcc.coveredFraction * 100)).font(.caption) }
                 if let note = model.lccPositionNote { Text(note).font(.caption).foregroundStyle(.orange) }
                 } else { Text(PanoramaRegistrationMode.perspectiveLCCNotice).font(.caption).foregroundStyle(.secondary) }
-                if let histogram = model.frame?.histogram { MobileHistogram(histogram: histogram).frame(height: 100) }
             }.padding(18).disabled(model.busy)
         }.background(Color(white: 0.105)).accessibilityIdentifier("panorama-controls")
     }
