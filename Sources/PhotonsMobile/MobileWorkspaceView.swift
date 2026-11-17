@@ -207,7 +207,7 @@ public struct MobileWorkspaceView: View {
                                     ZStack(alignment: .topTrailing) {
                                         Color(white: 0.12)
                                         if let frame = model.thumbnails[photo.id] {
-                                            Image(decorative: frame.image, scale: 1).resizable().scaledToFit().padding(5)
+                                            MobileThumbnail(image: frame.image,hdr: model.hdr).padding(5)
                                         } else if model.previewErrors[photo.id] != nil { Image(systemName: "exclamationmark.triangle").frame(maxWidth: .infinity, maxHeight: .infinity) }
                                         else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
                                         if selectMode || model.selected.contains(photo.id) {
@@ -264,26 +264,79 @@ struct MobilePhotoCanvas: UIViewRepresentable {
     let hdr: Bool
     let identity: String
     func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeUIView(context: Context) -> UIScrollView {
-        let scroll = UIScrollView(); scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 6
+    func makeUIView(context: Context) -> MobilePhotoScrollView {
+        let scroll = MobilePhotoScrollView(); scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 6
         scroll.delegate = context.coordinator; scroll.backgroundColor = .clear
-        let view = context.coordinator.imageView; view.contentMode = .scaleAspectFit; view.backgroundColor = .clear
+        let view = context.coordinator.imageView; view.backgroundColor = .clear
         scroll.addSubview(view); return scroll
     }
-    func updateUIView(_ scroll: UIScrollView, context: Context) {
+    func updateUIView(_ scroll: MobilePhotoScrollView, context: Context) {
         let view = context.coordinator.imageView
         if context.coordinator.identity != identity {
             scroll.setZoomScale(1, animated: false); context.coordinator.identity = identity
         }
-        view.image = UIImage(cgImage: image); view.preferredImageDynamicRange = hdr ? .high : .standard
+        view.present(image,hdr: hdr)
+        scroll.hdr = hdr; scroll.updateDisplayNotice()
         if scroll.zoomScale == 1 { view.frame = scroll.bounds; scroll.contentSize = scroll.bounds.size }
         // Bounds can be zero on the first SwiftUI update; the view resizes with the scroll surface.
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     }
     final class Coordinator: NSObject, UIScrollViewDelegate {
-        let imageView = UIImageView()
+        let imageView = MobilePreviewSurface()
         var identity = ""
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
+    }
+}
+
+struct MobileThumbnail: UIViewRepresentable {
+    let image: CGImage
+    let hdr: Bool
+    func makeUIView(context: Context) -> MobilePreviewSurface { MobilePreviewSurface() }
+    func updateUIView(_ view: MobilePreviewSurface,context: Context) { view.present(image,hdr: hdr) }
+}
+
+/// Present generated floating-point pixels directly. UIImage(cgImage:) does not reliably mark
+/// these as HDR, even when CGImage carries headroom; its image-view path can flatten the result.
+final class MobilePreviewSurface: UIView {
+    func present(_ image: CGImage,hdr: Bool) {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        layer.contentsGravity = .resizeAspect
+        layer.contents = image
+        layer.toneMapMode = .automatic
+        let extended = hdr && image.contentHeadroom > 1
+        if #available(iOS 26.0, *) { layer.preferredDynamicRange = extended ? .high : .standard }
+        else { layer.wantsExtendedDynamicRangeContent = extended }
+        CATransaction.commit()
+    }
+}
+
+/// Keep the display limitation visible without baking a simulated HDR look into the image data.
+final class MobilePhotoScrollView: UIScrollView {
+    var hdr = false
+    private let notice = UILabel()
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        notice.font = .preferredFont(forTextStyle: .caption2)
+        notice.textColor = .secondaryLabel; notice.backgroundColor = .secondarySystemBackground
+        notice.layer.cornerRadius = 5; notice.clipsToBounds = true
+        notice.text = "  HDR preview · this display is limited to SDR  "
+        notice.accessibilityIdentifier = "hdr-display-limitation"
+        notice.isHidden = true; notice.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(notice)
+        NSLayoutConstraint.activate([
+            notice.leadingAnchor.constraint(equalTo: frameLayoutGuide.leadingAnchor,constant: 12),
+            notice.bottomAnchor.constraint(equalTo: frameLayoutGuide.bottomAnchor,constant: -12)
+        ])
+        for name in [UIScreen.brightnessDidChangeNotification,UIScreen.referenceDisplayModeStatusDidChangeNotification,UIApplication.didBecomeActiveNotification] {
+            NotificationCenter.default.addObserver(self,selector: #selector(updateDisplayNotice),name: name,object: nil)
+        }
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    deinit { NotificationCenter.default.removeObserver(self) }
+    override func didMoveToWindow() { super.didMoveToWindow(); updateDisplayNotice() }
+    @objc func updateDisplayNotice() {
+        notice.isHidden = !hdr || (window?.screen.potentialEDRHeadroom ?? 1) > 1
+        bringSubviewToFront(notice)
     }
 }
 #endif

@@ -9,6 +9,7 @@ import PhotonsPanorama
 import PhotonsExport
 import PhotonsJobs
 import PhotonsFileAccess
+import os
 
 struct MobilePhoto: Identifiable, Sendable {
     var id: String
@@ -46,6 +47,7 @@ actor MobileEngine {
     private var graphKey = ""
     private var graphSize = ImageSize(width: 1, height: 1)
     private let context = CIContext(options: [.cacheIntermediates: false])
+    private let previewContext = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!, .cacheIntermediates: false])
     private var cachedFrames: [String: MobileFrame] = [:]
     private var cacheOrder: [String] = []
 
@@ -91,16 +93,16 @@ actor MobileEngine {
 
     private func renderKey(_ photo: MobilePhoto, _ edit: EditModel, hdr: Bool, edge: Int) throws -> String {
         let data = try JSONEncoder().encode(edit)
-        return SHA256.hash(data: Data("ipad-v1:\(photo.id):\(hdr):\(edge):".utf8) + data)
+        return SHA256.hash(data: Data("ipad-v2:\(photo.id):\(hdr):\(edge):".utf8) + data)
             .map { String(format: "%02x", $0) }.joined()
     }
     func frame(_ photo: MobilePhoto, edit: EditModel, hdr: Bool, edge: Int = 1600) throws -> MobileFrame {
         try Task.checkCancellation()
         let key = try renderKey(photo, edit, hdr: hdr, edge: edge)
         if let hit = cachedFrames[key] { return hit }
-        let pixels = try render(photo.url, edit: edit, edge: edge, hdr: hdr, histogram: true)
+        let pixels = try render(photo.url, edit: edit, edge: edge, hdr: hdr, histogram: true, linear: true)
         guard let display = pixels.display else { throw MobileError.message("The renderer returned no image.") }
-        let image = try displayImage(display)
+        let image = try displayImage(display, hdr: hdr)
         let frame = MobileFrame(image: image, histogram: pixels.histogram)
         cachedFrames[key] = frame; cacheOrder.append(key)
         while cacheOrder.count > 8 { cachedFrames.removeValue(forKey: cacheOrder.removeFirst()) }
@@ -111,18 +113,16 @@ actor MobileEngine {
     func thumbnail(_ photo: MobilePhoto, hdr: Bool) throws -> MobileFrame {
         let edit = try self.edit(photo.id), key = try renderKey(photo, edit, hdr: hdr, edge: 320)
         let dir = libraryURL.appendingPathComponent("MobilePreviews", isDirectory: true)
-        let jpg = dir.appendingPathComponent(key + ".jpg"), hist = dir.appendingPathComponent(key + ".json")
-        if let data = try? Data(contentsOf: hist), let histogram = try? JSONDecoder().decode(Histogram.self, from: data),
-           let src = CGImageSourceCreateWithURL(jpg as CFURL, nil), let image = CGImageSourceCreateImageAtIndex(src, 0, nil) {
-            return MobileFrame(image: image, histogram: histogram)
+        let cached = dir.appendingPathComponent(key + ".preview")
+        if let data = try? Data(contentsOf: cached), let record = try? PropertyListDecoder().decode(MobileCachedPreview.self,from: data),
+           let frame = try? record.frame() {
+            return frame
         }
         let frame = try frame(photo, edit: edit, hdr: hdr, edge: 320)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        if let destination = CGImageDestinationCreateWithURL(jpg as CFURL, "public.jpeg" as CFString, 1, nil) {
-            CGImageDestinationAddImage(destination, frame.image, nil)
-            if CGImageDestinationFinalize(destination), let histogram = frame.histogram {
-                try JSONEncoder().encode(histogram).write(to: hist, options: .atomic)
-            }
+        if let record = try? MobileCachedPreview(frame) {
+            let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
+            try? encoder.encode(record).write(to: cached,options: .atomic)
         }
         return frame
     }
@@ -157,24 +157,41 @@ actor MobileEngine {
                            linearOutput: linear, sdrProof: !hdr),
             wantsPixels: true, collectHistogram: histogram, histogramSampleLongEdge: 192))
     }
-    private func displayImage(_ display: DisplayImage) throws -> CGImage {
-        let space = CGColorSpace(name: CGColorSpace.extendedDisplayP3)!
+    private func displayImage(_ display: DisplayImage, hdr: Bool) throws -> CGImage {
+        let space = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!
         let data = display.rgba.withUnsafeBytes { Data($0) }
         let image = CIImage(bitmapData: data, bytesPerRow: display.width * 8,
                             size: CGSize(width: display.width, height: display.height), format: .RGBAh, colorSpace: space)
-        guard let cg = context.createCGImage(image, from: image.extent, format: .RGBAh, colorSpace: space) else {
+        return try previewImage(image,hdr: hdr)
+    }
+    /// UIKit needs content headroom as well as floating-point pixels to recognize generated HDR.
+    /// The stable SDR shoulder is applied in output P3, matching the shared display/histogram path.
+    private func previewImage(_ linear: CIImage, hdr: Bool) throws -> CGImage {
+        let image = hdr ? linear : SDRProjection.image(linear)
+        let space = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!
+        guard let cg = previewContext.createCGImage(image,from: image.extent,format: .RGBAh,colorSpace: space),
+              let provider = cg.dataProvider else {
             throw MobileError.message("Could not create the preview.")
         }
-        return cg
+        var peak: Float = 1
+        if hdr {
+            let maximum = image.applyingFilter("CIAreaMaximum",parameters: ["inputExtent": CIVector(cgRect: image.extent)])
+            var sample = [Float](repeating: 0,count: 4)
+            previewContext.render(maximum,toBitmap: &sample,rowBytes: 16,bounds: CGRect(x: 0,y: 0,width: 1,height: 1),format: .RGBAf,colorSpace: space)
+            peak = max(1,sample[0],sample[1],sample[2])
+            if !peak.isFinite { peak = 1 }
+        }
+        guard let tagged = CGImage(headroom: peak,width: cg.width,height: cg.height,bitsPerComponent: cg.bitsPerComponent,
+            bitsPerPixel: cg.bitsPerPixel,bytesPerRow: cg.bytesPerRow,space: space,bitmapInfo: cg.bitmapInfo,
+            provider: provider,decode: nil,shouldInterpolate: true,intent: .defaultIntent) else {
+            throw MobileError.message("Could not tag the preview's dynamic range.")
+        }
+        return tagged
     }
     func frame(_ plan: PanoramaPlan, hdr: Bool) throws -> MobileFrame {
         guard let preview = plan.preview else { throw MobileError.message("No composite preview was produced.") }
         let linear = CIImage(cgImage: preview)
-        let projected = hdr ? linear : SDRProjection.image(linear)
-        let space = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!
-        guard let image = context.createCGImage(projected, from: projected.extent, format: .RGBAh, colorSpace: space) else {
-            throw MobileError.message("Could not display the composite.")
-        }
+        let image = try previewImage(linear,hdr: hdr)
         let scale = min(1,192 / max(linear.extent.width, linear.extent.height))
         let small = linear.transformed(by: CGAffineTransform(scaleX: scale,y: scale))
         let w = max(1,Int(small.extent.width)), h = max(1,Int(small.extent.height))
@@ -258,6 +275,34 @@ actor MobileEngine {
     func export(photo: MobilePhoto?, edit: EditModel, plan: PanoramaPlan?, manifest: PanoramaManifest?,
                 settings: MobileExportSettings, cancellation: PanoramaCancellation,
                 progress: @Sendable @escaping (String, Double?) -> Void) throws -> URL {
+        releaseWorkingMemory()
+        try cancellation.check()
+        // Query the app's current limit, rather than assuming an iPad can use all physical RAM.
+        // Linear DNG encodes tiles; the decoded inputs still have to fit, and raster formats also
+        // need a full output buffer. This is an estimate, not a guarantee against a later memory warning.
+        let sizes = plan?.sources.map(\.size) ?? photo.map { [CGSize(width: $0.width,height: $0.height)] } ?? []
+        if plan == nil, let photo {
+            // Catalog dimensions can describe a RAW's embedded thumbnail, so they cannot be
+            // used to budget an original-resolution decode after a thumbnail cache hit.
+            sourceSizes[photo.url] = try sourceSizes[photo.url] ?? ImageSourceDecoder.size(at: photo.url)
+        }
+        let resolvedSizes: [CGSize]
+        if plan == nil, let photo, let size = sourceSizes[photo.url] { resolvedSizes = [CGSize(width: size.width,height: size.height)] }
+        else { resolvedSizes = sizes }
+        let canvas = plan?.outputSize ?? resolvedSizes.first ?? .zero
+        let scale = settings.longEdge > 0 ? min(1,Double(settings.longEdge)/max(1,canvas.width,canvas.height)) : 1
+        let decodedBytes = resolvedSizes.reduce(0.0) { $0 + $1.width*$1.height*scale*scale*8 }
+        let largestSource = resolvedSizes.map { $0.width*$0.height }.max() ?? 0
+        let outputBytes = canvas.width*canvas.height*scale*scale*(settings.format == "dng" && plan != nil ? 0 : 40)
+        let estimate = decodedBytes + largestSource*(plan?.lccState == nil ? 8 : 16) + outputBytes + 256_000_000
+        #if targetEnvironment(simulator)
+        let available = Double(ProcessInfo.processInfo.physicalMemory)*0.45
+        #else
+        let available = Double(os_proc_available_memory())*0.8
+        #endif
+        guard estimate < available else {
+            throw MobileError.message("This export needs more memory than is currently available. Choose a smaller long edge, or export fewer source photos. The output size has not been reduced automatically.")
+        }
         let dir = libraryURL.deletingLastPathComponent().appendingPathComponent("Exports", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let base = plan.map { $0.sources.count > 1 ? PanoramaManifest.defaultName($0.sources.map(\.url)) : $0.sources[0].url.deletingPathExtension().lastPathComponent + "_lcc" }
@@ -324,6 +369,37 @@ actor MobileEngine {
             trimX: Double(image.width) / Double(original.width), trimY: Double(image.height) / Double(original.height),
             sourceSize: photo.flatMap { sourceSizes[$0.url] })
         try Exporter.write(image, to: url, options: preset.exportOptions, metadata: metadata)
+    }
+}
+/// Losslessly compressed half-float thumbnails preserve highlight data across app launches.
+/// Dimensions and histogram travel in the same atomic cache entry; old JPEG entries use a different key.
+private struct MobileCachedPreview: Codable {
+    var width: Int
+    var height: Int
+    var rowBytes: Int
+    var bitmapInfo: UInt32
+    var headroom: Float
+    var histogram: Histogram?
+    var pixels: Data
+    init(_ frame: MobileFrame) throws {
+        let image = frame.image
+        guard let bytes = image.dataProvider?.data else { throw MobileError.message("Missing preview pixels.") }
+        width = image.width; height = image.height; rowBytes = image.bytesPerRow
+        bitmapInfo = image.bitmapInfo.rawValue; headroom = image.contentHeadroom; histogram = frame.histogram
+        pixels = try (bytes as NSData).compressed(using: .lzfse) as Data
+    }
+    func frame() throws -> MobileFrame {
+        guard (1...320).contains(width), (1...320).contains(height), rowBytes >= width*8, rowBytes <= 4096 else {
+            throw MobileError.message("Invalid preview dimensions.")
+        }
+        let bytes = try (pixels as NSData).decompressed(using: .lzfse) as Data
+        guard bytes.count == rowBytes*height, let provider = CGDataProvider(data: bytes as CFData),
+              let image = CGImage(headroom: headroom,width: width,height: height,bitsPerComponent: 16,bitsPerPixel: 64,
+                bytesPerRow: rowBytes,space: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!,
+                bitmapInfo: CGBitmapInfo(rawValue: bitmapInfo),provider: provider,decode: nil,shouldInterpolate: true,intent: .defaultIntent) else {
+            throw MobileError.message("Invalid cached preview.")
+        }
+        return MobileFrame(image: image,histogram: histogram)
     }
 }
 enum MobileError: LocalizedError {

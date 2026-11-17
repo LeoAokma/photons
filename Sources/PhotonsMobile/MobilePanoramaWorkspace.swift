@@ -12,6 +12,17 @@ enum MobileShiftGeometry {
     }
 }
 
+/// The last successfully applied physical layout. Selection alone does not invalidate alignment.
+struct MobilePanoramaLayout: Equatable {
+    var positions: [Int: CGPoint]
+    var body: PanoramaCameraBody
+    var orientation: PanoramaBodyOrientation
+    var sensorWidth: Double
+    var sensorHeight: Double
+    var manualSensor: Bool
+    var guided: Bool
+}
+
 /// Choosing a capture model is required before registration starts.
 struct MobilePanoramaFlow: View {
     @ObservedObject var model: MobileWorkspaceModel
@@ -61,11 +72,18 @@ struct MobilePanoramaWorkspace: View {
     @State private var sensorHeight = 32.9
     @State private var manualSensor = false
     @State private var guided = false
-    @State private var dirty = true
+    @State private var appliedLayout: MobilePanoramaLayout?
+    @State private var appliedOptions: PanoramaOptions?
+    @State private var appliedSelection = 0
     @State private var aligning = false
     @State private var export = false
     @State private var profileID: UUID?
     @State private var cropToLCC = false
+    private var layout: MobilePanoramaLayout {
+        .init(positions: positions, body: bodyType, orientation: orientation, sensorWidth: sensorWidth,
+              sensorHeight: sensorHeight, manualSensor: manualSensor, guided: guided)
+    }
+    private var dirty: Bool { appliedLayout != layout || appliedOptions != options }
     private var cropNeedsUpdate: Bool { cropToLCC != (model.plan?.lccState?.cropRect != nil) }
     private var sensor: SensorSize { .init(width: sensorWidth, height: sensorHeight, source: manualSensor ? "Manual" : "Source metadata") }
     private var validSensor: Bool { sensorWidth.isFinite && sensorHeight.isFinite && sensorWidth > 0 && sensorHeight > 0 && sensorWidth < 200 && sensorHeight < 200 }
@@ -123,8 +141,9 @@ struct MobilePanoramaWorkspace: View {
                 if aligning {
                     aligning = false
                     if model.error == nil, let plan = model.plan { accept(plan) }
-                } else if let plan = model.plan, let lcc = plan.lccState {
+                } else if !dirty, model.error == nil, let plan = model.plan, let lcc = plan.lccState {
                     positions = framePositions(plan, offset: lcc.offsetMM)
+                    rememberLayout()
                 }
             }
         }
@@ -156,13 +175,19 @@ struct MobilePanoramaWorkspace: View {
                 if mode == .shift {
                 Text("SHIFT PANORAMA").font(.headline)
                 Picker("Camera body", selection: $bodyType) { ForEach(PanoramaCameraBody.allCases) { Text($0.name).tag($0) } }
-                    .onChange(of: bodyType) { _,_ in dirty = true }
                 MobileBodyOrientationPicker(cameraBody: bodyType, selection: $orientation)
-                    .onChange(of: orientation) { _,_ in dirty = true }
                 Text(bodyType.travel(at: orientation).summary).font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("Layout").font(.caption.weight(.semibold))
+                    Spacer()
+                    Button("Revert", action: revertLayout).buttonStyle(.bordered)
+                        .disabled(appliedLayout == nil || appliedLayout == layout)
+                        .accessibilityHint("Restore the last successfully aligned layout without running alignment again")
+                        .accessibilityIdentifier("revert-panorama-layout")
+                }
                 if validSensor {
                     MobileDraggablePositions(names: photos.map(\.name), sensor: sensor, travel: bodyType.travel(at: orientation),
-                        positions: $positions, selected: $selectedFrame, changed: { guided = true; dirty = true })
+                        positions: $positions, selected: $selectedFrame, changed: { guided = true })
                         .frame(height: 310)
                 }
                 Text("Dashed outline: total sensor travel. Cross: body zero. Drag a frame to set an approximate position; update alignment to verify the overlap.")
@@ -170,7 +195,7 @@ struct MobilePanoramaWorkspace: View {
                 ForEach(Array(photos.enumerated()), id: \.offset) { i,photo in
                     Button { selectedFrame = i } label: {
                         HStack {
-                            if let image = model.thumbnails[photo.id]?.image { Image(decorative: image, scale: 1).resizable().scaledToFit().frame(width: 42, height: 40) }
+                            if let image = model.thumbnails[photo.id]?.image { MobileThumbnail(image: image,hdr: model.hdr).frame(width: 42, height: 40) }
                             VStack(alignment: .leading) {
                                 Text(photo.name).font(.caption.weight(.semibold))
                                 let point = positions[i] ?? .zero
@@ -182,9 +207,9 @@ struct MobilePanoramaWorkspace: View {
                 }
                 if photos.indices.contains(selectedFrame) {
                     Text("Selected frame position").font(.caption.weight(.semibold))
-                    MobilePositionFields(position: Binding(get: { positions[selectedFrame] ?? .zero }, set: { positions[selectedFrame] = $0; guided = true; dirty = true }))
+                    MobilePositionFields(position: Binding(get: { positions[selectedFrame] ?? .zero }, set: { positions[selectedFrame] = $0; guided = true }))
                 }
-                Toggle("Use position guidance", isOn: $guided).accessibilityIdentifier("position-guidance").onChange(of: guided) { _,_ in dirty = true }
+                Toggle("Use position guidance", isOn: $guided).accessibilityIdentifier("position-guidance")
                 Text(guided ? "Positions guide matching near your measurements; image features still determine the final alignment." : "Automatic alignment shows relative positions; the absolute optical center has not been confirmed.").font(.caption).foregroundStyle(.secondary)
                 } else {
                     Text("PERSPECTIVE PANORAMA").font(.headline)
@@ -194,7 +219,7 @@ struct MobilePanoramaWorkspace: View {
                 DisclosureGroup("Alignment options") {
                     if mode == .shift {
                     Toggle("Override sensor dimensions", isOn: $manualSensor).onChange(of: manualSensor) { _,enabled in
-                        if !enabled, let known = sources.first?.sensor { sensorWidth = known.width; sensorHeight = known.height }; dirty = true
+                        if !enabled, let known = sources.first?.sensor { sensorWidth = known.width; sensorHeight = known.height }
                     }
                     if manualSensor {
                         LabeledContent("Width (mm)") { TextField("Width", value: $sensorWidth, format: .number) }
@@ -204,8 +229,7 @@ struct MobilePanoramaWorkspace: View {
                     Toggle("Match exposure", isOn: $options.matchExposure)
                     Toggle("Avoid moving subjects", isOn: $options.avoidMotion)
                     Slider(value: $options.seamSoftness, in: 0...20) { Text("Seam softness") }
-                }.onChange(of: options) { _,_ in dirty = true }
-                    .onChange(of: sensorWidth) { _,_ in dirty = true }.onChange(of: sensorHeight) { _,_ in dirty = true }
+                }
                 Button("Update alignment", action: align).buttonStyle(.borderedProminent)
                     .disabled(model.busy || !validSensor || sources.count < 2).accessibilityIdentifier("align-panorama")
                 Divider()
@@ -236,7 +260,7 @@ struct MobilePanoramaWorkspace: View {
     }
     private func align() {
         guard validSensor, !model.busy else { return }
-        aligning = true; model.error = nil; dirty = true
+        aligning = true; model.error = nil
         model.stitch(options: options, positions: mode == .shift && guided ? positions : [:], sensor: mode == .shift && manualSensor ? sensor : nil, registrationMode: mode)
     }
     private func accept(_ plan: PanoramaPlan) {
@@ -245,7 +269,18 @@ struct MobilePanoramaWorkspace: View {
         positions = framePositions(plan, offset: offset)
         // Measured absolute reference survives an uncorrected export for later LCC.
         if anchor != nil { model.manifest = PanoramaManifest(plan: plan, offsetMM: offset, sensor: sensor, bodyOrientation: orientation, cameraBody: bodyType) }
-        dirty = false
+        rememberLayout()
+    }
+    private func rememberLayout() {
+        appliedLayout = layout; appliedOptions = options; appliedSelection = selectedFrame
+    }
+    private func revertLayout() {
+        guard let saved = appliedLayout, !model.busy else { return }
+        positions = saved.positions; bodyType = saved.body; orientation = saved.orientation
+        sensorWidth = saved.sensorWidth; sensorHeight = saved.sensorHeight; manualSensor = saved.manualSensor
+        guided = saved.guided; selectedFrame = appliedSelection
+        model.error = nil
+        // Pending alignment options still invalidate the preview; Revert only restores the layout.
     }
     private func framePositions(_ plan: PanoramaPlan, offset: CGPoint) -> [Int: CGPoint] {
         Dictionary(uniqueKeysWithValues: plan.sources.indices.map { i in
@@ -263,7 +298,7 @@ struct MobileDraggablePositions: View {
     @Binding var positions: [Int: CGPoint]
     @Binding var selected: Int
     let changed: () -> Void
-    @State private var dragStart: CGPoint?
+    @Namespace private var canvasSpace
     var body: some View {
         GeometryReader { geometry in
             let bounds = travel.coverage(sensor: sensor, centered: false).insetBy(dx: -4, dy: -4)
@@ -281,29 +316,59 @@ struct MobileDraggablePositions: View {
                     .offset(x: x0 - sensor.width * scale / 2, y: y0 - sensor.height * scale / 2)
                 Image(systemName: "plus").font(.caption).position(x: x0, y: y0)
                 ForEach(names.indices, id: \.self) { i in
-                    let point = positions[i] ?? .zero
-                    let color = travel.contains(point, tolerance: 0.1) ? [Color.cyan, .purple, .green, .pink][i % 4] : .orange
-                    Rectangle().fill(color.opacity(selected == i ? 0.25 : 0.1))
-                        .overlay(Rectangle().stroke(color, lineWidth: selected == i ? 2.5 : 1))
-                        .overlay(Text(names[i]).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5).padding(4), alignment: .top)
-                        .frame(width: sensor.width * scale, height: sensor.height * scale)
-                        .contentShape(Rectangle())
-                        .gesture(DragGesture(minimumDistance: 2).onChanged { value in
-                            selected = i
-                            if dragStart == nil { dragStart = point }
-                            positions[i] = MobileShiftGeometry.dragged(dragStart ?? point, translation: value.translation, pointsPerMM: scale, travel: travel)
-                            changed()
-                        }.onEnded { _ in dragStart = nil })
-                        .onTapGesture { selected = i }
-                        .offset(x: x0 + (point.x - sensor.width / 2) * scale, y: y0 + (-point.y - sensor.height / 2) * scale)
+                    MobileDraggableFrame(name: names[i], index: i, sensor: sensor, travel: travel,
+                        position: Binding(get: { positions[i] ?? .zero }, set: { positions[i] = $0 }),
+                        selected: $selected, scale: scale, zero: CGPoint(x: x0, y: y0),
+                        coordinateSpace: canvasSpace, changed: changed)
                         .zIndex(selected == i ? 2 : 1)
-                        .accessibilityElement(children: .ignore).accessibilityLabel(names[i])
-                        .accessibilityAddTraits(.isButton).accessibilityAction { selected = i }
-                        .accessibilityValue(String(format: "X %.1f, Y %.1f millimeters", point.x, point.y))
-                        .accessibilityIdentifier("shift-frame-\(i)")
                 }
-            }.clipped().clipShape(RoundedRectangle(cornerRadius: 8))
+            }.frame(width: geometry.size.width, height: geometry.size.height)
+                .coordinateSpace(name: canvasSpace).clipped().clipShape(RoundedRectangle(cornerRadius: 8))
         }.accessibilityElement(children: .contain).accessibilityIdentifier("body-shift-diagram")
     }
 }
+/// Keep the stored center fixed during a drag. GestureState resets on completion AND cancellation.
+private struct MobileDraggableFrame: View {
+    let name: String
+    let index: Int
+    let sensor: SensorSize
+    let travel: PanoramaShiftRange
+    @Binding var position: CGPoint
+    @Binding var selected: Int
+    let scale: Double
+    let zero: CGPoint
+    let coordinateSpace: Namespace.ID
+    let changed: () -> Void
+    @GestureState private var translation = CGSize.zero
+
+    var body: some View {
+        let center = translation == .zero ? position : MobileShiftGeometry.dragged(position, translation: translation, pointsPerMM: scale, travel: travel)
+        let color = travel.contains(center, tolerance: 0.1) ? [Color.cyan, .purple, .green, .pink][index % 4] : .orange
+        Rectangle().fill(color.opacity(selected == index ? 0.25 : 0.1))
+            .overlay(Rectangle().stroke(color, lineWidth: selected == index ? 2.5 : 1))
+            .overlay(Text(name).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5).padding(4), alignment: .top)
+            .overlay {
+                if selected == index { Image(systemName: "plus").font(.system(size: 11)).foregroundStyle(color).accessibilityHidden(true) }
+            }
+            .frame(width: sensor.width * scale, height: sensor.height * scale)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named(coordinateSpace))
+                .updating($translation) { value, state, transaction in
+                    transaction.animation = nil
+                    state = value.translation
+                }
+                .onChanged { _ in selected = index }
+                .onEnded { value in
+                    let moved = MobileShiftGeometry.dragged(position, translation: value.translation, pointsPerMM: scale, travel: travel)
+                    if moved != position { position = moved; changed() }
+                })
+            .onTapGesture { selected = index }
+            .position(x: zero.x + center.x * scale, y: zero.y - center.y * scale)
+            .accessibilityElement(children: .ignore).accessibilityLabel(name)
+            .accessibilityAddTraits(.isButton).accessibilityAction { selected = index }
+            .accessibilityValue(String(format: "X %.1f, Y %.1f millimeters", center.x, center.y))
+            .accessibilityIdentifier("shift-frame-\(index)")
+    }
+}
+
 #endif

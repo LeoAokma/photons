@@ -172,6 +172,29 @@ final class PanoramaTests: XCTestCase {
         XCTAssertEqual(color.x,2.5,accuracy:0.08)
         XCTAssertEqual(color.y,0.5,accuracy:0.03)
     }
+    func testDNGNormalizesPartialCoverageWithoutDarkLines() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).dng")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let w = 513, h = 519
+        var pixels = [Float](repeating: 0,count: w*h*4)
+        for y in 0..<h { for x in 0..<w {
+            let alpha: Float = x < 3 ? 0 : (x % 83 < 2 || y % 89 < 2 ? 0.6 : 1)
+            let p = (y*w+x)*4
+            pixels[p] = 2.5*alpha; pixels[p+1] = 0.5*alpha; pixels[p+2] = 0.2*alpha; pixels[p+3] = alpha
+        }}
+        let image = CIImage(bitmapData: pixels.withUnsafeBytes { Data($0) },bytesPerRow: w*16,
+            size: CGSize(width: w,height: h),format: .RGBAf,colorSpace: PanoramaEngine.linearSpace)
+        let context = CIContext(options: [.workingColorSpace: PanoramaEngine.linearSpace])
+        try LinearDNGWriter.write(image: image,context: context,to: url)
+        let raw = try XCTUnwrap(CIRAWFilter(imageURL: url)); raw.boostAmount = 0; raw.isGamutMappingEnabled = false
+        raw.sharpnessAmount = 0; raw.isLensCorrectionEnabled = false
+        let raster = PanoramaRaster(image: try XCTUnwrap(raw.outputImage),context: context,width: w,height: h)
+        for point in [CGPoint(x: 83,y: 40),CGPoint(x: 84,y: 89),CGPoint(x: 256,y: 256),CGPoint(x: 166,y: 178)] {
+            let c = try XCTUnwrap(raster.rgb(point.x,point.y))
+            XCTAssertEqual(c.x,2.5,accuracy: 0.08); XCTAssertEqual(c.y,0.5,accuracy: 0.03)
+        }
+        XCTAssertLessThan(try XCTUnwrap(raster.rgb(1,40)).x,0.01,"Uncovered canvas stays black")
+    }
     func testUserRAWIntegration() throws {
         guard let path = ProcessInfo.processInfo.environment["PHOTONS_PANORAMA_SAMPLES"] else { throw XCTSkip("Set PHOTONS_PANORAMA_SAMPLES to run private 3FR acceptance") }
         let root = URL(fileURLWithPath:path)

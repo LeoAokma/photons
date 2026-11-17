@@ -30,6 +30,11 @@ final class IPadUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["panorama-preview"].exists)
         app.buttons["choose-panorama-shift"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["panorama-preview"].waitForExistence(timeout: 90), app.debugDescription)
+        let displayMode = app.buttons["panorama-display-mode"], originalMode = app.buttons["panorama-display-mode"].label
+        displayMode.tap()
+        XCTAssertNotEqual(displayMode.label,originalMode)
+        displayMode.tap()
+        XCTAssertEqual(displayMode.label,originalMode)
         for angle in [90,180,270,0] {
             let orientation = app.buttons["panorama.body.orientation.\(angle)"]
             XCTAssertTrue(orientation.exists)
@@ -40,19 +45,36 @@ final class IPadUITests: XCTestCase {
         let frame = app.descendants(matching: .any)["shift-frame-0"]
         XCTAssertTrue(frame.exists, app.debugDescription)
         let value = frame.value as? String
+        let originalCenter = CGPoint(x: frame.frame.midX,y: frame.frame.midY)
         let start = frame.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 10, dy: -8)))
         XCTAssertNotEqual(frame.value as? String, value)
+        XCTAssertEqual(frame.frame.midX-originalCenter.x,10,accuracy: 2)
+        XCTAssertEqual(frame.frame.midY-originalCenter.y,-8,accuracy: 2)
         XCTAssertFalse(app.buttons["panorama-export"].isEnabled)
-        // Restore automatic matching after checking drag state; arbitrary offsets need not fit the images.
+        let revert = app.buttons["revert-panorama-layout"]
+        XCTAssertTrue(revert.isEnabled); revert.tap()
+        XCTAssertEqual(frame.value as? String,value)
+        XCTAssertEqual(frame.frame.midX,originalCenter.x,accuracy: 1)
+        XCTAssertEqual(frame.frame.midY,originalCenter.y,accuracy: 1)
+        XCTAssertFalse(revert.isEnabled)
+        XCTAssertTrue(app.buttons["panorama-export"].isEnabled,"Revert restores the existing aligned preview immediately")
+        // Grabbing away from the center must move the same geometric center by the finger delta.
+        let corner = frame.coordinate(withNormalizedOffset: CGVector(dx: 0.2,dy: 0.25))
+        corner.press(forDuration: 0.1,thenDragTo: corner.withOffset(CGVector(dx: 12,dy: 6)))
+        XCTAssertEqual(frame.frame.midX-originalCenter.x,12,accuracy: 2)
+        XCTAssertEqual(frame.frame.midY-originalCenter.y,6,accuracy: 2)
+        revert.tap()
+        XCTAssertEqual(frame.value as? String,value)
         let controls = app.scrollViews["panorama-controls"]
-        controls.swipeUp()
-        app.switches["position-guidance"].tap()
-        app.buttons["align-panorama"].tap()
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["panorama-export"])
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 90), .completed)
+        func scrollControls() {
+            // The diagram intentionally consumes drags over frames; scroll through the gutter.
+            let start = controls.coordinate(withNormalizedOffset: CGVector(dx: 0.98,dy: 0.85))
+            start.press(forDuration: 0.05,thenDragTo: controls.coordinate(withNormalizedOffset: CGVector(dx: 0.98,dy: 0.2)))
+        }
+        scrollControls()
         let crop = app.switches["panorama-crop-lcc"]
-        if !crop.isHittable { controls.swipeUp() }
+        if !crop.isHittable { scrollControls() }
         XCTAssertTrue(crop.exists)
         crop.tap()
         XCTAssertEqual(crop.value as? String,"1")
@@ -62,6 +84,8 @@ final class IPadUITests: XCTestCase {
         XCTAssertTrue(app.buttons["panorama-export"].isEnabled)
         let workspace = XCTAttachment(screenshot: app.screenshot()); workspace.name = "Large panorama workspace"; workspace.lifetime = .keepAlways; add(workspace)
         app.buttons["panorama-export"].tap()
+        app.buttons["export-size"].tap()
+        app.buttons["Full resolution"].tap()
         app.buttons["confirm-export"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Saved ")).firstMatch.waitForExistence(timeout: 90), app.debugDescription)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "iPad panorama workspace"; shot.lifetime = .keepAlways; add(shot)

@@ -165,10 +165,14 @@ struct MobileExportSheet: View {
                     }
                 }
                 Picker("Long edge", selection: $settings.longEdge) {
+                    Text("Full resolution").tag(0)
                     Text("2048 px").tag(2048); Text("4096 px").tag(4096); Text("6000 px").tag(6000)
+                }.accessibilityIdentifier("export-size")
+                if settings.longEdge == 0, let size = model.plan?.outputSize {
+                    Text("\(Int(size.width)) × \(Int(size.height)) pixels").font(.caption).foregroundStyle(.secondary)
                 }
                 if settings.format == "jpeg" || settings.format == "heic" { Slider(value: $settings.quality, in: 0.5...1) { Text("Quality") } }
-            } footer: { Text("This preview exports at the selected size, without upscaling. Full-resolution large-image export is still being validated on physical iPads.") }
+            } footer: { Text("Exports never upscale. Full resolution preserves the original output dimensions. Large images require enough available memory; if they do not fit, choose a smaller size.") }
             Section {
                 Text("Output is saved in Photons Preview → Exports in Files and imported into this library. Use Save / Share afterwards to choose another location.")
                 Button("Export image") { model.export(settings); dismiss(); onExport() }.accessibilityIdentifier("confirm-export")
@@ -209,7 +213,7 @@ struct MobileCapabilitiesView: View {
                 ForEach(["Files import and persistent local library", "Duplicate control, ratings and thumbnail sizing", "Shared adjustment controls, HSL and color grading", "Crop coordinates, rotation, undo and reset", "HDR / SDR preview and cached histograms", "Panorama alignment and relative source positions", "Matching-frame and lens-profile LCC correction", "Lens-profile import, creation and sharing", "Post-export LCC using panorama metadata", "HDR / SDR export and lossless linear DNG"], id: \.self) { Label($0, systemImage: "checkmark.circle") }
             }
             Section("Next stages · not yet available") {
-                ForEach(["Touch curve editor, masking and healing tools", "Full desktop preset and library management interfaces", "Social-media slicing and advanced batch export", "AI denoise and exposure-stack HDR helper replacement", "Full-resolution large panoramas and background recovery", "Complete Chinese interface"], id: \.self) { Label($0, systemImage: "clock") }
+                ForEach(["Touch curve editor, masking and healing tools", "Full desktop preset and library management interfaces", "Social-media slicing and advanced batch export", "AI denoise and exposure-stack HDR helper replacement", "Resumable background processing", "Complete Chinese interface"], id: \.self) { Label($0, systemImage: "clock") }
             }
             Section { Text("Simulator tests validate integration, not physical-device RAW support, HDR display quality, memory limits or sustained thermals.") }
         }.navigationTitle("Preview capabilities")

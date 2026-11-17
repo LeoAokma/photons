@@ -152,7 +152,15 @@ final class MobileWorkspaceModel: ObservableObject {
     func toggleHDR() {
         hdr.toggle(); UserDefaults.standard.set(hdr, forKey: "photons.mobile.hdr")
         if let plan {
-            Task { do { frame = try await engine.frame(plan, hdr: hdr) } catch { self.error = error.localizedDescription } }
+            previewTask?.cancel(); generation += 1
+            let ticket = generation, hdr = hdr
+            previewTask = Task {
+                do {
+                    let result = try await engine.frame(plan, hdr: hdr)
+                    guard !Task.isCancelled, ticket == generation else { return }
+                    frame = result
+                } catch { if !Task.isCancelled, ticket == generation { self.error = error.localizedDescription } }
+            }
         } else { render() }
         warmThumbnails()
     }

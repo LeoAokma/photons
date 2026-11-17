@@ -191,6 +191,19 @@ public final class PanoramaEngine {
         highlightKernel.apply(extent:image.extent,arguments:[image])!
     }
 
+    // Fractional resampling/RAW decode coverage can leave alpha below one, even inside a
+    // photographic frame. Weighted contributions are premultiplied, so normalize by their
+    // accumulated coverage before displaying or dropping alpha for an opaque format such as DNG.
+    // A genuinely uncovered part of the canvas remains transparent black.
+    private static let coverageKernel = CIColorKernel(source: """
+        kernel vec4 normalizeCoverage(__sample s) {
+            return s.a > 0.000001 ? vec4(s.rgb / s.a, 1.0) : vec4(0.0);
+        }
+        """)!
+    static func normalizedCoverage(_ image: CIImage) -> CIImage {
+        coverageKernel.apply(extent: image.extent,arguments: [image])!
+    }
+
     func composite(_ plan: PanoramaPlan, images: [CIImage], imageScale: Double, outputScale: Double) -> CIImage {
         let bounds = CGRect(x:0,y:0,width:ceil(plan.size.width*outputScale),height:ceil(plan.size.height*outputScale))
         var result = CIImage(color:.clear).cropped(to:bounds)
@@ -221,6 +234,7 @@ public final class PanoramaEngine {
         if let lcc=plan.lccState,lcc.highlightEV+lcc.exposureEV != 0 {
             result=result.applyingFilter("CIExposureAdjust",parameters:["inputEV":lcc.highlightEV+lcc.exposureEV])
         }
+        result = Self.normalizedCoverage(result)
         if let crop=plan.lccState?.cropRect {
             let rect=CGRect(x:crop.minX*outputScale,y:(plan.size.height-crop.maxY)*outputScale,width:crop.width*outputScale,height:crop.height*outputScale)
             return result.cropped(to:rect).transformed(by:CGAffineTransform(translationX:-rect.minX,y:-rect.minY))

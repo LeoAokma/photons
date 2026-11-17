@@ -95,7 +95,7 @@ struct MobileInspector: View {
     private var adjustments: some View {
         Group {
             Section("White balance") {
-                MobileSlider(title: "Temperature", value: Binding(get: { model.edit.light.temperature ?? 6500 }, set: { model.edit.light.temperature = $0; model.render() }), range: 2000...50000, step: 50) { model.commit("White balance") }
+                MobileSlider(title: "Temperature", value: Binding(get: { model.edit.light.temperature ?? 6500 }, set: { model.edit.light.temperature = min(TemperatureScale.kelvinRange.upperBound, max(TemperatureScale.kelvinRange.lowerBound, $0.isFinite ? $0 : 6500)); model.render() }), range: TemperatureScale.kelvinRange, step: 50) { model.commit("White balance") }
                 MobileSlider(title: "Tint", value: Binding(get: { model.edit.light.tint ?? 0 }, set: { model.edit.light.tint = $0; model.render() }), range: -150...150) { model.commit("Tint") }
                 Button("As shot") { model.mutate("As shot") { $0.light.temperature = nil; $0.light.tint = nil } }
             }

@@ -1,6 +1,7 @@
 import XCTest
 import CoreImage
 import ImageIO
+import UIKit
 import PhotonsCore
 import PhotonsCatalog
 import PhotonsPanorama
@@ -74,8 +75,11 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertEqual(try PanoramaSource(url: output).size.width, 604, accuracy: 1)
         let tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
         XCTAssertEqual((tiff?[kCGImagePropertyTIFFCompression as String] as? NSNumber)?.intValue, 7)
+        settings.longEdge = 0
+        let full = try await engine.export(photo: nil,edit: .neutral,plan: plan,manifest: nil,settings: settings,cancellation: .init(),progress: { _,_ in })
+        XCTAssertEqual(try PanoramaSource(url: full).size,plan.outputSize,"Full resolution must not silently retain a long-edge cap")
         let imported = try await engine.photos()
-        XCTAssertEqual(imported.count, 4)
+        XCTAssertEqual(imported.count, 5)
         let frame = try await engine.frame(plan, hdr: false)
         XCTAssertNotNil(frame.histogram)
         // A resized/cropped ordinary export of a reimported DNG must keep its original stitch geometry.
@@ -170,10 +174,24 @@ final class IPadEngineTests: XCTestCase {
         let corrected = try await engine.correctPanorama(plan,profileID: LCCLensProfile.builtInID,offset: nil,
             body: .alpa12Max,orientation: .degrees0,cancellation: .init(),progress: { text,_ in print("RAW LCC",text) })
         XCTAssertNotNil(corrected.lccState)
-        var settings = MobileExportSettings();settings.format = "dng";settings.longEdge = 2048
+        var settings = MobileExportSettings();settings.format = "dng";settings.longEdge = 6000
         let output = try await engine.export(photo: nil,edit: .neutral,plan: corrected,manifest: nil,settings: settings,
                                             cancellation: .init(),progress: { text,_ in print("RAW EXPORT",text) })
         XCTAssertTrue(try XCTUnwrap(PanoramaManifest.read(from: output)).correctionApplied)
+        let validation = inputs.deletingLastPathComponent().appendingPathComponent("ValidationOutputs",isDirectory: true)
+        try FileManager.default.createDirectory(at: validation,withIntermediateDirectories: true)
+        let saved = validation.appendingPathComponent("Boston-6000.dng")
+        try? FileManager.default.removeItem(at: saved)
+        try FileManager.default.copyItem(at: output,to: saved)
+        print("REAL ORIGINS",plan.origins,"gains",plan.gains,"MASK",plan.maskWidth,plan.maskHeight)
+        let scene = try PanoramaEngine().renderComposite(corrected,outputLongEdge: 6000)
+        let context = CIContext()
+        try context.writePNGRepresentation(of: scene.applyingFilter("CIExposureAdjust",parameters: ["inputEV": -1]),to: validation.appendingPathComponent("Boston-before-DNG.png"),format: .RGBA8,colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        let uncorrected = try PanoramaEngine().renderComposite(plan,outputLongEdge: 6000)
+        try context.writePNGRepresentation(of: uncorrected.applyingFilter("CIExposureAdjust",parameters: ["inputEV": -1]),to: validation.appendingPathComponent("Boston-no-LCC.png"),format: .RGBA8,colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        let exportedPreview = try await engine.frame(MobilePhoto(id: "export",name: "export",url: output,rating: 0,width: 0,height: 0),edit: .neutral,hdr: false,edge: 6000)
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithURL(validation.appendingPathComponent("Boston-6000-preview.png") as CFURL,"public.png" as CFString,1,nil))
+        CGImageDestinationAddImage(destination,exportedPreview.image,nil); XCTAssertTrue(CGImageDestinationFinalize(destination))
         print("REAL RAW SUCCESS",plan.size,output.lastPathComponent)
     }
 
@@ -214,6 +232,88 @@ final class IPadEngineTests: XCTestCase {
         let rotated = PanoramaCameraBody.alpa12STC.travel(at: .degrees90)
         let vertical = MobileShiftGeometry.dragged(.zero, translation: CGSize(width: 20,height: -20), pointsPerMM: 2, travel: rotated)
         XCTAssertEqual(vertical.x, 0); XCTAssertEqual(vertical.y, 10)
+    }
+
+    func testLargeLinearDNGHasContinuousTileBoundaries() throws {
+        let width = 6000, height = 773
+        let gradient = try XCTUnwrap(CIFilter(name: "CILinearGradient", parameters: [
+            "inputPoint0": CIVector(x: 0,y: 0), "inputPoint1": CIVector(x: CGFloat(width),y: CGFloat(height)),
+            "inputColor0": CIColor(red: 0.2,green: 0.3,blue: 0.4),
+            "inputColor1": CIColor(red: 0.6,green: 0.7,blue: 0.8)
+        ])?.outputImage).cropped(to: CGRect(x: 0,y: 0,width: width,height: height))
+        // Model the partial coverage seen at RAW/resampling joins in the real Boston panorama.
+        // These lines deliberately do not follow the 256-pixel DNG tile lattice.
+        let gray = CIImage(color: CIColor(red: 0.8,green: 0.8,blue: 0.8))
+        var coverage = CIImage(color: .white).cropped(to: gradient.extent)
+        for x in stride(from: 619,to: width,by: 619) {
+            coverage = gray.cropped(to: CGRect(x: x,y: 0,width: 4,height: height)).composited(over: coverage)
+        }
+        coverage = gray.cropped(to: CGRect(x: 0,y: 301,width: width,height: 3)).composited(over: coverage)
+        let image = gradient.applyingFilter("CIBlendWithMask",parameters: ["inputBackgroundImage": CIImage(color: .clear),"inputMaskImage": coverage])
+            .cropped(to: gradient.extent)
+        let context = CIContext(options: [.workingColorSpace: PanoramaEngine.linearSpace])
+        let url = folder.appendingPathComponent("continuous-6000.dng")
+        try LinearDNGWriter.write(image: image,context: context,to: url)
+        let raw = try XCTUnwrap(CIRAWFilter(imageURL: url))
+        raw.boostAmount = 0; raw.isGamutMappingEnabled = false; raw.sharpnessAmount = 0
+        raw.isLensCorrectionEnabled = false
+        let decoded = try XCTUnwrap(raw.outputImage)
+        XCTAssertEqual(decoded.extent.size,CGSize(width: width,height: height))
+        var values = [Float](repeating: 0,count: width * height * 4)
+        context.render(decoded,toBitmap: &values,rowBytes: width * 16,bounds: decoded.extent,
+            format: .RGBAf,colorSpace: PanoramaEngine.linearSpace)
+        var minimum: Float = 1, maximumBoundaryJump: Float = 0
+        for y in 4..<(height-4) { for x in 4..<(width-4) {
+            let p = (y*width+x)*4
+            minimum = min(minimum,values[p],values[p+1],values[p+2])
+            for c in 0..<3 {
+                maximumBoundaryJump = max(maximumBoundaryJump,abs(values[p+c]-values[p-4+c]),abs(values[p+c]-values[p-width*4+c]))
+            }
+        }}
+        XCTAssertGreaterThan(minimum,0.025,"No dark grid inside a smooth image")
+        XCTAssertLessThan(maximumBoundaryJump,0.015,"Lossless DNG tiles must join continuously")
+    }
+
+    func testHDRPreviewPreservesHighlightsAndDeclaresHeadroom() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("hdr"))
+        let photo = MobilePhoto(id: "hdr",name: "HDR",url: urls[0],rating: 0,width: 768,height: 512)
+        var edit = EditModel.neutral; edit.light.exposure = 3
+        let hdr = try await engine.frame(photo,edit: edit,hdr: true,edge: 320)
+        let sdr = try await engine.frame(photo,edit: edit,hdr: false,edge: 320)
+        func maximum(_ cg: CGImage) -> Float {
+            let image = CIImage(cgImage: cg), context = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!])
+            let maxImage = image.applyingFilter("CIAreaMaximum",parameters: ["inputExtent": CIVector(cgRect: image.extent)])
+            var sample = [Float](repeating: 0,count: 4)
+            context.render(maxImage,toBitmap: &sample,rowBytes: 16,bounds: CGRect(x: 0,y: 0,width: 1,height: 1),
+                format: .RGBAf,colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3))
+            return max(sample[0],sample[1],sample[2])
+        }
+        XCTAssertGreaterThan(maximum(hdr.image),1.2)
+        XCTAssertLessThanOrEqual(maximum(sdr.image),1.001)
+        XCTAssertNotEqual(hdr.histogram?.binsDigest(),sdr.histogram?.binsDigest())
+        XCTAssertGreaterThan(hdr.image.contentHeadroom,1,"UIKit needs declared headroom for HDR presentation")
+        await MainActor.run {
+            print("SCREEN EDR",UIScreen.main.currentEDRHeadroom,UIScreen.main.potentialEDRHeadroom)
+            let view = MobilePreviewSurface(); view.present(hdr.image,hdr: true)
+            XCTAssertTrue((view.layer.contents as! CGImage) === hdr.image)
+            if #available(iOS 26.0, *) { XCTAssertEqual(view.layer.preferredDynamicRange,.high) }
+            else { XCTAssertTrue(view.layer.wantsExtendedDynamicRangeContent) }
+            view.present(sdr.image,hdr: false)
+            if #available(iOS 26.0, *) { XCTAssertEqual(view.layer.preferredDynamicRange,.standard) }
+            else { XCTAssertFalse(view.layer.wantsExtendedDynamicRangeContent) }
+        }
+        var history = EditHistory(baseline: .neutral); history.commit(edit,label: "HDR",coalesce: false)
+        _ = try await engine.importPhotos([photo.url],skipDuplicates: true,progress: { _,_ in })
+        let importedPhotos = try await engine.photos()
+        let imported = try XCTUnwrap(importedPhotos.first)
+        try await engine.save(edit,history: history,id: imported.id)
+        let thumb = try await engine.thumbnail(imported,hdr: true)
+        let cached = try await self.engine().thumbnail(imported,hdr: true)
+        XCTAssertEqual(cached.image.contentHeadroom,thumb.image.contentHeadroom)
+        XCTAssertGreaterThan(maximum(cached.image),1.2,"Persisted thumbnails must keep HDR samples")
+        XCTAssertEqual(cached.histogram,thumb.histogram)
+        let cacheURLs = try FileManager.default.contentsOfDirectory(at: folder.appendingPathComponent("Test.photonslibrary/MobilePreviews"),includingPropertiesForKeys: nil)
+        XCTAssertTrue(cacheURLs.contains { $0.pathExtension == "preview" })
     }
 
     func testCancellationDoesNotCreateOutput() async throws {

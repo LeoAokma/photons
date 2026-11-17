@@ -11,6 +11,9 @@ public enum LinearDNGWriter {
     public static func write(image: CIImage, context: CIContext, to url: URL,
                              manifest: Data? = nil, cancellation: PanoramaCancellation = .init(),
                              progress: PanoramaEngine.Progress = { _ in }) throws {
+        // Linear DNG has RGB samples and no alpha. Never encode premultiplied RGB: partial
+        // coverage at resampled joins would become permanent dark lines in the RAW samples.
+        let image = PanoramaEngine.normalizedCoverage(image)
         let width = Int(image.extent.width), height = Int(image.extent.height), tile = 256
         guard width>0, height>0, width*height<600_000_000 else { throw PanoramaFailure(L10n.tr("12dd189a96f3")) }
         var maximum = [Float](repeating:0,count:4)
