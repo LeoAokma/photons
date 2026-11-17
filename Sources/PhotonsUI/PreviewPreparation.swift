@@ -10,7 +10,6 @@ import PhotonsFileAccess
 final class PreviewPreparation {
     let task: BackgroundTask
     private let provider: ThumbnailProvider
-    private let cacheGeneration: UInt64
     private let entries: [(Asset, URL)]
     private let finish: () -> Void
     private var ticket: ThumbTicket?
@@ -19,7 +18,6 @@ final class PreviewPreparation {
 
     init(task: BackgroundTask, provider: ThumbnailProvider, entries: [(Asset, URL)], finish: @escaping () -> Void) {
         self.task = task; self.provider = provider; self.entries = entries; self.finish = finish
-        self.cacheGeneration = provider.cache.generation
     }
 
     func start() { task.state = .running; next() }
@@ -33,7 +31,6 @@ final class PreviewPreparation {
 
     private func next() {
         guard task.active else { return }
-        guard provider.cache.generation == cacheGeneration else { cancel(); return }
         task.fraction = Double(processed) / Double(entries.count)
         task.message = L10n.tr("previews.progress", String(processed), String(entries.count))
         BackgroundTasks.shared.changed()
@@ -53,10 +50,7 @@ final class PreviewPreparation {
             withExtendedLifetime(access) {}
             DispatchQueue.main.async {
                 guard let self, self.task.active else { return }
-                if let data = result.data {
-                    self.provider.histograms.ensurePreview(key: key, data: data, generation: self.cacheGeneration)
-                }
-                else { self.failures += 1 }
+                if result.data == nil { self.failures += 1 }
                 self.processed += 1; self.ticket = nil
                 // Yield to selection/scroll work between files.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.next() }

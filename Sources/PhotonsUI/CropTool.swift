@@ -468,6 +468,8 @@ public enum CropTool {
                                         quarterTurns: 0,
                                         perspectiveVertical: perspective?.vertical ?? 0,
                                         perspectiveHorizontal: perspective?.horizontal ?? 0,
+                                        perspectiveShear: perspective?.shear ?? 0,
+                                        perspectiveAspect: perspective?.aspect ?? 1,
                                         cropSpace: .canvas),
                 source: source)
             let e = geometry.photoQuadExtent
@@ -481,7 +483,9 @@ public enum CropTool {
                                         aspectLock: .original,
                                         quarterTurns: 0,
                                         perspectiveVertical: perspective.vertical,
-                                        perspectiveHorizontal: perspective.horizontal),
+                                        perspectiveHorizontal: perspective.horizontal,
+                                        perspectiveShear: perspective.shear,
+                                        perspectiveAspect: perspective.aspect),
                 source: source)
             return CropToolProjection(units: CropUnits(source),
                                       space: .keystone(geometry, mapping), scale: scale, carry: carry)
@@ -622,7 +626,9 @@ public enum CropTool {
                                     aspectLock: .original,
                                     quarterTurns: 0,
                                     perspectiveVertical: perspective.vertical,
-                                    perspectiveHorizontal: perspective.horizontal),
+                                    perspectiveHorizontal: perspective.horizontal,
+                                    perspectiveShear: perspective.shear,
+                                    perspectiveAspect: perspective.aspect),
             source: source)
         var candidate = rect.clamped(allowsOutsideSource: true)
         if let placed = geometry.translatedInsidePhotoCanvas(candidate) {

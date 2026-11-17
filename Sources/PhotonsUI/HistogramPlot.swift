@@ -1,4 +1,3 @@
-import PhotonsLocalization
 import AppKit
 import PhotonsCore
 
@@ -36,19 +35,17 @@ public struct HistogramAxis: Equatable {
     public static let sdrFraction: CGFloat = 1 - hdrFraction
 
     public let plot: NSRect
-    public let hdrEnabled: Bool
 
-    public init(plot: NSRect, hdrEnabled:Bool = true) {
+    public init(plot: NSRect) {
         self.plot = plot
-        self.hdrEnabled=hdrEnabled
     }
 
     public var stops: Int { Histogram.maxStops }
     public var hdrBinCount: Int { Histogram.hdrBinCount }
     /// Width of the exponential tail: `hdrFraction` of the plot at every width.
-    public var hdrWidth: CGFloat { hdrEnabled ? plot.width * Self.hdrFraction:0 }
+    public var hdrWidth: CGFloat { plot.width * Self.hdrFraction }
     /// Width of the code segment: the other `sdrFraction` (the two halves add up to `plot.width`).
-    public var sdrWidth: CGFloat { hdrEnabled ? plot.width * Self.sdrFraction:plot.width }
+    public var sdrWidth: CGFloat { plot.width * Self.sdrFraction }
     /// Points per stop of the tail — **derived** from the split (`hdrWidth / stops`, 50 pt on a
     /// 400 pt card, 30.5 pt on the 244 pt card). Before 068 this was the independent variable.
     public var stopWidth: CGFloat { hdrWidth / CGFloat(max(stops, 1)) }
@@ -163,7 +160,7 @@ extension HistogramCardFormat {
         case .code:
             return "\(reading.code)"
         case .tail:
-            return String(format: L10n.tr("a6e6a44d6eb3"), reading.stops, reading.multiple)
+            return String(format: "%+.2f 档 (%.1f×)", reading.stops, reading.multiple)
         }
     }
 
@@ -259,7 +256,7 @@ extension HistogramCardFormat {
         for (i, count) in channel.bins.prefix(max(binCount, 1)).enumerated() {
             points.append(CGPoint(x: axis.x(sdrBin: i, of: binCount), y: y(count)))
         }
-        for (i, count) in channel.hdrBins.enumerated() where axis.hdrEnabled {
+        for (i, count) in channel.hdrBins.enumerated() {
             points.append(CGPoint(x: axis.x(hdrBin: i), y: y(count)))
         }
         points.append(CGPoint(x: axis.plot.maxX, y: bottom))

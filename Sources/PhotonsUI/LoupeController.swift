@@ -4106,7 +4106,22 @@ public final class LoupeController: NSViewController, HeadroomSource {
         if isMaskHandleArmed(atViewPoint: point) { return .maskHandle }
         if isShapeDragArmed { return .maskShape }
         if maskCanvas.isArmed { return .paint }
-        if clickCount >= 2 { return .doubleClick }
+        // 415 — in one click chain only the **even** press is a double-click.
+        //
+        // The zoom is a **stateless toggle** (`handleDoubleClick`: actual ⇄ fit), so `>= 2` made
+        // every press after the second act: three clicks zoomed in then back out, four zoomed out
+        // then in — the 「放大动画后立刻跳回适应」 the user reported. The owner's rule is
+        // 「连续三次视为误触，按双击处理；2 次 + 2 次 = 放大又退回适应」, which is exactly the
+        // parity law: 2 fires, 3 is ignored, 4 fires again.
+        //
+        // No counter and no interval constant: AppKit's `clickCount` already climbs monotonically
+        // inside one chain and restarts at 1 once the chain breaks (`NSEvent.doubleClickInterval`
+        // or a moved pointer), so a pause followed by another double-click needs no state here.
+        //
+        // The two other `>= 2` rules (the guide-line delete above, `LoupeCanvasGesture.crop`) are
+        // **not** parity rules on purpose: each action changes its own precondition, so pressing a
+        // third time cannot repeat it.
+        if clickCount >= 2, clickCount.isMultiple(of: 2) { return .doubleClick }
         return .pan
     }
 
@@ -4592,6 +4607,54 @@ public final class LoupeController: NSViewController, HeadroomSource {
         let stepped = (raw * 1000).rounded(.up) / 1000
         return Swift.min(Swift.max(stepped, LightGroup.blackOffsetRange.lowerBound),
                          LightGroup.blackOffsetRange.upperBound)
+    }
+
+    // MARK: 自动调节 (422)
+
+    /// 422 — the five reverse gates the algorithm is tested through. `AutoLight.Gates()` in production;
+    /// a test sets one and shows the assertion that guards it going red. Never part of a key or a
+    /// document, and read once per run.
+    nonisolated(unsafe) static var autoLightGates = AutoLight.Gates()
+
+    /// 明暗 · 自动 — one press writes the seven 明暗 fields and **one** history entry.
+    ///
+    /// The five steps live in `AutoLight.plan` (pure, testable without a GPU); this is the wiring: the
+    /// frame's own graph is what measures, so the numbers are the ones the picture on screen is made of.
+    /// `light.blackOffset` is **read, never written** — 黑电平 owns it, and step 4 only cancels its lift.
+    ///
+    /// Returns the plan (so a test can argue with every number it used), or `nil` when there is no
+    /// frame to measure or when the plan equals the document it started from (a second press on a
+    /// settled picture is a no-op, exactly like 自动黑电平).
+    @discardableResult
+    public func autoLight() -> AutoLight.Plan? {
+        let frame = frameState
+        guard let session, session.mode == .loupe, let graph = frame.graph else { return nil }
+        let gates = Self.autoLightGates
+        let plan: AutoLight.Plan
+        do {
+            plan = try AutoLight.plan(for: session.edit, gates: gates) { document in
+                try graph.measureAutoLightSample(document)
+            }
+        } catch {
+            print("AUTO LIGHT · measurement failed: \(error)")
+            return nil
+        }
+        print(String(format: "AUTO LIGHT · p99 %.4f → EV %+.2f → p99 %.4f (p99.9/p99 %.2f, 回退 %d) · "
+                     + "高光 %.0f (损失 %.2f%% / 门 %.1f%%) · 白色 %.0f · "
+                     + "中间调 %.0f 阴影 %.0f · 黑色 %.0f (削底 %.2f%%) · 对比 %.0f · %d renders %.0f ms",
+                     plan.report.baseP99, plan.report.exposureEV, plan.report.p99AfterExposure,
+                     plan.report.p999OverP99AfterExposure, plan.report.exposureBackstops,
+                     plan.highlights, plan.report.textureLoss * 100,
+                     plan.report.textureLossThreshold * 100, plan.whites,
+                     plan.midtones, plan.shadows, plan.blacks,
+                     plan.report.clippedLowAfterBlacks * 100, plan.contrast,
+                     plan.report.renderCount, plan.report.milliseconds))
+        let next = plan.apply(to: session.edit)
+        guard next.light != session.edit.light else { return nil }
+        session.applyEdit { $0 = next }
+        requestEditRender()
+        session.commitEdit(label: L10n.tr("187f2e7d1e49"), coalesce: false)
+        return plan
     }
 
     /// The document's flips — what the menu ticks and the bar's two switches show.

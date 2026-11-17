@@ -43,6 +43,9 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
     private let sourcesScroll = NSScrollView()
     private let photosScroll = NSScrollView()
     private let matte = StudioPanelView()
+    /// 423 — 两块面板的卡片边框（与右侧检查器 `InspectorCardShell` 同一族）。
+    private let sourcesCard = PaneCardBackground()
+    private let photosCard = PaneCardBackground()
     private let bridge = ObservationBridge()
 
     /// Same one-snapshot rule as the grid/filmstrip: the photo ids/order plus the tree/album
@@ -194,6 +197,10 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
         let root = FlippedView()
 
         root.addSubview(matte)
+        // 423 — 卡片边框必须先于两个 scroll 入树（`addSubview` 的顺序就是兄弟顺序，先加的在下），
+        // 这样描边压在 matte 上、又被表格内容盖住；`layoutPanes()` 里它跟着 scroll 的 frame 走。
+        root.addSubview(sourcesCard)
+        root.addSubview(photosCard)
 
         headerTitle.font = .systemFont(ofSize: 12, weight: .bold)
         headerCount.font = .systemFont(ofSize: 10)
@@ -268,8 +275,16 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
     private func configure(table: NSTableView, rowHeight: CGFloat, identifier: String) {
         table.headerView = nil
         table.rowHeight = rowHeight
-        table.backgroundColor = .clear
-        table.style = .sourceList
+        // 423 — `.sourceList` 会让 AppKit 在这个 scroll view 里插一个**铺满**的 `NSVisualEffectView`
+        // （behind-window 材质）。配 `drawsBackground = false`，那一层就直接采样窗口后面的桌面：
+        // 用户看到的「文件夹和照片侧栏的背景漏光，能漏出桌面」就是它，而 `matte`（`StudioPanelView`）
+        // 本身是不透明的、也确实铺满了 `view.bounds`（402 定位实验：层树里 `NSScrollView` 的第一个
+        // 子视图就是那个 NSVisualEffectView；换成 `.plain` 后它消失，渲染出来的像素从「窗口材质灰、
+        // alpha 1」变成「透明、让底下 matte 的 panel 色透上来」）。
+        // 所以：不用 `.sourceList`，改成 `.plain` + 显式的 panel 底色 —— 表格自己就是那块不透明面，
+        // 不再有任何系统材质参与。行高仍在 style 之后钉（`.plain` 不改行度量，顺序保持一律）。
+        table.style = .plain
+        table.backgroundColor = StudioTheme.panel
         table.selectionHighlightStyle = .regular
         table.dataSource = self
         table.delegate = self
@@ -280,16 +295,21 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
         table.addTableColumn(col)
     }
 
-    /// The folder tree. 28 pt rows and `.sourceList` — a navigation row is one 12 pt line and a
+    /// The folder tree. 28 pt rows and `.plain` — a navigation row is one 12 pt line and a
     /// folder glyph, not a 46 pt photo row (021 A); `configure(table:)` keeps the photo rows at 46.
+    /// (423: it used to be `.sourceList`, which came with the see-through material — see
+    /// `configure(table:)`.)
     private func configureOutline() {
         sourcesOutline.headerView = nil
-        sourcesOutline.backgroundColor = .clear
+        // 423 — 与 `configure(table:)` 同一个理由：`.sourceList` 的 NSVisualEffectView 会漏出桌面。
+        sourcesOutline.backgroundColor = StudioTheme.panel
         // Order matters: `.sourceList` applies the system's compact row metrics, so the height has to
         // be pinned *after* the style, and `rowSizeStyle = .custom` is what keeps AppKit from putting
         // its own 24 pt back. With the height set first, the cells were laid out for 46 pt rows inside
         // 24 pt ones — the folder name sat above the row and got clipped by it.
-        sourcesOutline.style = .sourceList
+        // `.plain` keeps the same metrics it always had here; the pinning order and `.custom` stay so
+        // the 28 pt row contract (`browserTreeRowHeight`) keeps holding for either style.
+        sourcesOutline.style = .plain
         sourcesOutline.rowSizeStyle = .custom
         sourcesOutline.rowHeight = WorkspaceLayout.browserTreeRowHeight
         sourcesOutline.intercellSpacing = NSSize(width: 0, height: 0)
@@ -349,11 +369,13 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
                                                          panelHeight: view.bounds.height)
         let top = headerH
         sourcesScroll.frame = NSRect(x: 6, y: top, width: view.bounds.width - 12, height: sourcesH)
+        sourcesCard.frame = sourcesScroll.frame.insetBy(dx: -1, dy: -1)
         let photosTop = top + sourcesH + gap
         photosScroll.frame = NSRect(x: 6, y: photosTop,
                                     width: view.bounds.width - 12,
                                     height: max(WorkspaceLayout.browserPhotoListMinHeight,
                                                 view.bounds.height - photosTop - footerH))
+        photosCard.frame = photosScroll.frame.insetBy(dx: -1, dy: -1)
         footer.frame = NSRect(x: inset, y: view.bounds.height - footerH + 6,
                               width: view.bounds.width - inset * 2, height: 13)
     }
@@ -368,6 +390,13 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
         view.frame = NSRect(origin: .zero, size: size)
         layoutPanes()
         return (sourcesScroll.frame, photosScroll.frame)
+    }
+
+    /// 423 — 两块面板的卡片边框与它们各自的 scroll view。测试要量「有且仅有一个、在 scroll 之下、
+    /// frame 只差 1 pt 内缩」，也要离屏渲染它们（`cacheDisplay`）证明描边真的画出来了。
+    public var paneCardViews: (sources: (card: NSView, scroll: NSScrollView),
+                               photos: (card: NSView, scroll: NSScrollView)) {
+        (sources: (sourcesCard, sourcesScroll), photos: (photosCard, photosScroll))
     }
 
     private func observeModel() {
@@ -686,6 +715,9 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
 
     /// The list the double-click is wired to — the test reads `doubleAction` / `target` off it.
     public var photoListForTesting: NSTableView { photosTable }
+    /// 423 — 上面那棵树。透明源定位实验要读它的 `style` / `backgroundColor`，也要遍历它的子视图
+    /// 证明 AppKit 没有再往 scroll view 里塞 `NSVisualEffectView`。
+    public var sourceTreeForTesting: NSOutlineView { sourcesOutline }
 
     // MARK: 332 — keep the anchor photo in the middle of the photo list
 
@@ -2096,3 +2128,59 @@ final class PhotoListTableView: NSTableView {
         super.mouseDown(with: event)
     }
 }
+
+// MARK: - 423 · 卡片边框
+
+/// 卡片边框的四个数，只在这里写一次。右侧检查器的 `InspectorCardShell`（SwiftUI）末尾三行是同一个
+/// 样式的源头：圆角 4、0.5 pt 描边、`StudioTheme.separator` @ 0.7、卡身 `StudioTheme.panel`。
+///
+/// 刻意**不**抽成跨 AppKit/SwiftUI 的共用抽象：那需要先有一层样式桥，而这里一共就四个数。四个数
+/// 两边一致由 `BrowserPaneChrome423Tests` 守（它读 `InspectorView.swift` 的源码逐数比对），所以
+/// 任何一边单独改了都会红。
+enum PaneCardStyle {
+    static let cornerRadius: CGFloat = 4
+    static let strokeWidth: CGFloat = 0.5
+    static let strokeAlpha: CGFloat = 0.7
+    static var fill: NSColor { StudioTheme.panel }
+    static var stroke: NSColor { StudioTheme.separator }
+
+    /// scroll 的 frame 相对卡片的内缩：正好让 0.5 pt 描边不被表格内容盖住。
+    static let contentInset: CGFloat = 1
+}
+
+/// 与 `InspectorCardShell` 同一个样式的 AppKit 版：圆角 4、0.5 pt 描边、`StudioTheme.separator` @ 0.7。
+///
+/// 「先加分隔就是加卡片边框，边框作为视觉上的分隔」（用户 2026-11-17）⇒ 卡身底色刻意与 `matte` 的
+/// `StudioTheme.panel` **相同**：视觉上只多一圈描边 + 圆角，分隔靠边框，不靠换底色。
+private final class PaneCardBackground: NSView {
+    override var isOpaque: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // 与 `InspectorCardShell` 的 `.background(...)` + `.clipShape(RoundedRectangle(4))` +
+        // `.overlay(...strokeBorder(...))` 逐条对应：底色铺满圆角矩形，描边是一条**向内**的
+        // 0.5 pt 带（`strokeBorder` 就是“先按半个线宽内缩、再描边”），所以描边像素总是叠在底色上，
+        // 不会有一半落在透明处。
+        let fillPath = NSBezierPath(roundedRect: bounds,
+                                    xRadius: PaneCardStyle.cornerRadius,
+                                    yRadius: PaneCardStyle.cornerRadius)
+        PaneCardStyle.fill.setFill()
+        fillPath.fill()
+
+        let inset = PaneCardStyle.strokeWidth / 2
+        let strokePath = NSBezierPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
+                                      xRadius: PaneCardStyle.cornerRadius,
+                                      yRadius: PaneCardStyle.cornerRadius)
+        PaneCardStyle.stroke.withAlphaComponent(PaneCardStyle.strokeAlpha).setStroke()
+        strokePath.lineWidth = PaneCardStyle.strokeWidth
+        strokePath.stroke()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
+/// 423 — 测试工厂：C④/C⑤ 要把卡片**离屏渲染**成 bitmap 才能证明描边与圆角真的画了东西。
+/// 卡片类本身保持 `private`（它只属于这个文件），测试通过这个工厂拿到一个真实实例。
+func makePaneCardForTesting(frame: NSRect) -> NSView { PaneCardBackground(frame: frame) }

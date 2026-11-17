@@ -6649,6 +6649,13 @@
       "Sources/PhotonsCore/HistoryFields.swift"
     ]
   },
+  "04684189cbd7": {
+    "zh": "切变",
+    "files": [
+      "Sources/PhotonsCore/HistoryFields.swift",
+      "Sources/PhotonsUI/TransformPanel.swift"
+    ]
+  },
   "1a9d08f722bd": {
     "zh": "旋转 90°",
     "files": [
@@ -8120,6 +8127,24 @@
     "zh": "手动位置表示全景画面中心相对镜头光轴的偏移，右／上为正，单位 mm。",
     "files": [
       "Sources/PhotonsUI/LCCWindowController.swift"
+    ]
+  },
+  "886fc2719d25": {
+    "zh": "自动调节",
+    "files": [
+      "Sources/PhotonsUI/InspectorView.swift"
+    ]
+  },
+  "a0dc4ea6b223": {
+    "zh": "自动调节：按纹理损失安排曝光、高光、白色、黑色与对比",
+    "files": [
+      "Sources/PhotonsUI/InspectorView.swift"
+    ]
+  },
+  "187f2e7d1e49": {
+    "zh": "明暗 · 自动",
+    "files": [
+      "Sources/PhotonsUI/LoupeController.swift"
     ]
   }
 }

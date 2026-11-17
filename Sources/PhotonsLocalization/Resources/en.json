@@ -1062,6 +1062,7 @@
   "1c84ad224faf": "Crop height",
   "d12fead12279": "Vertical perspective",
   "c858cb3c11d4": "Horizontal perspective",
+  "04684189cbd7": "Shear",
   "1a9d08f722bd": "Rotate 90°",
   "387dea4835ba": "Highlight recovery",
   "e5ad5eed0e3a": "Black level fine adjustment",
@@ -1454,5 +1455,8 @@
   "lensInfo.distortion": "Distortion information",
   "lcc.profile.keepBoth": "Keep Both",
   "lcc.profile.compatibility": "The same lens and sensor can share calibrations made on different bodies wherever measured coverage is sufficient. Multiple profiles can coexist. Stitching travel remains limited by the active capture body.",
-  "lcc.profile.bodyProvenance": "The body records calibration provenance and coordinate orientation; it does not restrict which bodies can use this profile."
+  "lcc.profile.bodyProvenance": "The body records calibration provenance and coordinate orientation; it does not restrict which bodies can use this profile.",
+  "886fc2719d25": "Auto tone",
+  "a0dc4ea6b223": "Auto tone: exposure, highlights, whites, blacks and contrast, arranged by texture loss",
+  "187f2e7d1e49": "Light · Auto"
 }

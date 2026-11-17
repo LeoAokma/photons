@@ -289,17 +289,25 @@ final class DehazeExposureTests: XCTestCase {
     /// haze-adding branch never reads the recovery), and so are the three **positive `chroma`**
     /// entries: that fixture's fog is shallow enough that no pixel asks for a gain below the floor,
     /// which is the evidence that 401 moved the depth and not the arithmetic around it.
+    ///
+    /// **417** — the six **positive** entries are re-recorded once more: `w` is now
+    /// `1 − smoothstep(A, 1.33·A, L)` (full participation at and below the airlight, which is the
+    /// verdict 「天空先压暗试试看」), so every `dehaze > 0` frame renders different pixels — that is why
+    /// `dehaze` moved 11 → 12. The four **negative** entries (`foggy·-100/-60`, `chroma·-100/-60`) are
+    /// still the pre-2026-10-31 bytes to the digit: the haze-adding branch does not read the recovery,
+    /// which is the evidence that this change reached the participation and nothing else. `dehaze = 0`
+    /// remains a frame with no stage at all (`testNeutralHasNoDehazeStageAndIsPixelIdentical`).
     private static let e0SHA: [String: String] = [
         "foggy·-100": "9fe53cdc43f873c012e920e18a1fcdba7c481c70aee0acafa9db5a4d09ca6abd",
         "foggy·-60": "90fe67a2b12a33a39440134ff42f8ed40320a744e6241d4934585fdabaa5965b",
-        "foggy·20": "7ea6d6d03b7ce0ad6c0b3264d095bbe153dd9a6568eb3db6ca11951fdbb402c3",
-        "foggy·60": "32c7d6e6625503b6d84d826e05f9b3505d3a8fee1f4afa465ebd2035ef09d76c",
-        "foggy·100": "c7042d34f2ebf5186be28d21f0024b3cb6ab1de0154b78af6645e585892d6725",
+        "foggy·20": "0c18d8544d4e3682b5075847abc4afa9eaa9504d2eb6f1a52702151e8576c08b",
+        "foggy·60": "605b361ae8b351d65ab85bce631462fee15b42c8583908cd2472901f90d6acc2",
+        "foggy·100": "896219f9014ddd64c79d34143a2d5febf0028913b30a37d5c6452ef66262293b",
         "chroma·-100": "d214aa71558eeffbffaacbdcf11f3a0da44bb08fdd96b234796458c23d559272",
         "chroma·-60": "6015c989af2f6f905e0dd3db3068e770b0ef0de5a3fc78e8b2a302632da071c4",
-        "chroma·20": "04d7253f8b7eb8d51582b896020153208c178562222cf1267ad5cf39b65e1303",
-        "chroma·60": "cb08f3cd9d00f579d2978694fb8ca1a4fcdd7ac112d597fdccdf7a6b9198aa0b",
-        "chroma·100": "617ab69e69e44229cfcd05e3bb2b8e55ef1745ea4ee2a5ec78d23a01d74b2587",
+        "chroma·20": "3f149ef1abf257f960f21017aed6398e37ab31cff8485133d4cfa4d0439c43e3",
+        "chroma·60": "45c4f04a3344108e5286c59dbfc4119d4e0de2d34f395d536a03040d7282e2db",
+        "chroma·100": "d43a1e836c49180d4ea0ecab7a441bae75fed7d8d04a4f4ffaae2de60bed32f0",
     ]
 
     func testZeroExposureKeepsTheStageByteIdentical() throws {

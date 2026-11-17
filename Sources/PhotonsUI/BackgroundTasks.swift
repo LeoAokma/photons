@@ -155,7 +155,17 @@ final class BackgroundTaskButton:NSButton {
     private var popover:NSPopover?
     private let progress=NSProgressIndicator()
     init() {
-        super.init(frame:.zero);title=L10n.tr("5253040db864");bezelStyle = .texturedRounded;controlSize = .small
+        super.init(frame:.zero);title=L10n.tr("5253040db864")
+        // 423 — 与顶栏那五个自绘 `ToolButton` 同一族：无边框、`regularSquare`、11 pt medium。
+        // 以前这里是 `.texturedRounded` + 系统默认字号，于是「任务的样式与导入导出和打开不一样」：
+        // 它自带系统底色与边框，字号也比邻居大一号。命中高 28 由 `TopBarView.layout()` 给。
+        isBordered=false;bezelStyle = .regularSquare
+        // `controlSize` 和 `modeControl` 那里同一个坑：它会把字体换回系统默认，所以字体钉在它**之后**。
+        controlSize = .small
+        font = .systemFont(ofSize: 11, weight: .medium)
+        focusRingType = .none
+        contentTintColor = .labelColor
+        imageHugsTitle = true
         image=NSImage(systemSymbolName:"list.bullet.rectangle",accessibilityDescription:nil);imagePosition = .imageLeading
         target=self;action=#selector(showTasks);setAccessibilityIdentifier("toolbar.tasks")
         progress.style = .bar;progress.isIndeterminate=false;progress.minValue=0;progress.maxValue=1;addSubview(progress)
@@ -165,6 +175,8 @@ final class BackgroundTaskButton:NSButton {
     required init?(coder:NSCoder) {fatalError("no nib")}
     deinit {if let observer {NotificationCenter.default.removeObserver(observer)}}
     override func layout() {super.layout();progress.frame=CGRect(x:5,y:0,width:max(0,bounds.width-10),height:3)}
+    /// 423 — 那条 3 pt 进度条。去掉系统边框之后它必须仍然存在、仍然 3 pt（A⑤）。
+    var progressIndicator: NSProgressIndicator {progress}
     private func refresh() {
         let queue=BackgroundTasks.shared
         title=queue.activeCount>0 ? L10n.tr("5cf043ec96db" , String(describing: (queue.activeCount))):L10n.tr("5253040db864")
