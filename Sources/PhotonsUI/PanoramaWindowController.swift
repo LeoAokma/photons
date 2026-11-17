@@ -36,6 +36,7 @@ private final class PanoramaWindowModel: ObservableObject {
     @Published var status = ""
     @Published var error: String?
     @Published var plan: PanoramaPlan?
+    @Published var tone = PanoramaToneSettings.panoramaDefault
     @Published var options = PanoramaOptions()
     var onExported: (URL,@escaping(String?)->Void)->Void = {_,done in done(nil)}
     @Published var cameraBody:PanoramaCameraBody = .alpa12Max
@@ -263,12 +264,18 @@ private final class PanoramaWindowModel: ObservableObject {
         guard let current = plan, current.isRegistered,!busy else { return }
         run { [options] engine,token,progress in try engine.update(current,options:options,cancellation:token,progress:progress) }
     }
+    func changeTone() {
+        guard let current = plan, current.isRegistered, !busy, tone.isValid else { return }
+        run { _,token,_ in try token.check(); return current }
+    }
     private func run(_ operation: @escaping (PanoramaEngine,PanoramaCancellation,@escaping PanoramaEngine.Progress) throws -> PanoramaPlan) {
         cancellation.cancel(); cancellation = PanoramaCancellation()
-        let token = cancellation; busy = true; error = nil
+        let token = cancellation, tone = tone; busy = true; error = nil
         queue.async { [weak self] in
             do {
-                let result = try operation(PanoramaEngine(),token) { message in DispatchQueue.main.async { self?.status = message } }
+                let engine = PanoramaEngine()
+                var result = try operation(engine,token) { message in DispatchQueue.main.async { self?.status = message } }
+                if result.isRegistered { result = try engine.applyingTone(result,settings:tone,cancellation:token) }
                 try token.check()
                 DispatchQueue.main.async { guard (try? token.check()) != nil else {self?.busy=false;return}
                     self?.plan = result; self?.selectLensProfile(); self?.busy = false
@@ -279,7 +286,7 @@ private final class PanoramaWindowModel: ObservableObject {
         }
     }
     var canStitch:Bool {
-        guard !busy,!alignmentNeedsUpdate,let plan,plan.isRegistered else {return false}
+        guard !busy,!alignmentNeedsUpdate,let plan,plan.isRegistered,plan.tone==tone else {return false}
         if !lccEnabled {return plan.lccState==nil}
         guard let lcc=plan.lccState else {return false}
         if !automaticLCCWB {guard let wb=lcc.whiteBalance,wb.0==Float(lccTemperature),wb.1==Float(lccTint) else {return false}}
@@ -346,19 +353,22 @@ private struct PanoramaWorkspace: View {
     private var workspace: some View {
         VStack(spacing:0) {
             HStack(spacing:0) {
-                ZStack {
-                    Color(nsColor:.underPageBackgroundColor)
-                    if let cg = model.plan?.preview {
-                        PanoramaHDRPreview(image:cg).padding(18)
-                    } else {
-                        VStack(spacing:14) {
-                            Image(systemName:"panorama").font(.system(size:52)).foregroundStyle(.secondary)
-                            Text(model.busy ? L10n.tr("248c5f929e45") : L10n.tr("e885a990b960"))
-                            if !model.busy { Button(L10n.tr("03b1a13cf2c0")) { model.prepare() } }
+                VStack(spacing:0) {
+                    ZStack {
+                        Color(nsColor:.underPageBackgroundColor)
+                        if let cg = model.plan?.preview {
+                            PanoramaHDRPreview(image:cg).padding(18)
+                        } else {
+                            VStack(spacing:14) {
+                                Image(systemName:"panorama").font(.system(size:52)).foregroundStyle(.secondary)
+                                Text(model.busy ? L10n.tr("248c5f929e45") : L10n.tr("e885a990b960"))
+                                if !model.busy { Button(L10n.tr("03b1a13cf2c0")) { model.prepare() } }
+                            }
                         }
-                    }
-                    if model.busy { VStack { Spacer(); ProgressView(model.status).padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)) }.padding(20) }
-                }.frame(maxWidth:.infinity,maxHeight:.infinity)
+                        if model.busy { VStack { Spacer(); ProgressView(model.status).padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)) }.padding(20) }
+                    }.frame(maxWidth:.infinity,maxHeight:.infinity)
+                    if model.plan?.isRegistered == true { brightnessControls }
+                }
                 Divider()
                 ScrollView { inspector.padding(20) }.frame(width:340)
             }
@@ -374,6 +384,24 @@ private struct PanoramaWorkspace: View {
                 Button(L10n.tr("630ca11bfbde")) { model.stitch() }.buttonStyle(.borderedProminent).controlSize(.large).disabled(!model.canStitch)
             }.padding(16)
         }
+    }
+    private var brightnessControls: some View {
+        VStack(alignment:.leading,spacing:6) {
+            Divider()
+            HStack(spacing:20) {
+                VStack {
+                    HStack { Text(L10n.tr("4626a2810ff9")); Spacer(); Text(String(format:"%+.2f EV",model.tone.exposureEV)).monospacedDigit() }
+                    AdjustmentSlider(value:$model.tone.exposureEV,in:-4...4,step:0.05,onEditingChanged:{ if !$0 {model.changeTone()} })
+                }
+                VStack {
+                    HStack { Text(L10n.tr("panorama.tone.highlights")); Spacer(); Text(String(format:"%.1f",log2(model.tone.highlightHeadroom ?? 4))).monospacedDigit() }
+                    AdjustmentSlider(value:Binding(get:{log2(model.tone.highlightHeadroom ?? 4)},set:{model.tone.highlightHeadroom=pow(2,$0)}),in:0...4,step:0.1,onEditingChanged:{if !$0 {model.changeTone()}})
+                }
+                Button(L10n.tr("panorama.tone.reset")) {model.tone = .panoramaDefault;model.changeTone()}
+                    .disabled(model.tone == .panoramaDefault)
+            }
+            Text(L10n.tr("panorama.tone.hint")).font(.caption).foregroundStyle(.secondary)
+        }.padding(12).disabled(model.busy)
     }
     private var inspector: some View {
         VStack(alignment:.leading,spacing:16) {
@@ -452,8 +480,6 @@ private struct PanoramaWorkspace: View {
                 Button(L10n.tr("693a0e217822")) {model.alignLCC()}.disabled(model.positionReference != nil)
                 Button(L10n.tr("45d14f0c4f3d")) {model.solvePosition()}.disabled(model.positionReference != nil)
                 Text(L10n.tr("3b0da2de91ba")).font(.caption)
-                HStack {Text(L10n.tr("4626a2810ff9"));Spacer();Text(String(format:"%+.2f EV",model.exposureEV)).monospacedDigit()}
-                AdjustmentSlider(value:$model.exposureEV,in:-4...4,step:0.05,onEditingChanged:{editing in if !editing {model.changeLCC()}})
                 Toggle(L10n.tr("fa9bce35de33"),isOn:$model.automaticLCCWB).toggleStyle(.checkbox)
                     .onChange(of:model.automaticLCCWB) {_,value in
                         if !value,let wb=model.plan?.lccState?.whiteBalance {model.lccTemperature=Double(wb.0);model.lccTint=Double(wb.1)}
@@ -468,11 +494,6 @@ private struct PanoramaWorkspace: View {
                         Text(L10n.tr("5bddf6a1c0f5"));TextField("Tint",value:$model.lccTint,format:.number.precision(.fractionLength(1))).onSubmit {model.changeLCC()}
                     }.textFieldStyle(.roundedBorder)
                     Button(L10n.tr("7d5e9c09c086")) {model.changeLCC()}
-                }
-                Toggle(L10n.tr("2444feb8c1fc"),isOn:$model.protectHighlights).toggleStyle(.checkbox)
-                    .onChange(of:model.protectHighlights) {_,_ in model.changeLCC()}
-                if model.protectHighlights,let ev=model.plan?.lccState?.highlightEV {
-                    Text(L10n.tr("b1df88bb7bb6" , String(format: "%.2f", ev))).font(.caption).foregroundStyle(.secondary)
                 }
                 Text(model.positionReference == nil ? L10n.tr("571a6cd6f748") : L10n.tr("531e654e1a1e")).font(.caption).foregroundStyle(.secondary)
             }
