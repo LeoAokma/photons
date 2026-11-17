@@ -9,6 +9,16 @@ import PhotonsPanorama
 @testable import PhotonsExtensions
 
 final class IPadEngineTests: XCTestCase {
+    func testDeghostToggleReusesRegisteredGeometry() async throws {
+        let worker=engine(),urls=try MobileSamples.create(in:folder.appendingPathComponent("deghost"))
+        let photos=urls.prefix(2).enumerated().map { MobilePhoto(id:"test-\($0.offset)",name:$0.element.lastPathComponent,url:$0.element,rating:0,width:768,height:512) }
+        let plan=try await worker.analyze(photos,options:.init(),positions:[:],sensor:nil,cancellation:.init(),progress:{_,_ in})
+        let off=try await worker.setPanoramaDeghosting(plan,enabled:false,cancellation:.init())
+        XCTAssertFalse(off.options.avoidMotion);XCTAssertEqual(off.origins,plan.origins);XCTAssertEqual(off.size,plan.size)
+        XCTAssertNotNil(off.preview)
+        let on=try await worker.setPanoramaDeghosting(off,enabled:true,cancellation:.init())
+        XCTAssertTrue(on.options.avoidMotion);XCTAssertEqual(on.origins,off.origins)
+    }
     private var folder: URL!
     override func setUpWithError() throws {
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("ipad-test-\(UUID())", isDirectory: true)

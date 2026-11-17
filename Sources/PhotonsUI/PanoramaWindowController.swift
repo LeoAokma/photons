@@ -478,7 +478,10 @@ private struct PanoramaWorkspace: View {
             }
             Divider()
             Text(L10n.tr("71e8dddcf62b")).font(.headline)
-            Toggle(L10n.tr("dcc5dc5e40cb"),isOn:$model.options.avoidMotion).onChange(of:model.options.avoidMotion) { _,_ in model.refresh() }
+            Toggle(L10n.tr("panorama.deghost.label"),isOn:$model.options.avoidMotion).toggleStyle(.checkbox)
+                .accessibilityIdentifier("panorama-deghost")
+                .onChange(of:model.options.avoidMotion) { _,_ in model.refresh() }
+            Text(L10n.tr("panorama.deghost.hint")).font(.caption).foregroundStyle(.secondary)
             Toggle(L10n.tr("f332d17f7e09"),isOn:$model.options.matchExposure).onChange(of:model.options.matchExposure) { _,_ in model.refresh() }
             Text(L10n.tr("802a18c71f09")).font(.callout)
             AdjustmentSlider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })

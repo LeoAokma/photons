@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import PhotonsLocalization
 import PhotonsCore
 import PhotonsPanorama
 
@@ -147,6 +148,9 @@ struct MobilePanoramaWorkspace: View {
                 }
             }
         }
+        .onChange(of: model.plan?.options.avoidMotion) { _,enabled in
+            if let enabled { appliedOptions?.avoidMotion = enabled }
+        }
         .sheet(isPresented: $export) {
             NavigationStack {
                 MobileExportSheet(model: model, onExport: { dismiss() })
@@ -216,6 +220,12 @@ struct MobilePanoramaWorkspace: View {
                     if let plan = model.plan { MobilePositionDiagram(plan: plan).frame(height: 280) }
                     Text("Image features determine the perspective alignment. This preview uses a planar projection; very wide or 360° panoramas are not yet supported.").font(.caption).foregroundStyle(.secondary)
                 }
+                Toggle(L10n.tr("panorama.deghost.label"),isOn: Binding(get: { options.avoidMotion },set: { enabled in
+                    let canRefresh = appliedLayout == layout && appliedOptions == options
+                    options.avoidMotion = enabled
+                    if canRefresh { model.setPanoramaDeghosting(enabled) }
+                })).toggleStyle(MobileCheckboxStyle()).accessibilityIdentifier("panorama-deghost")
+                Text(L10n.tr("panorama.deghost.hint")).font(.caption).foregroundStyle(.secondary)
                 DisclosureGroup("Alignment options") {
                     if mode == .shift {
                     Toggle("Override sensor dimensions", isOn: $manualSensor).onChange(of: manualSensor) { _,enabled in
@@ -227,7 +237,6 @@ struct MobilePanoramaWorkspace: View {
                     } else { Text(String(format: "%.2f × %.2f mm", sensorWidth, sensorHeight)).font(.caption) }
                     }
                     Toggle("Match exposure", isOn: $options.matchExposure)
-                    Toggle("Avoid moving subjects", isOn: $options.avoidMotion)
                     Slider(value: $options.seamSoftness, in: 0...20) { Text("Seam softness") }
                 }
                 Button("Update alignment", action: align).buttonStyle(.borderedProminent)
