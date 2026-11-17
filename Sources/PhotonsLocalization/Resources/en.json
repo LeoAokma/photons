@@ -1314,5 +1314,8 @@
   "previews.title": "Generate previews",
   "previews.progress": "Generating previews · {0}/{1}",
   "previews.failed": "Preview generation failed for {0} of {1} photos",
-  "panorama.geometry": "Validate geometry {0} ↔ {1}"
+  "panorama.geometry": "Validate geometry {0} ↔ {1}",
+  "886fc2719d25": "Auto tone",
+  "a0dc4ea6b223": "Auto tone: exposure, highlights, whites, blacks and contrast, arranged by texture loss",
+  "187f2e7d1e49": "Light · Auto"
 }
