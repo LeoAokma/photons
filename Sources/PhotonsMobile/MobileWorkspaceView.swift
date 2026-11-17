@@ -55,7 +55,7 @@ public struct MobileWorkspaceView: View {
         .fileImporter(isPresented: $importer, allowedContentTypes: [.image, .rawImage, .folder], allowsMultipleSelection: true) { result in
             do { model.importPhotos(try result.get()) } catch { model.error = error.localizedDescription }
         }
-        .fullScreenCover(isPresented: $panoramaWorkspace, onDismiss: { if model.plan == nil { model.render() } }) { MobilePanoramaFlow(model: model) }
+        .fullScreenCover(isPresented: $panoramaWorkspace, onDismiss: { model.endPanorama() }) { MobilePanoramaFlow(model: model) }
         .fullScreenCover(isPresented: $settingsWorkspace) { MobileSettingsWorkspace(model: model) }
         .sheet(item: $tool) { sheet in
             NavigationStack {
@@ -101,7 +101,7 @@ public struct MobileWorkspaceView: View {
             Button(model.hdr ? "HDR" : "SDR") { model.toggleHDR() }
                 .font(.caption.weight(.semibold)).buttonStyle(.bordered).tint(model.hdr ? .orange : .gray).accessibilityIdentifier("display-mode").disabled(model.busy)
             if model.selected.count >= 2 {
-                Button { panoramaWorkspace = true } label: { Image(systemName: "pano") }
+                Button { model.beginPanorama(); panoramaWorkspace = true } label: { Image(systemName: "pano") }
                     .disabled(model.busy).keyboardShortcut("m", modifiers: .control)
                     .accessibilityLabel("Panorama").accessibilityIdentifier("panorama-tool")
             }
@@ -143,7 +143,7 @@ public struct MobileWorkspaceView: View {
             Text("\(model.photos.count) photographs").font(.caption).foregroundStyle(.secondary)
             Divider()
             Label("WORKFLOW", systemImage: "slider.horizontal.3").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            if model.selected.count >= 2 { Button("Panorama", systemImage: "pano") { panoramaWorkspace = true }.disabled(model.busy) }
+            if model.selected.count >= 2 { Button("Panorama", systemImage: "pano") { model.beginPanorama(); panoramaWorkspace = true }.disabled(model.busy) }
             Button("LCC correction", systemImage: "camera.filters") { tool = .lcc }.disabled(model.active == nil || model.busy)
             Button("Lens profiles", systemImage: "camera.aperture") { tool = .profiles }.disabled(model.busy)
             if !MobileSamples.boston.isEmpty {

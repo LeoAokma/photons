@@ -42,6 +42,24 @@ final class MobileWorkspaceModel: ObservableObject {
     private var cancellation = PanoramaCancellation()
     private var generation = 0
     private var selectionRevision = 0
+    private var panoramaReturnToGrid: Bool?
+    private var panoramaExporting = false
+
+    func beginPanorama() {
+        panoramaReturnToGrid = showGrid
+    }
+    /// A stitch is a temporary workspace, not a photograph in the library.
+    /// Export captures its plan before dismissal; only the saved output enters the library.
+    func endPanorama() {
+        guard let returnToGrid = panoramaReturnToGrid else { return }
+        panoramaReturnToGrid = nil
+        if busy && !panoramaExporting { cancel() }
+        previewTask?.cancel(); generation += 1; rendering = false
+        plan = nil; manifest = nil; lccPositionNote = nil
+        frame = active.flatMap { thumbnails[$0.id] }
+        showGrid = returnToGrid
+        if !returnToGrid { render() }
+    }
 
     var selectedPhotos: [MobilePhoto] { photos.filter { selected.contains($0.id) } }
     var canExport: Bool { plan != nil || active != nil }
@@ -175,7 +193,7 @@ final class MobileWorkspaceModel: ObservableObject {
             catch is CancellationError { status = "Cancelled" }
             catch { self.error = error.localizedDescription }
             busy = false; progress = nil
-            if !Task.isCancelled { status = "" }
+            status = ""
         }
     }
     func cancel() { cancellation.cancel(); job?.cancel(); status = "Cancelling…" }
@@ -195,7 +213,9 @@ final class MobileWorkspaceModel: ObservableObject {
         run("Aligning panorama") {
             let result = try await self.engine.analyze(sources, options: options, positions: positions, sensor: sensor, registrationMode: registrationMode,
                                                        tone: tone,cancellation: self.cancellation, progress: self.report)
-            self.plan = result; self.manifest = nil; self.lccPositionNote = nil; self.frame = try await self.engine.frame(result, hdr: self.hdr); self.showGrid = false
+            let frame = try await self.engine.frame(result, hdr: self.hdr)
+            try Task.checkCancellation()
+            self.plan = result; self.manifest = nil; self.lccPositionNote = nil; self.frame = frame; self.showGrid = false
         }
     }
     func setPanoramaTone(_ tone: PanoramaToneSettings) {
@@ -228,19 +248,24 @@ final class MobileWorkspaceModel: ObservableObject {
     func correctPanorama(profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody, orientation: PanoramaBodyOrientation, cropToCoverage: Bool = false) {
         guard let plan else { return }
         run("Correcting panorama") {
-            self.plan = try await self.engine.correctPanorama(plan, profileID: profileID, offset: offset, body: body,
+            let updated = try await self.engine.correctPanorama(plan, profileID: profileID, offset: offset, body: body,
                 orientation: orientation, cropToCoverage: cropToCoverage, cancellation: self.cancellation, progress: self.report)
+            let frame = try await self.engine.frame(updated, hdr: self.hdr)
+            try Task.checkCancellation()
+            self.plan = updated
             self.manifest = nil
             self.lccPositionNote = offset == nil ? "Scene-based LCC placement is an estimate. Check the source positions and, if necessary, specify a measured reference before exporting." : nil
-            if let updated = self.plan { self.frame = try await self.engine.frame(updated, hdr: self.hdr) }
+            self.frame = frame
         }
     }
     func setLCCCrop(_ enabled: Bool) {
         guard let plan else { return }
         run("Updating corrected-area crop") {
             let updated = try await self.engine.setLCCCrop(plan, enabled: enabled, cancellation: self.cancellation)
+            let frame = try await self.engine.frame(updated, hdr: self.hdr)
+            try Task.checkCancellation()
             self.plan = updated; self.manifest = nil
-            self.frame = try await self.engine.frame(updated, hdr: self.hdr)
+            self.frame = frame
         }
     }
     func createProfile(name: String, frames: [LCCCreationFrame], sensor: SensorSize) {
@@ -250,8 +275,11 @@ final class MobileWorkspaceModel: ObservableObject {
         }
     }
     func export(_ settings: MobileExportSettings) {
+        guard !busy else { return }
         let photo = active, edit = edit, plan = plan, manifest = manifest
+        panoramaExporting = panoramaReturnToGrid != nil
         run("Exporting") {
+            defer { self.panoramaExporting = false }
             self.output = try await self.engine.export(photo: photo, edit: edit, plan: plan, manifest: manifest,
                 settings: settings, cancellation: self.cancellation, progress: self.report)
             try await self.reload(); self.warmThumbnails()

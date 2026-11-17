@@ -17,6 +17,27 @@ final class IPadEngineTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
 
+    @MainActor
+    func testClosingPanoramaDiscardsTransientPreviewAndRestoresView() async throws {
+        let model = MobileWorkspaceModel()
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("close-samples"))
+        let photos = urls.map { MobilePhoto(id: $0.lastPathComponent,name: $0.lastPathComponent,url: $0,rating: 0,width: 768,height: 512) }
+        let original = try await engine.frame(photos[0],edit: .neutral,hdr: false,edge: 256)
+        let plan = try await engine.analyze(photos,options: .init(),positions: [:],sensor: nil,cancellation: .init(),progress: { _,_ in })
+        model.active = photos[0]; model.thumbnails[photos[0].id] = original
+        model.beginPanorama(); model.plan = plan; model.showGrid = false
+        model.frame = try await engine.frame(plan,hdr: false)
+        model.setPanoramaTone(.panoramaDefault) // pending asynchronous preview must not resurrect it
+        model.endPanorama()
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertNil(model.plan); XCTAssertNil(model.manifest)
+        XCTAssertTrue(model.showGrid)
+        XCTAssertTrue(model.frame?.image === original.image)
+        XCTAssertFalse(model.rendering)
+        model.endPanorama() // repeated dismissal is harmless
+        XCTAssertTrue(model.showGrid)
+    }
+
     func testImportDuplicatesRenderAndPersistentHistory() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("samples"))
         let first = try await engine.importPhotos(urls, skipDuplicates: true, progress: { _,_ in })

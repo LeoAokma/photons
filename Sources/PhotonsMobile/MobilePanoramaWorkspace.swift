@@ -129,6 +129,7 @@ struct MobilePanoramaWorkspace: View {
             model.plan = nil; model.manifest = nil; model.frame = nil; model.error = nil
             do {
                 sources = try await model.engine.sourceInfo(photos)
+                try Task.checkCancellation()
                 if let known = sources.first?.sensor { sensorWidth = known.width; sensorHeight = known.height }
                 else { manualSensor = true }
                 positions = Dictionary(uniqueKeysWithValues: photos.indices.map { ($0, CGPoint.zero) })
