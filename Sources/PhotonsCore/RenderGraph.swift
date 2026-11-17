@@ -1778,6 +1778,8 @@ public final class RenderGraph {
         // identity for `.up`, so the pre-orientation path allocates nothing and its output is
         // byte-identical to before.
         self.orientation = input.image.orientation
+        let inputSize = input.image.uprightSize
+        try MetalTextureLimits.validate(width: inputSize.width, height: inputSize.height, device: device)
         let upright = input.image.oriented()
         self.uprightImage = upright
         self.sourceSize = ImageSize(width: upright.width, height: upright.height)

@@ -3,6 +3,8 @@ import CoreImage
 import ImageIO
 import CryptoKit
 import UIKit
+import Metal
+import PhotonsLocalization
 import PhotonsCore
 import PhotonsCatalog
 import PhotonsPanorama
@@ -10,6 +12,57 @@ import PhotonsPanorama
 @testable import PhotonsExtensions
 
 final class IPadEngineTests: XCTestCase {
+    @MainActor
+    func testGuideSwipesRespectDirectionThresholdAndPageBounds() {
+        let guide = MobileGuideController(); guide.start([.init("one"),.init("two"),.init("three")])
+        guide.swipe(translation: CGSize(width: 180,height: 0)); XCTAssertEqual(guide.index,0)
+        guide.swipe(translation: CGSize(width: -30,height: 0)); XCTAssertEqual(guide.index,0)
+        guide.swipe(translation: CGSize(width: -60,height: 80)); XCTAssertEqual(guide.index,0)
+        guide.swipe(translation: CGSize(width: -180,height: 30)); XCTAssertEqual(guide.index,1)
+        guide.swipe(translation: CGSize(width: -800,height: 0)); XCTAssertEqual(guide.index,2)
+        guide.swipe(translation: CGSize(width: -180,height: 0)); XCTAssertEqual(guide.index,2)
+        guide.swipe(translation: CGSize(width: 180,height: 20)); XCTAssertEqual(guide.index,1)
+        guide.close(); guide.swipe(translation: CGSize(width: -180,height: 0)); XCTAssertFalse(guide.active)
+    }
+    func testInterfaceLanguageRespectsPreferenceAndDeviceOrder() {
+        XCTAssertEqual(L10n.resolveLanguage(preference: nil,preferredLanguages: ["zh-Hans-US","en-US"]),"zh-Hans")
+        XCTAssertEqual(L10n.resolveLanguage(preference: "system",preferredLanguages: ["fr-FR","zh-Hant-TW","en"]),"zh-Hans")
+        XCTAssertEqual(L10n.resolveLanguage(preference: "system",preferredLanguages: ["en-GB","zh-Hans"]),"en")
+        XCTAssertEqual(L10n.resolveLanguage(preference: "en",preferredLanguages: ["zh-Hans"]),"en")
+        XCTAssertEqual(L10n.resolveLanguage(preference: "zh-Hans",preferredLanguages: ["en"]),"zh-Hans")
+        XCTAssertEqual(L10n.resolveLanguage(preference: nil,preferredLanguages: ["fr","de"]),"en")
+        XCTAssertEqual(L10n.resolveLanguage(preference: nil,preferredLanguages: []),"en")
+    }
+    func testQuickStartCompletionIsPerBuildAndSurvivesRelaunch() {
+        let suite = "guide-test-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = MobileGuideHistory(defaults: defaults)
+        XCTAssertFalse(first.hasSeen("0.1.0 (5)"))
+        first.markSeen("0.1.0 (5)"); first.markSeen("0.1.0 (5)")
+        let reopened = MobileGuideHistory(defaults: UserDefaults(suiteName: suite)!)
+        XCTAssertTrue(reopened.hasSeen("0.1.0 (5)")); XCTAssertFalse(reopened.hasSeen("0.1.0 (6)"))
+        reopened.markSeen("0.1.0 (6)")
+        XCTAssertTrue(reopened.hasSeen("0.1.0 (5)"),"Returning to a previously seen build should not replay automatically")
+        XCTAssertFalse(reopened.hasSeen("0.2.0 (5)"),"Marketing versions distinguish reused build numbers")
+    }
+    @MainActor
+    func testGuideGeometryFallbackNavigationAndDismissal() {
+        let guide = MobileGuideController()
+        let viewport = CGRect(x: 0,y: 40,width: 1000,height: 700)
+        guide.register("toolbar",frame: CGRect(x: 0,y: 40,width: 1000,height: 58))
+        guide.register("offscreen",frame: CGRect(x: 800,y: 900,width: 200,height: 80))
+        var completions = 0
+        guide.start([.init("one",target: "offscreen",fallback: "toolbar"),.init("two",target: "toolbar")]) { completions += 1 }
+        XCTAssertEqual(guide.highlight(in: viewport),CGRect(x: 0,y: 0,width: 1000,height: 58))
+        guide.previous(); XCTAssertEqual(guide.index,0)
+        guide.next(); guide.next(); XCTAssertEqual(guide.index,1)
+        let target = CGRect(x: 850,y: 20,width: 100,height: 50)
+        let safe = CGRect(x: 16,y: 16,width: 968,height: 600)
+        let card = MobileGuideLayout.cardArea(target: target,safe: safe)
+        XCTAssertTrue(safe.contains(card)); XCTAssertFalse(card.intersects(target))
+        guide.close(); guide.close(); XCTAssertFalse(guide.active); XCTAssertEqual(completions,1)
+        XCTAssertEqual(MobileGuideLayout.cardArea(target: safe,safe: safe),safe)
+    }
     private var folder: URL!
     override func setUpWithError() throws {
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("ipad-test-\(UUID())", isDirectory: true)
@@ -17,6 +70,138 @@ final class IPadEngineTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
+
+    func testDetailSizingAccountsForSourceTextureAndMemory() throws {
+        let request = MobileDetailRequest(rect: CGRect(x: 0.4,y: 0.4,width: 0.15,height: 0.15),scale: 1)
+        let large = ImageSize(width: 11664,height: 8750)
+        let bounded = try MobileDetailSizing.plan(source: large,output: large,request: request,
+            textureLimit: 8192,availableBytes: 64 * 1024 * 1024 * 1024)
+        XCTAssertLessThan(bounded.scale,1); XCTAssertLessThan(bounded.longEdge,8192)
+        XCTAssertEqual(bounded.request.rect.minX,request.rect.minX,accuracy: 1e-12)
+        XCTAssertEqual(bounded.request.rect.minY,request.rect.minY,accuracy: 1e-12)
+        XCTAssertEqual(bounded.request.rect.width,request.rect.width,accuracy: 1e-12)
+        XCTAssertEqual(bounded.request.rect.height,request.rect.height,accuracy: 1e-12)
+        let ordinary = ImageSize(width: 4000,height: 3000)
+        let native = try MobileDetailSizing.plan(source: ordinary,output: ordinary,request: request,
+            textureLimit: 16384,availableBytes: 8 * 1024 * 1024 * 1024)
+        XCTAssertEqual(native.scale,1,"Normal-size photos still receive real 1:1 detail")
+        let constrained = try MobileDetailSizing.plan(source: ordinary,output: ordinary,request: request,
+            textureLimit: 16384,availableBytes: 512 * 1024 * 1024)
+        XCTAssertLessThan(constrained.scale,native.scale)
+        XCTAssertThrowsError(try MobileDetailSizing.plan(source: large,output: large,request: request,
+            textureLimit: 8192,availableBytes: 32 * 1024 * 1024))
+        for bad in [MobileDetailRequest(rect: .zero,scale: 1),
+                    MobileDetailRequest(rect: request.rect,scale: .nan),
+                    MobileDetailRequest(rect: CGRect(x: 2,y: 2,width: 1,height: 1),scale: 1),
+                    MobileDetailRequest(rect: CGRect(x: CGFloat.nan,y: 0,width: 1,height: 1),scale: 1)] {
+            XCTAssertThrowsError(try MobileDetailSizing.plan(source: ordinary,output: ordinary,request: bad,
+                textureLimit: 8192,availableBytes: 8 * 1024 * 1024 * 1024))
+        }
+    }
+
+    func testBoundedDetailMatchesEditedPixelsAtItsDeclaredResolution() async throws {
+        let engine = MobileEngine(libraryURL: folder.appendingPathComponent("Bounded.photonslibrary"),
+                                  detailAvailableMemory: { 300 * 1024 * 1024 })
+        let urls = try MobileSamples.create(in: folder.appendingPathComponent("bounded-pixels"))
+        let photo = MobilePhoto(id: "bounded",name: "bounded",url: urls[0],rating: 0,width: 768,height: 512)
+        var edit = EditModel.neutral
+        edit.light.exposure = 0.6; edit.geometry.quarterTurns = 1
+        edit.geometry.crop = .init(x: 0.125,y: 0.125,width: 0.75,height: 0.75)
+        let request = MobileDetailRequest(rect: CGRect(x: 0.25,y: 0.25,width: 0.5,height: 0.5),scale: 1)
+        let detail = try await engine.detail(photo,edit: edit,hdr: true,request: request)
+        XCTAssertLessThan(detail.resolutionScale,1)
+        let full = try await engine.frame(photo,edit: edit,hdr: true,edge: Int(768 * detail.resolutionScale))
+        let crop = CGRect(x: Int((detail.rect.minX * Double(full.image.width)).rounded()),
+                          y: Int((detail.rect.minY * Double(full.image.height)).rounded()),
+                          width: detail.image.width,height: detail.image.height)
+        let expected = try XCTUnwrap(full.image.cropping(to: crop))
+        let actualData = try XCTUnwrap(detail.image.dataProvider?.data) as Data
+        let expectedData = try XCTUnwrap(expected.dataProvider?.data) as Data
+        // The padded halo is intentionally outside the viewport. Compare the visible
+        // pixels, not the halo's own neighbourhood-clamped outer border.
+        let x0 = max(0,Int(request.rect.minX * Double(full.image.width) - crop.minX))
+        let y0 = max(0,Int(request.rect.minY * Double(full.image.height) - crop.minY))
+        let x1 = min(detail.image.width,Int(request.rect.maxX * Double(full.image.width) - crop.minX))
+        let y1 = min(detail.image.height,Int(request.rect.maxY * Double(full.image.height) - crop.minY))
+        var delta = 0.0
+        for y in y0..<y1 { for x in (x0 * 4)..<(x1 * 4) {
+            let a = actualData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: y * detail.image.bytesPerRow + x * 2,as: UInt16.self) }
+            let b = expectedData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: y * expected.bytesPerRow + x * 2,as: UInt16.self) }
+            delta = max(delta,abs(Double(Float16(bitPattern: a)) - Double(Float16(bitPattern: b))))
+        } }
+        XCTAssertLessThan(delta,0.015,"Reduced-resolution details must preserve edits, crop, rotation and HDR pixels")
+    }
+
+    func testLowMemoryDetailDoesNotDecodeAndKeepsCachedPreview() async throws {
+        let engine = MobileEngine(libraryURL: folder.appendingPathComponent("LowMemory.photonslibrary"),
+                                  detailAvailableMemory: { 32 * 1024 * 1024 })
+        let urls = try MobileSamples.create(in: folder.appendingPathComponent("low-memory"))
+        let photo = MobilePhoto(id: "low",name: "low",url: urls[0],rating: 0,width: 768,height: 512)
+        let preview = try await engine.frame(photo,edit: .neutral,hdr: true,edge: 320)
+        let count = await engine.renderCount
+        do {
+            _ = try await engine.detail(photo,edit: .neutral,hdr: true,
+                request: .init(rect: CGRect(x: 0.25,y: 0.25,width: 0.5,height: 0.5),scale: 1))
+            XCTFail("Low memory should leave the existing preview in place")
+        } catch { XCTAssertFalse(error.localizedDescription.isEmpty) }
+        let after = await engine.renderCount; XCTAssertEqual(count,after)
+        let retained = try await engine.frame(photo,edit: .neutral,hdr: true,edge: 320)
+        XCTAssertTrue(retained.image === preview.image)
+    }
+
+    @MainActor
+    func testOptionalLargeRAWZoomRendersBoundedDetailsAndReusesDecode() async throws {
+        let input = FileManager.default.urls(for: .documentDirectory,in: .userDomainMask)[0]
+            .appendingPathComponent("ValidationInputs/628-633/B0000628.3FR")
+        guard FileManager.default.fileExists(atPath: input.path) else { throw XCTSkip("Optional local 100 MP RAW fixture") }
+        let engine = engine(), size = try ImageSourceDecoder.size(at: input)
+        let photo = MobilePhoto(id: "large-raw",name: input.lastPathComponent,url: input,rating: 0,width: size.width,height: size.height)
+        let preview = try await engine.frame(photo,edit: .neutral,hdr: true,edge: 1200)
+        let request = MobileDetailRequest(rect: CGRect(x: 0.4,y: 0.4,width: 0.15,height: 0.15),scale: 1)
+        let detail = try await engine.detail(photo,edit: .neutral,hdr: true,request: request)
+        XCTAssertGreaterThan(detail.image.width,Int(Double(preview.image.width) * request.rect.width))
+        XCTAssertLessThan(detail.resolutionScale,1)
+        XCTAssertGreaterThan(detail.resolutionScale,0.1)
+        XCTAssertTrue(detail.rect.contains(request.rect))
+        let before = await engine.renderCount
+        let decodeScale = Float(Int(Double(max(size.width,size.height)) * detail.resolutionScale)) / Float(max(size.width,size.height))
+        let decodes = RAWDecoder.decodeCounts()[decodeScale,default: 0]
+        let sdr = try await engine.detail(photo,edit: .neutral,hdr: false,request: request)
+        let again = try await engine.detail(photo,edit: .neutral,hdr: true,request: request)
+        XCTAssertTrue(detail.image === again.image); XCTAssertEqual(sdr.rect,detail.rect)
+        let after = await engine.renderCount; XCTAssertEqual(after,before)
+        let moved = MobileDetailRequest(rect: CGRect(x: 0.45,y: 0.4,width: 0.15,height: 0.15),scale: 1)
+        _ = try await engine.detail(photo,edit: .neutral,hdr: true,request: moved)
+        // The host app may warm small thumbnails concurrently; only this detail rung
+        // belongs to the full-detail decode whose reuse is being checked.
+        XCTAssertEqual(RAWDecoder.decodeCounts()[decodeScale,default: 0],decodes,"Panning should reuse the bounded source decode")
+        let model = MobileWorkspaceModel(engine: engine)
+        model.hdr = true; model.active = photo; model.frame = preview
+        model.requestDetail(request)
+        for _ in 0..<300 where model.detailFrame == nil { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertNotNil(model.detailFrame)
+        XCTAssertTrue(model.detailStatus.contains("50%"),model.detailStatus)
+        XCTAssertNil(model.error); XCTAssertTrue(model.frame?.image === preview.image)
+        model.requestDetail(nil)
+        XCTAssertNil(model.detailFrame); XCTAssertTrue(model.detailStatus.isEmpty)
+        print("100 MP RAW detail: scale \(detail.resolutionScale), patch \(detail.image.width) × \(detail.image.height), HDR/SDR and pan checked")
+    }
+
+    func testOptionalOversizedRAWThrowsBeforeMetalAllocation() throws {
+        let input = FileManager.default.urls(for: .documentDirectory,in: .userDomainMask)[0]
+            .appendingPathComponent("ValidationInputs/628-633/B0000628.3FR")
+        guard FileManager.default.fileExists(atPath: input.path) else { throw XCTSkip("Optional local 100 MP RAW fixture") }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let size = try ImageSourceDecoder.size(at: input)
+        guard max(size.width,size.height) > MetalTextureLimits.maximum2DDimension(for: device) else {
+            throw XCTSkip("This device supports the original source dimensions")
+        }
+        XCTAssertThrowsError(try RAWDecoder().decodeDetailed(input)) { error in
+            guard let dimensions = error as? TextureDimensionError else { return XCTFail("Unexpected error: \(error)") }
+            XCTAssertGreaterThan(max(dimensions.width,dimensions.height),dimensions.maximum)
+            print("RAW descriptor safely rejected: \(dimensions.width) × \(dimensions.height), limit \(dimensions.maximum)")
+        }
+    }
 
     func testLensProfileDetailsPreserveCaptureMetadataAndCoverage() async throws {
         let engine = engine(), profiles = try await engine.profiles()
@@ -221,6 +406,127 @@ final class IPadEngineTests: XCTestCase {
     }
 
     @MainActor
+    func testPanoramaDismissalPreservesVisibleThumbnailsAndRecoversEvictedOnes() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("thumbnail-lifecycle"))
+        _ = try await engine.importPhotos(urls,skipDuplicates: true,progress: { _,_ in })
+        let photos = try await engine.photos(), model = MobileWorkspaceModel(engine: engine)
+        let first = photos[0], second = photos[1], third = photos[2]
+        model.hdr = true
+        model.thumbnailVisibility(first.id,visible: true); model.thumbnailVisibility(second.id,visible: true)
+        await model.start()
+        for _ in 0..<200 where model.thumbnails[first.id] == nil || model.thumbnails[second.id] == nil {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        let original = try XCTUnwrap(model.thumbnails[first.id]), other = try XCTUnwrap(model.thumbnails[second.id])
+        // Simulate a recently scrolled-off cell, already persisted to the disk cache.
+        model.thumbnails[third.id] = try await engine.thumbnail(third,hdr: true)
+        let before = await engine.renderCount
+        model.beginPanorama()
+        model.thumbnailVisibility(first.id,visible: false); model.thumbnailVisibility(second.id,visible: false)
+        model.showGrid = false
+        model.memoryWarning()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(model.thumbnails[first.id]?.image === original.image)
+        XCTAssertTrue(model.thumbnails[second.id]?.image === other.image)
+        XCTAssertNil(model.thumbnails[third.id],"Offscreen thumbnails should be evicted under pressure")
+        model.endPanorama()
+        XCTAssertTrue(model.showGrid)
+        XCTAssertTrue(model.thumbnails[first.id]?.image === original.image)
+        // A job cancels the queued load; completion must restart missing thumbnails.
+        model.thumbnailVisibility(third.id,visible: true)
+        model.importPhotos(urls)
+        for _ in 0..<200 where model.busy || model.thumbnails[third.id] == nil {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertFalse(model.busy); XCTAssertNotNil(model.thumbnails[third.id]); XCTAssertNil(model.error)
+        let recovered = await engine.renderCount
+        XCTAssertEqual(recovered,before,"Recovery must use persisted previews, not redevelop unchanged sources")
+        await model.start() // Root .task restart is harmless.
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(model.thumbnails[first.id]?.image === original.image)
+        // HDR/SDR changes refresh only the display variant, retaining disk/RAW reuse.
+        model.toggleHDR()
+        for _ in 0..<200 where model.thumbnails[first.id]?.image === original.image {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        let expected = try await engine.thumbnail(first,hdr: false)
+        XCTAssertTrue(model.thumbnails[first.id]?.image === expected.image)
+        let afterToggle = await engine.renderCount; XCTAssertEqual(afterToggle,before)
+    }
+
+    @MainActor
+    func testMemoryPressureRestartsMissingVisibleThumbnailsWithoutPanorama() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("thumbnail-pressure"))
+        _ = try await engine.importPhotos(urls,skipDuplicates: true,progress: { _,_ in })
+        let photos = try await engine.photos()
+        let model = MobileWorkspaceModel(engine: engine), photo = try XCTUnwrap(photos.first)
+        model.thumbnailVisibility(photo.id,visible: true)
+        await model.start()
+        // Cancel the coalesced first load before it runs, just as a memory warning can.
+        model.memoryWarning()
+        for _ in 0..<200 where model.thumbnails[photo.id] == nil {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertNotNil(model.thumbnails[photo.id]); XCTAssertNil(model.error)
+    }
+
+    @MainActor
+    func testMultiSelectionDoesNotLoadOrReplaceTheActiveEditor() async throws {
+        let model = MobileWorkspaceModel()
+        let first = MobilePhoto(id: "first",name: "first",url: folder.appendingPathComponent("missing-first.tiff"),rating: 0,width: 768,height: 512)
+        let second = MobilePhoto(id: "second",name: "second",url: folder.appendingPathComponent("missing-second.tiff"),rating: 0,width: 768,height: 512)
+        model.active = first; model.selected = [first.id]
+        model.edit.light.exposure = 0.7
+        for _ in 0..<20 {
+            model.toggleSelection(second)
+            XCTAssertTrue(model.selected.contains(second.id))
+            model.toggleSelection(second)
+            XCTAssertFalse(model.selected.contains(second.id))
+        }
+        XCTAssertEqual(model.selected,[first.id]); XCTAssertEqual(model.active?.id,first.id)
+        XCTAssertEqual(model.edit.light.exposure,0.7); XCTAssertFalse(model.selectionLoading)
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertNil(model.error); XCTAssertEqual(model.active?.id,first.id)
+        XCTAssertEqual(model.edit.light.exposure,0.7)
+    }
+
+    func testGridTapSequenceActsOnFirstTapAndKeepsDoubleTapOnSamePhoto() {
+        var sequence = MobileGridTapSequence()
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 1,selectionMode: false),.select)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 2,selectionMode: false),.open)
+        // Rapid taps on different cells must select, not accidentally open the second cell.
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 1,selectionMode: false),.select)
+        XCTAssertEqual(sequence.action(photoID: "b",tapCount: 2,selectionMode: false),.select)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 3,selectionMode: false),.select)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 1,selectionMode: false),.select)
+        // Every tap remains an independent checkbox action while multi-selecting.
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 1,selectionMode: true),.toggleSelection)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 2,selectionMode: true),.toggleSelection)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 2,selectionMode: false),.select)
+    }
+
+    @MainActor
+    func testPanoramaZoomKeepsLowResolutionPreviewWithoutReadingSources() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("preview-only"))
+        let photos = urls.map { MobilePhoto(id: $0.lastPathComponent,name: $0.lastPathComponent,url: $0,rating: 0,width: 768,height: 512) }
+        let plan = try await engine.analyze(photos,options: .init(),positions: [:],sensor: nil,cancellation: .init(),progress: { _,_ in })
+        let model = MobileWorkspaceModel()
+        model.plan = plan; model.frame = try await engine.frame(plan,hdr: false)
+        let preview = model.frame?.image
+        // Missing originals would fail any attempted detail decode or composite.
+        for url in urls { try FileManager.default.removeItem(at: url) }
+        model.requestDetail(.init(rect: CGRect(x: 0.25,y: 0.25,width: 0.5,height: 0.5),scale: 1))
+        XCTAssertFalse(model.detailStatus.isEmpty)
+        let notice = model.detailStatus
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(model.detailStatus,notice)
+        XCTAssertNil(model.detailFrame); XCTAssertNil(model.error)
+        XCTAssertTrue(model.frame?.image === preview)
+        model.requestDetail(nil)
+        XCTAssertEqual(model.detailStatus,"")
+    }
+
+    @MainActor
     func testClosingPanoramaDiscardsTransientPreviewAndRestoresView() async throws {
         let model = MobileWorkspaceModel()
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("close-samples"))
@@ -272,6 +578,82 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertEqual(thumb.image.width, cached.image.width)
     }
 
+    func testDNGCatalogUsesFullSizeAndRepairsLegacyPreviewDimensions() async throws {
+        let url = folder.appendingPathComponent("panorama-6000.DNG")
+        let image = CIImage(color: CIColor(red: 0.2,green: 0.4,blue: 0.6))
+            .cropped(to: CGRect(x: 0,y: 0,width: 6000,height: 4304))
+        try LinearDNGWriter.write(image: image,context: CIContext(options: [.cacheIntermediates: false]),to: url)
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL,nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [String: Any])
+        XCTAssertEqual((properties[kCGImagePropertyPixelWidth as String] as? NSNumber)?.intValue,512)
+        XCTAssertEqual((properties[kCGImagePropertyPixelHeight as String] as? NSNumber)?.intValue,367)
+        let metadata = try MetadataReader.read(url)
+        XCTAssertEqual(metadata.width,6000); XCTAssertEqual(metadata.height,4304)
+
+        let engine = engine()
+        _ = try await engine.importPhotos([url],skipDuplicates: true,progress: { _,_ in })
+        let imported = try await engine.photos()
+        let photo = try XCTUnwrap(imported.first)
+        XCTAssertEqual(photo.width,6000); XCTAssertEqual(photo.height,4304)
+        var edit = EditModel.neutral; edit.light.exposure = 0.7
+        var history = EditHistory(baseline: .neutral)
+        history.commit(edit,label: "Exposure",coalesce: false)
+        try await engine.save(edit,history: history,id: photo.id)
+        let catalog = try Catalog.open(at: folder.appendingPathComponent("Test.photonslibrary"))
+        try catalog.setRating(4,forAsset: photo.id)
+        // Simulate an existing library written by the old IFD0-only reader.
+        try await catalog.dbQueue.write { db in
+            try db.execute(sql: "UPDATE assets SET width = 512, height = 367 WHERE id = ?",arguments: [photo.id])
+        }
+        let before = try XCTUnwrap(catalog.asset(id: photo.id))
+        let sourceHash = try FileHasher.sha256(of: photo.url)
+        let reopened = self.engine()
+        let corrected = try await reopened.photos()
+        XCTAssertEqual(corrected.count,1); XCTAssertEqual(corrected[0].id,photo.id)
+        XCTAssertEqual(corrected[0].width,6000); XCTAssertEqual(corrected[0].height,4304)
+        let after = try XCTUnwrap(catalog.asset(id: photo.id))
+        XCTAssertEqual(after.width,6000); XCTAssertEqual(after.height,4304)
+        XCTAssertEqual(after.rating,4); XCTAssertEqual(after.contentHash,before.contentHash)
+        XCTAssertEqual(after.developJson,before.developJson); XCTAssertEqual(after.historyEnd,before.historyEnd)
+        XCTAssertEqual(after.editTime,before.editTime); XCTAssertEqual(after.renderVersion,before.renderVersion)
+        XCTAssertEqual(try FileHasher.sha256(of: photo.url),sourceHash)
+        var savedHistory = try await reopened.history(photo.id)
+        XCTAssertEqual(savedHistory.undo()?.light.exposure,0)
+        let renderCount = await reopened.renderCount
+        XCTAssertEqual(renderCount,0,"Dimension repair must not render photos or invalidate preview caches")
+        XCTAssertEqual(try catalog.repairDNGPreviewDimensions(),0,"Repair must be idempotent")
+    }
+
+    func testDNGDimensionRepairSkipsMissingSourcesAndSmallImages() async throws {
+        let library = folder.appendingPathComponent("Test.photonslibrary")
+        let catalog = try Catalog.create(at: library)
+        for (name,width,height) in [("portrait",400,600),("small",96,64)] {
+            let url = folder.appendingPathComponent(name + ".dng")
+            let image = CIImage(color: CIColor(red: 0.3,green: 0.4,blue: 0.5))
+                .cropped(to: CGRect(x: 0,y: 0,width: width,height: height))
+            try LinearDNGWriter.write(image: image,context: CIContext(options: [.cacheIntermediates: false]),to: url)
+            let summary = try ImportService(catalog: catalog).run(sources: [url],options: .init(mode: .reference))
+            let id = try XCTUnwrap(summary.addedAssetIDs.first)
+            let asset = try XCTUnwrap(catalog.asset(id: id))
+            XCTAssertEqual(asset.width,width); XCTAssertEqual(asset.height,height)
+            if name == "portrait" {
+                try await catalog.dbQueue.write { db in
+                    try db.execute(sql: "UPDATE assets SET width = 341, height = 512 WHERE id = ?",arguments: [id])
+                }
+                let holding = url.appendingPathExtension("offline")
+                try FileManager.default.moveItem(at: url,to: holding)
+                XCTAssertEqual(try catalog.repairDNGPreviewDimensions(),0)
+                XCTAssertEqual(try catalog.asset(id: id)?.width,341)
+                try FileManager.default.moveItem(at: holding,to: url)
+                XCTAssertEqual(try catalog.repairDNGPreviewDimensions(),1)
+                XCTAssertEqual(try catalog.asset(id: id)?.width,400)
+                XCTAssertEqual(try catalog.asset(id: id)?.height,600)
+            }
+        }
+        XCTAssertEqual(try catalog.repairDNGPreviewDimensions(),0)
+        XCTAssertEqual(try catalog.assets().first { $0.filename == "small.dng" }?.width,96)
+    }
+
     func testPanoramaAlignmentScaledLosslessExportAndMetadata() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("samples"))
         _ = try await engine.importPhotos(urls, skipDuplicates: true, progress: { _,_ in })
@@ -308,6 +690,10 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertNotNil(frame.histogram)
         // A resized/cropped ordinary export of a reimported DNG must keep its original stitch geometry.
         let reimported = try XCTUnwrap(imported.first { $0.name == output.lastPathComponent })
+        XCTAssertEqual(reimported.width,604); XCTAssertEqual(reimported.height,256)
+        let fullPhoto = try XCTUnwrap(imported.first { $0.name == full.lastPathComponent })
+        XCTAssertEqual(fullPhoto.width,Int(plan.outputSize.width))
+        XCTAssertEqual(fullPhoto.height,Int(plan.outputSize.height))
         var cropEdit = EditModel.neutral; cropEdit.geometry.crop = .init(x: 0.25,y: 0.125,width: 0.5,height: 0.75)
         settings.format = "tiff"; settings.hdr = false; settings.longEdge = 160
         let copy = try await engine.export(photo: reimported,edit: cropEdit,plan: nil,manifest: nil,settings: settings,

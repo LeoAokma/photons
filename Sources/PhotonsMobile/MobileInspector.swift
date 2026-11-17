@@ -5,10 +5,12 @@ import PhotonsCore
 import PhotonsPanorama
 
 struct MobileInspector: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
-    @State private var tab = L10n.tr("ipad.fd8a7d7b3e7b")
+    @State private var tab = "ipad.fd8a7d7b3e7b"
     @State private var copiedEdit: EditModel?
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         VStack(spacing: 0) {
             if let histogram = model.frame?.histogram {
                 MobileHistogram(histogram: histogram,hdr: model.hdr).padding(14)
@@ -57,13 +59,13 @@ struct MobileInspector: View {
                 }
             } else if model.active != nil {
                 Picker(L10n.tr("ipad.da188e3b1cef"), selection: $tab) {
-                    ForEach([L10n.tr("ipad.fd8a7d7b3e7b"), L10n.tr("e40fffdb9798"), L10n.tr("ca4842bc9e80"), L10n.tr("5467922dce50")], id: \.self) { Text($0).tag($0) }
+                    ForEach(["ipad.fd8a7d7b3e7b", "e40fffdb9798", "ca4842bc9e80", "5467922dce50"], id: \.self) { Text(L10n.tr($0)).tag($0) }
                 }.pickerStyle(.segmented).padding(.horizontal, 10)
                 Form {
                     switch tab {
-                    case L10n.tr("ipad.fd8a7d7b3e7b"): adjustments
-                    case L10n.tr("e40fffdb9798"): colors
-                    case L10n.tr("ca4842bc9e80"): transforms
+                    case "ipad.fd8a7d7b3e7b": adjustments
+                    case "e40fffdb9798": colors
+                    case "ca4842bc9e80": transforms
                     default: history
                     }
                 }.formStyle(.grouped).scrollContentBackground(.hidden)
@@ -192,12 +194,14 @@ struct MobileInspector: View {
     }
 }
 struct MobileSlider: View {
+    @Environment(\.locale) private var interfaceLocale
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
     var step: Double = 0.1
     var commit: () -> Void
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         VStack(spacing: 6) {
             HStack {
                 Text(title).font(.caption)
@@ -211,6 +215,7 @@ struct MobileSlider: View {
     }
 }
 struct MobilePositionDiagram: View {
+    @Environment(\.locale) private var interfaceLocale
     let plan: PanoramaPlan
     var manifest: PanoramaManifest? = nil
     private var canvasSize: CGSize { manifest?.canvas ?? plan.size }
@@ -221,6 +226,7 @@ struct MobilePositionDiagram: View {
         return plan.sources.enumerated().map { ($0.element.url.deletingPathExtension().lastPathComponent, plan.sourceRect($0.offset)) }
     }
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         GeometryReader { geometry in
             let scale = min((geometry.size.width - 24) / max(1,canvasSize.width), (geometry.size.height - 24) / max(1,canvasSize.height))
             let x = (geometry.size.width - canvasSize.width * scale) / 2

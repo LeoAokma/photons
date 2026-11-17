@@ -11,6 +11,7 @@ import PhotonsExport
 import PhotonsJobs
 import PhotonsFileAccess
 import os
+import Metal
 
 struct MobilePhoto: Identifiable, Sendable {
     var id: String
@@ -53,12 +54,12 @@ actor MobileEngine {
     private var photoCache = MobilePreviewMemoryCache(budget: 96 * 1024 * 1024)
     private var thumbnailCache = MobilePreviewMemoryCache(budget: 16 * 1024 * 1024)
     private var detailCache = MobilePreviewMemoryCache(budget: 48 * 1024 * 1024)
-    private var detailPanoramaPreview: CGImage?
     private var panoramaPreview: CGImage?
     private var panoramaPair: MobilePreviewPair?
     private var sourceSignatures: [URL: String] = [:]
     private(set) var renderCount = 0
     private(set) var panoramaPreviewCount = 0
+    private let detailAvailableMemory: @Sendable () -> Double
     private var previewDirectory: URL { libraryURL.appendingPathComponent("MobilePreviews",isDirectory: true) }
 
     struct CacheUsage: Sendable {
@@ -82,9 +83,16 @@ actor MobileEngine {
         }
     }
 
-    init(libraryURL: URL? = nil) {
+    init(libraryURL: URL? = nil, detailAvailableMemory: @escaping @Sendable () -> Double = {
+        #if targetEnvironment(simulator)
+        return Double(ProcessInfo.processInfo.physicalMemory)
+        #else
+        return Double(os_proc_available_memory())
+        #endif
+    }) {
         self.libraryURL = libraryURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("iPad Preview.photonslibrary", isDirectory: true)
+        self.detailAvailableMemory = detailAvailableMemory
     }
     private func database() throws -> Catalog {
         if let catalog { return catalog }
@@ -92,6 +100,7 @@ actor MobileEngine {
         let layout = LibraryLayout(packageURL: libraryURL)
         let db = FileManager.default.fileExists(atPath: layout.databaseURL.path)
             ? try Catalog.open(at: libraryURL) : try Catalog.create(at: libraryURL)
+        try db.repairDNGPreviewDimensions()
         catalog = db
         return db
     }
@@ -128,7 +137,7 @@ actor MobileEngine {
     func rating(_ rating: Int, id: String) throws { try database().setRating(rating, forAsset: id) }
     func importedEdit(_ id: String) throws -> EditModel { try database().importedDevelop(forAsset: id) ?? .neutral }
     func releaseWorkingMemory() {
-        graph = nil; graphKey = ""; photoCache.clear(); thumbnailCache.clear(); detailCache.clear(); detailPanoramaPreview = nil
+        graph = nil; graphKey = ""; photoCache.clear(); thumbnailCache.clear(); detailCache.clear()
         panoramaPreview = nil; panoramaPair = nil; context.clearCaches(); previewContext.clearCaches()
     }
 
@@ -196,6 +205,7 @@ actor MobileEngine {
     }
     private func render(_ url: URL, edit: EditModel, edge: Int, hdr: Bool, histogram: Bool,
                         linear: Bool = false, detail: MobileDetailRequest? = nil) throws -> RenderResult {
+        try Task.checkCancellation()
         let signature = try sourceSignature(url)
         let size = try sourceSizes[url] ?? ImageSourceDecoder.size(at: url)
         sourceSizes[url] = size
@@ -240,20 +250,24 @@ actor MobileEngine {
     }
     func detail(_ photo: MobilePhoto, edit: EditModel, hdr: Bool, request: MobileDetailRequest) throws -> MobileDetailFrame {
         try Task.checkCancellation()
-        let key = try renderKey(photo,edit,edge: -1) + ":\(request.rect):\(request.scale)"
-        if let pair = detailCache.get(key), let rect = pair.rect { return MobileDetailFrame(image: pair.frame(hdr: hdr).image,rect: rect) }
+        guard let device = MTLCreateSystemDefaultDevice() else { throw RenderError.noMetalDevice }
         let size = try ImageSourceDecoder.size(at: photo.url)
-        let scale = min(1,max(0.1,request.scale))
-        #if targetEnvironment(simulator)
-        let available = Double(ProcessInfo.processInfo.physicalMemory) * 0.45
-        #else
-        let available = Double(os_proc_available_memory()) * 0.65
-        #endif
-        guard Double(size.pixelCount) * scale * scale * 24 < available else {
-            throw MobileError.message(L10n.tr("ipad.ac87115610b9"))
+        let output = CropGeometry(geometry: edit.geometry,source: size).canvas
+        let sourceKey = try sourceSignature(photo.url) + edit.decodeInputs.key + ":"
+        // The source array/texture are already resident when panning the same decode.
+        let reusableBytes = graph != nil && graphKey.hasPrefix(sourceKey)
+            ? Double(graphSize.width) * Double(graphSize.height) * 16 : 0
+        let sizing = try MobileDetailSizing.plan(source: size,output: output,request: request,
+            textureLimit: MetalTextureLimits.maximum2DDimension(for: device),
+            availableBytes: detailAvailableMemory() + reusableBytes)
+        let key = try renderKey(photo,edit,edge: -1) + ":bounded-detail:\(sizing.request.rect):\(sizing.longEdge)"
+        if let pair = detailCache.get(key), let rect = pair.rect {
+            return MobileDetailFrame(image: pair.frame(hdr: hdr).image,rect: rect,resolutionScale: sizing.scale)
         }
-        let result = try render(photo.url,edit: edit,edge: max(1,Int(Double(max(size.width,size.height))*scale)),
-                                hdr: true,histogram: false,linear: true,detail: request)
+        let result = try autoreleasepool {
+            try render(photo.url,edit: edit,edge: sizing.longEdge,
+                       hdr: true,histogram: false,linear: true,detail: sizing.request)
+        }
         try Task.checkCancellation()
         guard let pixels = result.display else { throw MobileError.message(L10n.tr("ipad.ff89b23fe243")) }
         let full = CropGeometry(geometry: edit.geometry,source: graphSize).canvas
@@ -261,25 +275,7 @@ actor MobileEngine {
                           width: Double(result.window.width)/Double(full.width),height: Double(result.window.height)/Double(full.height))
         var pair = try makePair(pixels,snapshot: nil,fullSize: nil); pair.rect = rect
         detailCache.put(pair,key: key)
-        return MobileDetailFrame(image: pair.frame(hdr: hdr).image,rect: rect)
-    }
-    func detail(_ plan: PanoramaPlan,hdr: Bool,request: MobileDetailRequest) throws -> MobileDetailFrame {
-        try Task.checkCancellation()
-        if detailPanoramaPreview !== plan.preview { detailCache.clear(); detailPanoramaPreview = plan.preview }
-        let key = "panorama:\(request.rect):\(request.scale)"
-        if let pair = detailCache.get(key), let rect = pair.rect { return MobileDetailFrame(image: pair.frame(hdr: hdr).image,rect: rect) }
-        let edge = max(1,Int(max(plan.outputSize.width,plan.outputSize.height)*min(1,max(0.1,request.scale))))
-        let scene = try PanoramaEngine().renderComposite(plan,outputLongEdge: edge)
-        try Task.checkCancellation()
-        let r = request.rect
-        // Core Image uses bottom-left coordinates; the viewport uses top-left.
-        let crop = CGRect(x: r.minX*scene.extent.width,y: (1-r.maxY)*scene.extent.height,
-                          width: r.width*scene.extent.width,height: r.height*scene.extent.height).integral.intersection(scene.extent)
-        guard !crop.isEmpty else { throw MobileError.message(L10n.tr("ipad.8953b228e9cf")) }
-        let image = scene.cropped(to: crop).transformed(by: .init(translationX: -crop.minX,y: -crop.minY))
-        let rect = CGRect(x: crop.minX/scene.extent.width,y: 1-crop.maxY/scene.extent.height,width: crop.width/scene.extent.width,height: crop.height/scene.extent.height)
-        var pair = try makePair(image,snapshot: nil,fullSize: nil); pair.rect = rect; detailCache.put(pair,key: key)
-        return MobileDetailFrame(image: pair.frame(hdr: hdr).image,rect: rect)
+        return MobileDetailFrame(image: pair.frame(hdr: hdr).image,rect: rect,resolutionScale: sizing.scale)
     }
     private func makePair(_ display: DisplayImage,snapshot: HistogramSnapshot?,fullSize: ImageSize?) throws -> MobilePreviewPair {
         let space = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!

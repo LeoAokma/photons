@@ -74,10 +74,12 @@ extension MobileEngine {
 }
 
 struct MobileFolderList: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
     @State private var editor: MobileFolderEditor?
     @State private var removing: MobileLibraryFolder?
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         VStack(alignment: .leading,spacing: 12) {
             folderButton(L10n.tr("ipad.ca22cb69bbf7"),icon: "square.grid.2x2",scope: .all)
             folderButton(L10n.tr("ipad.d64dc9ae400c"),icon: "tray",scope: .unfiled)
@@ -112,12 +114,14 @@ struct MobileFolderList: View {
 }
 private struct MobileFolderEditor: Identifiable { let id = UUID(); var folder: MobileLibraryFolder? = nil }
 private struct MobileFolderEditorView: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
     let folder: MobileLibraryFolder?
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var error: String?
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         NavigationStack {
             Form {
                 TextField(L10n.tr("ipad.14d34edf50ef"),text: $name).accessibilityIdentifier("library-folder-name")

@@ -61,6 +61,7 @@ enum MobileHistogramReading {
     }
 }
 struct MobileHistogram: View {
+    @Environment(\.locale) private var interfaceLocale
     let histogram: Histogram
     var hdr = true
     @Environment(\.displayScale) private var displayScale
@@ -68,6 +69,7 @@ struct MobileHistogram: View {
     @State private var pointer: Double?
     private var measured: Histogram { histogram.withDisplayHeadroom(hdr ? headroom : 1) }
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         VStack(alignment: .leading,spacing: 7) {
             HStack {
                 Text(hdr ? "HDR · Rec.2020" : "SDR · Display P3").font(.caption.weight(.semibold))
@@ -157,6 +159,23 @@ struct MobileHistogram: View {
             Text(label).font(.system(size: 9)).foregroundStyle(.secondary)
             Text(MobileHistogramReading.percent(ratio)).font(.caption2.monospacedDigit())
         }.accessibilityElement(children: .combine)
+    }
+}
+/// Preview-local overlay: intrinsic content height prevents overlap with unrelated controls.
+struct MobilePanoramaHistogram:View {
+    let histogram:Histogram
+    let hdr:Bool
+    @State private var collapsed=false
+    var body:some View {
+        VStack(alignment:.leading,spacing:8) {
+            Button {collapsed.toggle()} label: {
+                Label(L10n.tr("panorama.histogram.title"),systemImage:collapsed ? "chevron.up":"chevron.down")
+                    .font(.caption.weight(.semibold))
+            }.buttonStyle(.plain).accessibilityIdentifier("panorama-histogram-toggle")
+            if !collapsed {MobileHistogram(histogram:histogram,hdr:hdr).frame(width:260)}
+        }.padding(10).fixedSize(horizontal:false,vertical:true)
+            .background(.regularMaterial,in:RoundedRectangle(cornerRadius:10))
+            .accessibilityElement(children:.contain).accessibilityIdentifier("panorama-histogram")
     }
 }
 #endif

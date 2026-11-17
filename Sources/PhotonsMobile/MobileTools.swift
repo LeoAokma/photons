@@ -6,6 +6,7 @@ import PhotonsCore
 import PhotonsPanorama
 
 struct MobileLCCSheet: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
     @Environment(\.dismiss) private var dismiss
     @State private var traditional = false
@@ -21,6 +22,7 @@ struct MobileLCCSheet: View {
     @State private var cropToLCC = false
     private var panorama: PanoramaPlan? { model.plan.flatMap { $0.sources.count > 1 ? $0 : nil } }
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Form {
             Section(L10n.tr("ipad.ecfd2c203987")) {
                 Picker(L10n.tr("ipad.52a0f9b65b27"), selection: $traditional) {
@@ -82,8 +84,10 @@ struct MobileLCCSheet: View {
     }
 }
 struct MobilePositionFields: View {
+    @Environment(\.locale) private var interfaceLocale
     @Binding var position: CGPoint
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         HStack {
             Text("X").foregroundStyle(.secondary)
             TextField("X", value: Binding<Double>(get: { Double(position.x) }, set: { position.x = CGFloat($0) }), format: .number.precision(.fractionLength(0...2))).keyboardType(.numbersAndPunctuation)
@@ -94,6 +98,7 @@ struct MobilePositionFields: View {
     }
 }
 struct MobileProfilesSheet: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
     @Environment(\.dismiss) private var dismiss
     @State private var importer = false
@@ -103,6 +108,7 @@ struct MobileProfilesSheet: View {
     @State private var sensorWidth = 43.8
     @State private var sensorHeight = 32.9
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Form {
             Section(L10n.tr("ipad.441d4af6ac66")) {
                 ForEach(model.profiles) { profile in
@@ -155,11 +161,13 @@ struct MobileProfilesSheet: View {
     }
 }
 struct MobileExportSheet: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
     var onExport: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @State private var settings = MobileExportSettings()
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Form {
             Section {
                 Picker(L10n.tr("ipad.ceab5645f7ee"), selection: $settings.hdr) { Text("HDR").tag(true); Text("SDR").tag(false) }.pickerStyle(.segmented)
@@ -186,15 +194,17 @@ struct MobileExportSheet: View {
     }
 }
 struct MobileSettingsView: View {
+    @Environment(\.locale) private var interfaceLocale
     var libraryOnly = false
     @ObservedObject var model: MobileWorkspaceModel
     @AppStorage("photons.mobile.skipDuplicates") private var skipDuplicates = true
     @AppStorage("photons.historyDepth") private var historyDepth = 20
-    @AppStorage("photons.language") private var language = L10n.defaultLanguage
+    @AppStorage("photons.language") private var language = "system"
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Form {
             if !libraryOnly { Section(L10n.tr("cameraBodies.generalTab")) {
-                Picker(L10n.tr("9f6fee1aba17"),selection: $language) { Text("English").tag("en"); Text("简体中文").tag("zh-Hans") }
+                Picker(L10n.tr("9f6fee1aba17"),selection: $language) { Text(L10n.tr("ipad.language.system")).tag("system"); Text("English").tag("en"); Text("简体中文").tag("zh-Hans") }
                     .accessibilityIdentifier("interface-language")
                 Text(L10n.tr("ipad.c13332b27e49")).font(.caption).foregroundStyle(.secondary)
             } }
@@ -218,7 +228,9 @@ struct MobileSettingsView: View {
     }
 }
 struct MobileCapabilitiesView: View {
+    @Environment(\.locale) private var interfaceLocale
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         List {
             Section(L10n.tr("ipad.55b316feaef9")) {
                 ForEach([L10n.tr("ipad.c1ba68c57d4c"), L10n.tr("ipad.fe22a35e1b1c"), L10n.tr("ipad.6dc5f1a400a9"), L10n.tr("ipad.c1f6f488ea89"), L10n.tr("ipad.ac7e1ccf8554"), L10n.tr("ipad.e35913303306"), L10n.tr("ipad.39dc0ea10a0d"), L10n.tr("ipad.4b086f5834a2"), L10n.tr("ipad.de447aeacb20"), L10n.tr("ipad.ddc67faa51f3"), L10n.tr("ipad.d1c9377b9c59"), L10n.tr("ipad.3a75a6cf05ec"), L10n.tr("ipad.2ba0929fa987"), L10n.tr("ipad.d6e8a3aeecbd")], id: \.self) { Label($0, systemImage: "checkmark.circle") }

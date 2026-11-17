@@ -4,11 +4,13 @@ import PhotonsPanorama
 import PhotonsLocalization
 
 struct MobileProfileDetails: View {
+    @Environment(\.locale) private var interfaceLocale
     let engine: MobileEngine
     let id: UUID
     @State private var profile: LCCLensProfile?
     @State private var error: String?
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Form {
             if let profile {
                 Section(L10n.tr("ipad.8cd6944d65f3")) {
@@ -75,9 +77,11 @@ struct MobileProfileDetails: View {
 }
 
 struct MobileProfileCoverage: View {
+    @Environment(\.locale) private var interfaceLocale
     let captures: [LCCProfileCapture]
     static func bounds(_ captures: [LCCProfileCapture]) -> CGRect { captures.reduce(.null) { $0.union($1.fieldRect) } }
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Canvas { context,size in
             let bounds = Self.bounds(captures)
             guard !bounds.isNull, bounds.width > 0, bounds.height > 0 else { return }

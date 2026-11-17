@@ -5,7 +5,7 @@ The iPad preview uses a separate App Store Connect record from the Mac app. It d
 - App: **Photons Studio Preview**, Apple ID `6835653664`.
 - Bundle ID: `com.leoaokma.photons.ipad-preview`.
 - Initial beta: `0.1.0 (1)`, iPadOS 18+, iPad only, English startup.
-- Latest internal beta: **0.1.0 (4)**, source `dfebb54e0db4c3de9630b9f34212afeada31fb96`, includes the iPad content update and upstream main `737f92d`. Verified **Testing** in the existing **Developer Beta** group (4 testers, 3 builds) at 00:35 EST on 2026-11-17. Build-specific English test notes are saved. Build 3 was uploaded before main changed and remains unassigned; build 1 remains **Waiting for Review** externally. This update added no testers or external review submission. See [IPAD-09-RELEASE record](reports/developer-beta-ipad-4-2026-11-17.md).
+- Latest beta: **0.1.0 (5)**, functional source `e206f1133d042817797f84dac3287fefd47ef5fd`. Uploaded at 17:34 EST on 2026-11-17; verified **Testing** in both existing **Developer Beta** and **Private Beta** groups at 17:39 EST through the Codex built-in browser. Includes swipeable bilingual onboarding/tutorials, live/device language selection, responsive grid interaction, bounded RAW zoom detail, panorama preview fixes and correct DNG dimensions. English/Chinese test notes are saved. No testers, public-link settings or previous builds were changed. See the [build 5 release record](reports/ipad-beta-5-2026-11-17.md) and [fork PR #1](https://github.com/LeoAokma/photons/pull/1), based on the pending upstream #3 branch.
 - Release bundles include the app icon, privacy manifests, MIT/GRDB/NonlocalMatchFilter notices, the shared NLMF model and the developer-created 43XL calibration. Private Boston RAW samples are explicitly excluded.
 - Use a private external TestFlight group with public links disabled. Apple must approve the first external build through Beta App Review. Add only explicitly selected testers; creating a group does not send invitations.
 
@@ -25,13 +25,13 @@ Install an App Store Connect provisioning profile matching this Bundle ID and a 
 xcodebuild -project Apps/iPad/PhotonsIPad.xcodeproj \
   -scheme 'Photons iPad Preview' -configuration Release \
   -destination 'generic/platform=iOS' -derivedDataPath .build/ipad-device \
-  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-4.xcarchive' \
+  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-5.xcarchive' \
   -disableAutomaticPackageResolution -skipPackageUpdates archive \
   PHOTONS_INCLUDE_BOSTON_SAMPLES=NO \
   PHOTONS_IPAD_SIGN_STYLE=Manual \
   PHOTONS_IPAD_SIGN_IDENTITY='Apple Distribution' \
   PHOTONS_IPAD_PROFILE='YOUR INSTALLED APP STORE PROFILE' \
-  CURRENT_PROJECT_VERSION=4 MARKETING_VERSION=0.1.0
+  CURRENT_PROJECT_VERSION=5 MARKETING_VERSION=0.1.0
 ```
 
 The custom signing variables apply only to the app's Release configuration. Passing `PROVISIONING_PROFILE_SPECIFIER` globally would incorrectly assign the app profile to SwiftPM resource bundles. Debug keeps automatic development signing.
@@ -40,9 +40,9 @@ Use a local, ignored export-options plist with `method=app-store-connect`, `dest
 
 ```sh
 xcodebuild -exportArchive \
-  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-4.xcarchive' \
+  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-5.xcarchive' \
   -exportOptionsPlist .build/ipad-testflight/ExportOptions.plist \
-  -exportPath .build/ipad-testflight/upload-4 -allowProvisioningUpdates
+  -exportPath .build/ipad-testflight/upload-5 -allowProvisioningUpdates
 ```
 
 Increment `CURRENT_PROJECT_VERSION` for each subsequent upload. Before uploading, verify the archive's version, iPad-only device family, distribution entitlements, opaque 1024 px icon, licenses/profile resource and absence of bundled `.3FR` files. Signing material and account contacts must stay outside Git. Check Apple's processing status separately from the upload result.
@@ -53,7 +53,7 @@ Photons Studio Preview brings local RAW photo editing, HDR/SDR preview and expor
 
 ## What to Test — English
 
-The latest build-specific notes, including Chinese, lens details, browsing, folders and caches, are preserved in the [build 4 release record](reports/developer-beta-ipad-4-2026-11-17.md). The original baseline checklist follows.
+The latest bilingual build-specific notes, including tutorials, language, browsing, zoom and panorama fixes, are preserved in the [build 5 release record](reports/ipad-beta-5-2026-11-17.md). The original baseline checklist follows.
 
 - Import RAW, DNG, TIFF and HEIF images from Files; check thumbnails, orientation, preview generation and duplicate handling.
 - Pinch the photo grid, tap to toggle the inspector, and long-press to select multiple images.

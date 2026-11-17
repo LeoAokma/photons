@@ -7,15 +7,23 @@ import PhotonsCore
 import PhotonsPanorama
 
 public struct MobileWorkspaceView: View {
+    @Environment(\.locale) private var interfaceLocale
     @StateObject private var model = MobileWorkspaceModel()
+    @StateObject private var guide = MobileGuideController()
+    @State private var checkedBuildGuide = false
+    @AppStorage("photons.language") private var languagePreference = "system"
+    @State private var preferredLanguages = Locale.preferredLanguages
+    @Environment(\.scenePhase) private var scenePhase
     @State private var importer = false
     @State private var panoramaWorkspace = false
     @State private var settingsWorkspace = false
     @State private var selectMode = false
+    @State private var gridTapSequence = MobileGridTapSequence()
     @State private var inspectorSheet = false
     @State private var sidebarVisible = false
     @State private var sidebarSheet = false
-    @State private var inspectorVisible = false
+    @State private var inspectorVisible = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var wideLayout = true
     @State private var pinchStart: Double?
     @State private var tool: MobileSheet?
@@ -24,6 +32,7 @@ public struct MobileWorkspaceView: View {
     private var visiblePhotos: [MobilePhoto] { model.folderPhotos.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) } }
     public init() {}
     public var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         NavigationStack {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
@@ -33,13 +42,19 @@ public struct MobileWorkspaceView: View {
                         if sidebarVisible && geometry.size.width >= 950 { libraryRail.frame(width: 190); Divider() }
                         VStack(spacing: 0) {
                             taskBar
-                            if model.showGrid { libraryGrid } else { canvas }
+                            if model.showGrid { libraryGrid.mobileGuideTarget("workspace.grid",in: guide) }
+                            else { canvas.mobileGuideTarget("workspace.canvas",in: guide) }
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
                         if geometry.size.width >= 950 && inspectorVisible {
-                            Divider()
-                            MobileInspector(model: model).frame(width: 310)
+                            MobileInspector(model: model).frame(width: 310).frame(maxHeight: .infinity)
+                                .background(Color(white: 0.105))
+                                .overlay(alignment: .leading) { Divider() }
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("workspace-inspector")
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
                         }
                     }
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18),value: inspectorVisible)
                 }
                 .background(Color(white: 0.075))
                 .onAppear { wideLayout = geometry.size.width >= 950 }
@@ -51,9 +66,18 @@ public struct MobileWorkspaceView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark).tint(.orange)
-        .task { await model.start() }
+        .task {
+            if !checkedBuildGuide {
+                checkedBuildGuide = true
+                let history = MobileGuideHistory.launchHistory, build = MobileGuideHistory.currentBuild
+                if MobileGuideHistory.automaticPresentationEnabled, !history.hasSeen(build) {
+                    guide.start(MobileGuideSteps.quickStart) { history.markSeen(build) }
+                }
+            }
+            await model.start()
+        }
         .onChange(of: model.showGrid) { _,grid in if !grid && model.plan != nil { inspectorVisible = true } }
-        .onChange(of: model.folderScope) { _,_ in selectMode = false }
+        .onChange(of: model.folderScope) { _,_ in selectMode = false; gridTapSequence = .init() }
         .onChange(of: inspectorSheet) { _,visible in
             if !visible && model.showGrid && !selectMode { model.clearSelection() }
         }
@@ -86,7 +110,14 @@ public struct MobileWorkspaceView: View {
         .alert("Photons Studio", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L10n.tr("slices.ok"), role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
-        .environment(\.locale,Locale(identifier: L10n.language))
+        .mobileGuideOverlay(guide)
+        .environment(\.locale,Locale(identifier: L10n.resolveLanguage(
+            preference: ProcessInfo.processInfo.environment["PHOTONS_LANGUAGE"] ?? languagePreference,
+            preferredLanguages: preferredLanguages)))
+        .onChange(of: scenePhase) { _,phase in if phase == .active { preferredLanguages = Locale.preferredLanguages } }
+        .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
+            preferredLanguages = Locale.preferredLanguages
+        }
     }
     private var workspaceToolbar: some View {
         HStack(spacing: 16) {
@@ -94,23 +125,31 @@ public struct MobileWorkspaceView: View {
                 if wideLayout { sidebarVisible.toggle() } else { sidebarSheet = true }
             } label: { Image(systemName: "sidebar.left") }
                 .accessibilityLabel(L10n.tr("ipad.3339973aae80")).accessibilityIdentifier("toggle-sidebar")
+                .mobileGuideTarget("workspace.library",in: guide)
             Text("Photons").font(.headline)
             Divider().frame(height: 20)
             Button { model.showGrid = true } label: { Image(systemName: "number") }
                 .foregroundStyle(model.showGrid ? Color.orange : .secondary)
                 .accessibilityLabel(L10n.tr("ipad.47da4e5507b6")).accessibilityIdentifier("grid-view")
+                .mobileGuideTarget("workspace.gridMode",in: guide)
             Button { model.showGrid = false; model.render() } label: { Image(systemName: "rectangle") }
                 .foregroundStyle(model.showGrid ? Color.secondary : .orange).disabled(model.active == nil)
                 .accessibilityLabel(L10n.tr("ipad.c3470af228c5")).accessibilityIdentifier("single-view")
+                .mobileGuideTarget("workspace.singleMode",in: guide)
             Spacer(minLength: 8)
+            MobileGuideButton { guide.start(MobileGuideSteps.workspace(grid: model.showGrid)) }
+                .accessibilityIdentifier("workspace-guide").mobileGuideTarget("workspace.help",in: guide)
             Button { importer = true } label: { Image(systemName: "plus") }
                 .disabled(model.busy).accessibilityLabel(L10n.tr("ipad.6b071abc6cf0")).accessibilityIdentifier("import-photos")
+                .mobileGuideTarget("workspace.import",in: guide)
             Button(model.hdr ? "HDR" : "SDR") { model.toggleHDR() }
                 .font(.caption.weight(.semibold)).buttonStyle(.bordered).tint(model.hdr ? .orange : .gray).accessibilityIdentifier("display-mode").disabled(model.busy)
+                .mobileGuideTarget("workspace.hdr",in: guide)
             if model.selected.count >= 2 {
                 Button { model.beginPanorama(); panoramaWorkspace = true } label: { Image(systemName: "pano") }
                     .disabled(model.busy).keyboardShortcut("m", modifiers: .control)
                     .accessibilityLabel(L10n.tr("ipad.2be61912014b")).accessibilityIdentifier("panorama-tool")
+                    .mobileGuideTarget("workspace.panorama",in: guide)
             }
             Menu {
                 Button(L10n.tr("ipad.40c527f3f714"), systemImage: "camera.filters") { tool = .lcc }.disabled(model.active == nil)
@@ -119,6 +158,7 @@ public struct MobileWorkspaceView: View {
                 Button(L10n.tr("ipad.ba7bc9604cf8"), systemImage: "checklist") { tool = .capabilities }
             } label: { Image(systemName: "slider.horizontal.3") }
                 .disabled(model.busy).accessibilityLabel(L10n.tr("5ca6730d4415")).accessibilityIdentifier("tools-menu")
+                .mobileGuideTarget("workspace.tools",in: guide)
             Button {
                 if wideLayout {
                     inspectorVisible.toggle()
@@ -126,30 +166,42 @@ public struct MobileWorkspaceView: View {
                 } else { inspectorSheet = true }
             } label: { Image(systemName: "sidebar.right") }
                 .accessibilityLabel(L10n.tr("ipad.5602d0e1c70b")).accessibilityIdentifier("toggle-inspector")
+                .mobileGuideTarget("workspace.inspector",in: guide)
             Button { tool = .export } label: { Image(systemName: "square.and.arrow.up") }
                 .disabled(!model.canExport || model.busy).accessibilityLabel(L10n.tr("76420433f22d")).accessibilityIdentifier("export-photo")
+                .mobileGuideTarget("workspace.export",in: guide)
             Button { settingsWorkspace = true } label: { Image(systemName: "gearshape") }
                 .keyboardShortcut(",", modifiers: .control).accessibilityLabel(L10n.tr("df3d58c7d84b")).accessibilityIdentifier("settings-button")
+                .mobileGuideTarget("workspace.settings",in: guide)
         }.font(.body).buttonStyle(.borderless).padding(.horizontal, 18).frame(height: 58).background(Color(white: 0.12))
+            .mobileGuideTarget("workspace.toolbar",in: guide)
     }
     private func tapPhoto(_ photo: MobilePhoto) {
         if selectMode {
             model.toggleSelection(photo)
         } else {
-            let same = model.active?.id == photo.id
-            if same && wideLayout && inspectorVisible {
-                inspectorVisible = false; model.clearSelection(); return
+            let same = model.active?.id == photo.id && model.selected.contains(photo.id)
+            if same {
+                model.clearSelection(); return
             }
             model.selected = [photo.id]
             model.select(photo)
-            if wideLayout { inspectorVisible = true }
-            else { inspectorSheet = true }
+            // Selection changes the inspector's contents, never the grid's available
+            // width. Honor an explicitly collapsed panel; narrow screens use the toolbar.
         }
     }
     private func beginSelection(_ photo: MobilePhoto) {
+        gridTapSequence = .init()
         selectMode = true
         model.selected = [photo.id]
         model.select(photo)
+    }
+    private func photoTap(_ photo: MobilePhoto, count: Int) {
+        switch gridTapSequence.action(photoID: photo.id,tapCount: count,selectionMode: selectMode) {
+        case .select: tapPhoto(photo)
+        case .open: model.select(photo,open: true)
+        case .toggleSelection: model.toggleSelection(photo)
+        }
     }
     private var libraryRail: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -224,7 +276,7 @@ public struct MobileWorkspaceView: View {
                 ContentUnavailableView(L10n.tr("ipad.d763f5e2f3ba"),systemImage: "folder",description: Text(L10n.tr("ipad.bcff7cb83f35")))
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSize), spacing: 12)], spacing: 14) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSize, maximum: thumbnailSize), spacing: 12)], alignment: .leading, spacing: 14) {
                         ForEach(visiblePhotos) { photo in
                             VStack(alignment: .leading, spacing: 7) {
                                     ZStack(alignment: .topTrailing) {
@@ -241,15 +293,15 @@ public struct MobileWorkspaceView: View {
                                     Text(photo.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
                                     Text(photo.rating > 0 ? String(repeating: "★", count: photo.rating) : "\(photo.width) × \(photo.height)")
                                         .font(.caption2).foregroundStyle(.secondary)
-                                }.padding(7).background(model.selected.contains(photo.id) ? Color.orange.opacity(0.12) : .clear)
+                                }.padding(7).frame(width: thumbnailSize,alignment: .leading)
+                                    .background(model.selected.contains(photo.id) ? Color.orange.opacity(0.12) : .clear)
                                     .clipShape(RoundedRectangle(cornerRadius: 9))
                             .contentShape(Rectangle())
-                            .gesture(LongPressGesture(minimumDuration: 0.45).exclusively(before: TapGesture(count: 2).exclusively(before: TapGesture())).onEnded { value in
-                                switch value {
-                                case .first: beginSelection(photo)
-                                case .second(.first): selectMode = false; model.select(photo, open: true)
-                                case .second(.second): tapPhoto(photo)
-                                }
+                            .onAppear { model.thumbnailVisibility(photo.id,visible: true) }
+                            .onDisappear { model.thumbnailVisibility(photo.id,visible: false) }
+                            .gesture(MobileGridTap { photoTap(photo,count: $0) })
+                            .simultaneousGesture(LongPressGesture(minimumDuration: MobileGridTapRecognizer.longPressDuration).onEnded { _ in
+                                if !selectMode { beginSelection(photo) }
                             })
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(.isButton)
@@ -277,7 +329,7 @@ public struct MobileWorkspaceView: View {
                 MobilePhotoCanvas(image: image, hdr: model.hdr, identity: model.plan == nil ? (model.active?.id ?? "") : "panorama",
                                   fullSize: model.canvasSize,detail: model.detailFrame,detailStatus: model.detailStatus,
                                   onViewportChange: { model.requestDetail($0) },
-                                  onNavigate: { model.movePhoto(by: $0, among: visiblePhotos) })
+                                  onNavigate: { model.movePhoto(by: $0, among: visiblePhotos) },guide: guide)
                     .padding(20)
             } else { ContentUnavailableView(L10n.tr("ipad.defc2cfd9694"), systemImage: "photo") }
             if model.rendering { ProgressView().padding(16).background(.ultraThinMaterial, in: Capsule()).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).padding() }
@@ -288,7 +340,9 @@ public struct MobileWorkspaceView: View {
                     Text(photo.name).font(.caption).lineLimit(1).accessibilityIdentifier("current-photo-name")
                     Button { model.movePhoto(by: 1, among: visiblePhotos) } label: { Image(systemName: "chevron.right") }
                         .disabled(visiblePhotos.last?.id == photo.id || model.busy).accessibilityIdentifier("next-photo").accessibilityLabel(L10n.tr("ipad.a471f92bee76"))
-                }.padding(10).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding(12)
+                }.padding(10).background(.ultraThinMaterial, in: Capsule())
+                    .mobileGuideTarget("workspace.navigation",in: guide)
+                    .frame(maxHeight: .infinity, alignment: .bottom).padding(12)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -306,7 +360,12 @@ struct MobileThumbnail: UIViewRepresentable {
 /// Present generated floating-point pixels directly. UIImage(cgImage:) does not reliably mark
 /// these as HDR, even when CGImage carries headroom; its image-view path can flatten the result.
 final class MobilePreviewSurface: UIView {
+    private var presentedImage: CGImage?
+    private var presentedHDR: Bool?
     func present(_ image: CGImage,hdr: Bool) {
+        // A selection highlight redraw must not resubmit every unchanged thumbnail.
+        guard presentedImage !== image || presentedHDR != hdr else { return }
+        presentedImage = image; presentedHDR = hdr
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.contentsGravity = .resizeAspect
         layer.contents = image

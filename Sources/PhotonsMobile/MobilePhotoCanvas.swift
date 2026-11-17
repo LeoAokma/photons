@@ -12,6 +12,8 @@ struct MobileDetailRequest: Equatable, Sendable {
 struct MobileDetailFrame: @unchecked Sendable {
     var image: CGImage
     var rect: CGRect
+    /// Decoded pixels per original source pixel, independent of the canvas zoom factor.
+    var resolutionScale: Double = 1
 }
 
 /// Percentages refer to image pixels per physical display pixel. Fit is a separate mode,
@@ -27,6 +29,7 @@ enum MobileZoomGeometry {
 }
 
 struct MobilePhotoCanvas: View {
+    @Environment(\.locale) private var interfaceLocale
     let image: CGImage
     let hdr: Bool
     let identity: String
@@ -36,6 +39,7 @@ struct MobilePhotoCanvas: View {
     var detailStatus = ""
     var onViewportChange: (MobileDetailRequest?) -> Void = { _ in }
     var onNavigate: (Int) -> Void = { _ in }
+    var guide: MobileGuideController? = nil
     @AppStorage("photons.mobile.zoomTarget") private var zoomTarget = 1.0
     @State private var command = MobileZoomCommand()
     @State private var isFit = true
@@ -43,6 +47,7 @@ struct MobilePhotoCanvas: View {
     @State private var custom = false
     @State private var customText = "100"
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         ZStack(alignment: .topTrailing) {
             MobilePhotoViewport(image: image,hdr: hdr,identity: identity,
                 pixels: fullSize ?? CGSize(width: image.width,height: image.height), detail: detail,
@@ -62,9 +67,12 @@ struct MobilePhotoCanvas: View {
                     } label: { Text(String(format: "↔ %.0f%%",zoomTarget * 100)) }
                     .accessibilityIdentifier("zoom-options").accessibilityLabel(L10n.tr("ipad.f8308849679f"))
                 }.font(.caption).padding(10).background(.ultraThinMaterial,in: Capsule())
-                if !detailStatus.isEmpty { Text(detailStatus).font(.caption2).padding(6).background(.ultraThinMaterial,in: RoundedRectangle(cornerRadius: 6)) }
+                    .mobileGuideTarget("workspace.zoom",in: guide)
+                if !detailStatus.isEmpty { Text(detailStatus).accessibilityIdentifier("detail-status").font(.caption2).padding(6).background(.ultraThinMaterial,in: RoundedRectangle(cornerRadius: 6)) }
             }.padding(8)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("\(accessibilityID)-container")
         .sheet(isPresented: $custom) {
             NavigationStack {
                 Form {
