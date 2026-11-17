@@ -152,15 +152,7 @@ final class MobileWorkspaceModel: ObservableObject {
     func toggleHDR() {
         hdr.toggle(); UserDefaults.standard.set(hdr, forKey: "photons.mobile.hdr")
         if let plan {
-            previewTask?.cancel(); generation += 1
-            let ticket = generation, hdr = hdr
-            previewTask = Task {
-                do {
-                    let result = try await engine.frame(plan, hdr: hdr)
-                    guard !Task.isCancelled, ticket == generation else { return }
-                    frame = result
-                } catch { if !Task.isCancelled, ticket == generation { self.error = error.localizedDescription } }
-            }
+            setPanoramaTone(plan.tone)
         } else { render() }
         warmThumbnails()
     }
@@ -199,11 +191,29 @@ final class MobileWorkspaceModel: ObservableObject {
         run("Importing lens profile") { try await self.engine.importProfile(url); self.profiles = try await self.engine.profiles() }
     }
     func stitch(options: PanoramaOptions, positions: [Int: CGPoint], sensor: SensorSize?, registrationMode: PanoramaRegistrationMode = .shift) {
-        let sources = selectedPhotos
+        let sources = selectedPhotos, tone = plan?.tone ?? .panoramaDefault
         run("Aligning panorama") {
             let result = try await self.engine.analyze(sources, options: options, positions: positions, sensor: sensor, registrationMode: registrationMode,
-                                                       cancellation: self.cancellation, progress: self.report)
+                                                       tone: tone,cancellation: self.cancellation, progress: self.report)
             self.plan = result; self.manifest = nil; self.lccPositionNote = nil; self.frame = try await self.engine.frame(result, hdr: self.hdr); self.showGrid = false
+        }
+    }
+    func setPanoramaTone(_ tone: PanoramaToneSettings) {
+        guard !busy, tone.isValid, var plan else { return }
+        // Publish the output parameters immediately. A pending preview can be cancelled safely;
+        // export and a subsequent LCC/alignment job still see the latest requested settings.
+        plan.tone = tone; self.plan = plan; manifest?.tone = tone
+        previewTask?.cancel(); generation += 1; rendering = true
+        let ticket = generation, hdr = hdr
+        previewTask = Task {
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+                let updated = try await engine.adjustPanoramaTone(plan,settings: tone)
+                let rendered = try await engine.frame(updated,hdr: hdr)
+                guard !Task.isCancelled,ticket == generation else { return }
+                self.plan = updated; frame = rendered; rendering = false
+            } catch is CancellationError { }
+            catch { if ticket == generation { rendering = false; self.error = error.localizedDescription } }
         }
     }
     func correct(flat: URL?, profileID: UUID?, position: CGPoint?, refine: Bool,

@@ -212,11 +212,18 @@ actor MobileEngine {
     }
     func sourceInfo(_ photos: [MobilePhoto]) throws -> [PanoramaSource] { try photos.map { try PanoramaSource(url: $0.url) } }
     func analyze(_ photos: [MobilePhoto], options: PanoramaOptions, positions: [Int: CGPoint],
-                 sensor: SensorSize?, registrationMode: PanoramaRegistrationMode = .shift, cancellation: PanoramaCancellation,
+                 sensor: SensorSize?, registrationMode: PanoramaRegistrationMode = .shift,
+                 tone: PanoramaToneSettings = .panoramaDefault, cancellation: PanoramaCancellation,
                  progress: @Sendable @escaping (String, Double?) -> Void) throws -> PanoramaPlan {
         releaseWorkingMemory()
-        return try PanoramaEngine().analyze(urls: photos.map(\.url), options: options, knownPositions: positions,
+        let engine = PanoramaEngine()
+        let plan = try engine.analyze(urls: photos.map(\.url), options: options, knownPositions: positions,
             sensorOverride: sensor, registrationMode: registrationMode, cancellation: cancellation, progress: { progress($0, nil) })
+        return try engine.applyingTone(plan,settings: tone,cancellation: cancellation)
+    }
+    func adjustPanoramaTone(_ plan: PanoramaPlan, settings: PanoramaToneSettings) throws -> PanoramaPlan {
+        try Task.checkCancellation()
+        return try PanoramaEngine().applyingTone(plan,settings: settings,cancellation: .init(isCancelled: { Task.isCancelled }))
     }
     func correct(_ photo: MobilePhoto, flat: URL?, profileID: UUID?, position: CGPoint?, refine: Bool,
                  body: PanoramaCameraBody, orientation: PanoramaBodyOrientation,

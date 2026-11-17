@@ -50,6 +50,7 @@ public struct PanoramaSnapshot: Codable {
         }
     }
     var warps:[PanoramaTransform]?
+    var tone: PanoramaToneSettings?
     var version=1
     var sources:[PanoramaSource],origins:[CGPoint],size:CGSize,whiteBalance:[Float]?
     var gains:[Double],ownership:[Int16],masks:[Data],maskWidth:Int,maskHeight:Int
@@ -64,8 +65,10 @@ public struct PanoramaSnapshot: Codable {
         gains=plan.gains;ownership=plan.ownership;masks=plan.blendMasks;maskWidth=plan.maskWidth;maskHeight=plan.maskHeight
         photometry=plan.photometricGains.map {Image($0,width:64,height:64,context:context)}
         options=plan.options;lcc=plan.lccState.map {LCC($0,context:context)}
+        tone = plan.tone
     }
     public func plan() throws->PanoramaPlan {
+        guard tone?.isValid ?? true else { throw PanoramaFailure("Invalid panorama brightness settings.") }
         guard (version==1 && warps==nil || version==2 && warps != nil),(1...16).contains(sources.count),origins.count==sources.count,gains.count==sources.count,
               warps == nil || (warps!.count==sources.count && warps!.allSatisfy(\.isValid)),
               maskWidth>0,maskHeight>0,maskWidth<=8192,maskHeight<=8192,
@@ -77,7 +80,7 @@ public struct PanoramaSnapshot: Codable {
         var plan=PanoramaPlan(sources:sources,origins:origins,size:size,registrationScores:[],whiteBalance:wb,gains:gains,
             ownership:ownership,blendMasks:masks,photometricGains:try photometry.map {try $0.image()},maskWidth:maskWidth,maskHeight:maskHeight,
             optical:OpticalEstimate(center:nil,confidence:0,explanation:"",occludedEdges:[]),options:options,previewScale:1,previewImages:[],preview:nil)
-        plan.warps=warps;plan.lccState=try lcc?.state();return plan
+        plan.tone=tone ?? .init();plan.warps=warps;plan.lccState=try lcc?.state();return plan
     }
     public var sourceURLs:[URL] {sources.map(\.url)}
 }

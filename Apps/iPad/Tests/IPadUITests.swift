@@ -35,6 +35,20 @@ final class IPadUITests: XCTestCase {
         XCTAssertNotEqual(displayMode.label,originalMode)
         displayMode.tap()
         XCTAssertEqual(displayMode.label,originalMode)
+        let exposure = app.sliders["Exposure (EV)"]
+        XCTAssertTrue(exposure.waitForExistence(timeout: 5),app.debugDescription)
+        exposure.adjust(toNormalizedSliderPosition: 0.625)
+        let resetBrightness = app.buttons["reset-panorama-brightness"]
+        XCTAssertTrue(resetBrightness.isEnabled)
+        let highlights = app.sliders["HDR highlight brightness (stops)"]
+        highlights.adjust(toNormalizedSliderPosition: 0.25)
+        let ready = NSPredicate(format: "enabled == true")
+        XCTAssertTrue(app.buttons["panorama-export"].wait(for: \.isEnabled,toEqual: true,timeout: 15))
+        let tone = XCTAttachment(screenshot: app.screenshot()); tone.name = "Panorama exposure and HDR brightness"; tone.lifetime = .keepAlways; add(tone)
+        resetBrightness.tap()
+        XCTAssertFalse(resetBrightness.isEnabled)
+        expectation(for: ready,evaluatedWith: app.buttons["panorama-export"])
+        waitForExpectations(timeout: 15)
         for angle in [90,180,270,0] {
             let orientation = app.buttons["panorama.body.orientation.\(angle)"]
             XCTAssertTrue(orientation.exists)
