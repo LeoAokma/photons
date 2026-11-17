@@ -30,3 +30,10 @@
 - 文件：MobileWorkspaceModel.swift、MobileWorkspaceView.swift、IPadUITests.swift。
 - 验证：`testGridInspectorToggleDeselectsPhoto` 模拟器 UI 测试通过，1 项 / 0 失败，覆盖两次单击、重新选中及侧栏按钮关闭；日志 `02-selection.log`。
 - 依赖：基线；提交标题含 `IPAD-02`，无移植。限制：窄屏分支已编译，完整横竖屏手动检查留待最终验收；回退模型方法与调用方一起回退。
+
+## IPAD-03
+
+- 变更：网格双击直接打开大图；单击和长按仍分别负责信息/多选。Fit 下左右滑动按当前搜索结果翻页，首尾停止，不循环；放大后的拖动留给平移。大图另有上一张/下一张按钮与文件名。
+- 文件：MobileWorkspaceView.swift、MobileWorkspaceModel.swift、IPadUITests.swift。
+- 验证：`testDoubleTapOpensPhotoAndSwipesNavigate`、`testGridInspectorToggleDeselectsPhoto` 通过，2 项 / 0 失败；日志 `03-navigation.log`。初次边界断言受到旧样例导出污染，测试现以 `--demo --reset-demo` 重置专用 Generated Samples 库；正常用户库不受影响。单击断言等待系统双击识别窗口结束。
+- 依赖：IPAD-02 (`1ad56ac`)；提交标题含 `IPAD-03`。限制：缩放导航规则将在 IPAD-04 延续；物理触屏最终体验由 beta 验证。无移植，回退需同步恢复手势与 UI 测试。

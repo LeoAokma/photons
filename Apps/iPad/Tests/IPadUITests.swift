@@ -2,26 +2,47 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testDoubleTapOpensPhotoAndSwipesNavigate() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60)); first.doubleTap()
+        let name = app.staticTexts["current-photo-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10)); XCTAssertEqual(name.label,"Sample-01.tiff")
+        let canvas = app.scrollViews["photo-canvas"]
+        XCTAssertTrue(canvas.waitForExistence(timeout: 10)); canvas.swipeLeft()
+        XCTAssertTrue(name.wait(for: \.label,toEqual: "Sample-02.tiff",timeout: 10))
+        canvas.swipeRight()
+        XCTAssertTrue(name.wait(for: \.label,toEqual: "Sample-01.tiff",timeout: 10))
+        canvas.swipeRight()
+        XCTAssertEqual(name.label,"Sample-01.tiff")
+        XCTAssertFalse(app.buttons["previous-photo"].isEnabled)
+    }
+    @MainActor
     func testGridInspectorToggleDeselectsPhoto() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         let first = app.buttons["photo-Sample-01.tiff"]
         XCTAssertTrue(first.waitForExistence(timeout: 60))
+        func selection(_ value: String) {
+            let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@",value),object: first)
+            XCTAssertEqual(XCTWaiter.wait(for: [changed],timeout: 5),.completed)
+        }
         first.tap()
-        XCTAssertEqual(first.value as? String,"Selected")
+        selection("Selected")
         XCTAssertTrue(app.otherElements["RGB histogram"].waitForExistence(timeout: 20))
         first.tap()
-        XCTAssertEqual(first.value as? String,"Not selected")
+        selection("Not selected")
         XCTAssertFalse(app.otherElements["RGB histogram"].exists)
         first.tap()
-        XCTAssertEqual(first.value as? String,"Selected")
+        selection("Selected")
         app.buttons["toggle-inspector"].tap()
-        XCTAssertEqual(first.value as? String,"Not selected")
+        selection("Not selected")
     }
     @MainActor
     func testGridInspectorSelectionAndPanoramaWorkflow() throws {
         continueAfterFailure = false
-        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         let first = app.buttons["photo-Sample-01.tiff"]
         XCTAssertTrue(first.waitForExistence(timeout: 90), app.debugDescription)

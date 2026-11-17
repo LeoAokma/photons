@@ -33,6 +33,9 @@ final class MobileWorkspaceModel: ObservableObject {
         // Generated UI-test examples stay separate from the user's working library.
         let sampleLibrary = ProcessInfo.processInfo.arguments.contains("--demo")
             ? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Generated Samples.photonslibrary") : nil
+        if let sampleLibrary, ProcessInfo.processInfo.arguments.contains("--reset-demo") {
+            try? FileManager.default.removeItem(at: sampleLibrary)
+        }
         engine = MobileEngine(libraryURL: sampleLibrary)
     }
     private var job: Task<Void, Never>?
@@ -122,6 +125,12 @@ final class MobileWorkspaceModel: ObservableObject {
         generation += 1; selectionRevision += 1
         selected.removeAll(); active = nil; frame = nil; plan = nil; manifest = nil
         selectionLoading = false; rendering = false
+    }
+    func movePhoto(by offset: Int, among visible: [MobilePhoto]) {
+        guard !busy, plan == nil, let id = active?.id,
+              let index = visible.firstIndex(where: { $0.id == id }),
+              visible.indices.contains(index + offset) else { return }
+        select(visible[index + offset], open: true)
     }
     func render() {
         guard !selectionLoading, let photo = active, plan == nil else { return }

@@ -20,6 +20,7 @@ public struct MobileWorkspaceView: View {
     @State private var tool: MobileSheet?
     @AppStorage("photons.mobile.thumbnailSize") private var thumbnailSize = 180.0
     @State private var search = ""
+    private var visiblePhotos: [MobilePhoto] { model.photos.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) } }
     public init() {}
     public var body: some View {
         NavigationStack {
@@ -213,7 +214,7 @@ public struct MobileWorkspaceView: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSize), spacing: 12)], spacing: 14) {
-                        ForEach(model.photos.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { photo in
+                        ForEach(visiblePhotos) { photo in
                             VStack(alignment: .leading, spacing: 7) {
                                     ZStack(alignment: .topTrailing) {
                                         Color(white: 0.12)
@@ -232,15 +233,17 @@ public struct MobileWorkspaceView: View {
                                 }.padding(7).background(model.selected.contains(photo.id) ? Color.orange.opacity(0.12) : .clear)
                                     .clipShape(RoundedRectangle(cornerRadius: 9))
                             .contentShape(Rectangle())
-                            .gesture(LongPressGesture(minimumDuration: 0.45).exclusively(before: TapGesture()).onEnded { value in
+                            .gesture(LongPressGesture(minimumDuration: 0.45).exclusively(before: TapGesture(count: 2).exclusively(before: TapGesture())).onEnded { value in
                                 switch value {
                                 case .first: beginSelection(photo)
-                                case .second: tapPhoto(photo)
+                                case .second(.first): selectMode = false; model.select(photo, open: true)
+                                case .second(.second): tapPhoto(photo)
                                 }
                             })
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(.isButton)
                             .accessibilityAction { tapPhoto(photo) }
+                            .accessibilityAction(named: Text("Open photograph")) { selectMode = false; model.select(photo, open: true) }
                             .accessibilityIdentifier("photo-\(photo.name)")
                             .accessibilityValue(model.selected.contains(photo.id) ? "Selected" : "Not selected")
 
@@ -260,10 +263,20 @@ public struct MobileWorkspaceView: View {
         ZStack {
             Color(white: 0.055)
             if let image = model.frame?.image {
-                MobilePhotoCanvas(image: image, hdr: model.hdr, identity: model.plan == nil ? (model.active?.id ?? "") : "panorama")
+                MobilePhotoCanvas(image: image, hdr: model.hdr, identity: model.plan == nil ? (model.active?.id ?? "") : "panorama",
+                                  onNavigate: { model.movePhoto(by: $0, among: visiblePhotos) })
                     .padding(20).accessibilityIdentifier("photo-canvas")
             } else { ContentUnavailableView("Select a photograph", systemImage: "photo") }
             if model.rendering { ProgressView().padding(16).background(.ultraThinMaterial, in: Capsule()).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).padding() }
+            if model.plan == nil, let photo = model.active {
+                HStack {
+                    Button { model.movePhoto(by: -1, among: visiblePhotos) } label: { Image(systemName: "chevron.left") }
+                        .disabled(visiblePhotos.first?.id == photo.id || model.busy).accessibilityIdentifier("previous-photo").accessibilityLabel("Previous photograph")
+                    Text(photo.name).font(.caption).lineLimit(1).accessibilityIdentifier("current-photo-name")
+                    Button { model.movePhoto(by: 1, among: visiblePhotos) } label: { Image(systemName: "chevron.right") }
+                        .disabled(visiblePhotos.last?.id == photo.id || model.busy).accessibilityIdentifier("next-photo").accessibilityLabel("Next photograph")
+                }.padding(10).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding(12)
+            }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -275,15 +288,22 @@ struct MobilePhotoCanvas: UIViewRepresentable {
     let image: CGImage
     let hdr: Bool
     let identity: String
+    var onNavigate: (Int) -> Void = { _ in }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> MobilePhotoScrollView {
         let scroll = MobilePhotoScrollView(); scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 6
         scroll.delegate = context.coordinator; scroll.backgroundColor = .clear
+        for direction: UISwipeGestureRecognizer.Direction in [.left, .right] {
+            let swipe = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.swipe(_:)))
+            swipe.direction = direction; swipe.delegate = context.coordinator
+            scroll.addGestureRecognizer(swipe); scroll.panGestureRecognizer.require(toFail: swipe)
+        }
         let view = context.coordinator.imageView; view.backgroundColor = .clear
         scroll.addSubview(view); return scroll
     }
     func updateUIView(_ scroll: MobilePhotoScrollView, context: Context) {
         let view = context.coordinator.imageView
+        context.coordinator.onNavigate = onNavigate
         if context.coordinator.identity != identity {
             scroll.setZoomScale(1, animated: false); context.coordinator.identity = identity
         }
@@ -293,9 +313,15 @@ struct MobilePhotoCanvas: UIViewRepresentable {
         // Bounds can be zero on the first SwiftUI update; the view resizes with the scroll surface.
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     }
-    final class Coordinator: NSObject, UIScrollViewDelegate {
+    final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
         let imageView = MobilePreviewSurface()
         var identity = ""
+        var onNavigate: (Int) -> Void = { _ in }
+        @objc func swipe(_ gesture: UISwipeGestureRecognizer) { onNavigate(gesture.direction == .left ? 1 : -1) }
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let scroll = gestureRecognizer.view as? UIScrollView else { return false }
+            return abs(scroll.zoomScale - scroll.minimumZoomScale) < 0.01
+        }
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
     }
 }
