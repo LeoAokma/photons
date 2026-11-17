@@ -192,7 +192,8 @@ final class IPadUITests: XCTestCase {
         first.tap()
         XCTAssertTrue(app.otherElements["RGB histogram"].waitForExistence(timeout: 30))
         first.tap()
-        XCTAssertFalse(app.otherElements["RGB histogram"].exists)
+        // Single taps wait for the double-tap recognizer to fail before closing the inspector.
+        XCTAssertTrue(app.otherElements["RGB histogram"].waitForNonExistence(timeout: 5))
         first.press(forDuration: 0.7)
         XCTAssertTrue(app.buttons["finish-selection"].waitForExistence(timeout: 5))
         app.buttons["photo-Sample-02.tiff"].tap()

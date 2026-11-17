@@ -99,3 +99,30 @@
 - 验证：中文网格/直方图/自定义倍率/设置/镜头详情 UI 通过；英文缩放回归通过；实际语言偏好切换、退出重开中文、再切回英文并重开通过。日志 `10-chinese-ui.log`、`10-language-preference.log`、最终 `10-chinese-final.log`。静态校验所有 key/参数匹配，既有技术标识不变。
 - 截图：改用 XCUIScreen 捕获完整横屏，避免模拟器 app.screenshot 的方向裁切。检查中文网格、缓存设置和镜头详情布局；发现共享 Light 词条语义不适合明暗面板，改为独立词条。最终截图位于 `local/build-logs/ipad-content-update/chinese-final-screenshots/`，镜头日期显示为中文。
 - 限制：中文为简体；不翻译用户数据。物理设备可访问性字号/系统面板体验留待 beta；回退时同时移除界面调用和本轮新增资源，勿改写原有共享词条。提交标题含 IPAD-10。
+
+## 提交索引与更新日志
+
+| 编号 | Commit | 用户可见结果 |
+|---|---|---|
+| IPAD-01 | `07bacd0` | Close 丢弃临时全景，恢复原照片/网格；已确认导出继续 |
+| IPAD-02 | `1ad56ac` | 关闭所选照片侧栏同时清除勾选和高亮 |
+| IPAD-03 | `e886f58` | 网格双击打开大图，Fit 下左右滑动翻页 |
+| IPAD-04 | `1eecec9` | 右上倍率栏、Fit 双击切换、局部像素重新渲染 |
+| IPAD-05 | `69ea7e5` | 单图片库中的文件夹管理、移动、导入与筛选 |
+| IPAD-06 | `999b511` | Mac 规则的详细直方图与触摸读数 |
+| IPAD-07 | `461f7d5` | 配对 HDR/SDR 缓存、持久化与独立内存预算 |
+| IPAD-08 | `bace29a` | 设置内查看缓存大小并清理 |
+| IPAD-11 | `dcec753` | 查看镜头配置、方向覆盖和标定帧细节 |
+| IPAD-10 | `f2176a1` | 简体中文界面、语言偏好与重启切换 |
+
+每项实现、验证、限制和回退说明见对应章节及 commit 正文。使用 `git show <commit>` 可独立审查。上述 10 项统一进入 iPad 内容更新 PR。没有 squash、强推、删除旧分支或改写 PR 2。
+
+## IPAD-09-QA — 综合验收与文档
+
+- 2026-11-17，iPad Pro 13-inch (M5) / iOS 27.2 模拟器，全量引擎 20 项：19 通过、1 跳过、0 失败。`testOptionalBostonSixFrameTone` 使用本地六张 100 MP RAW 实际通过（87.591 秒），输出画布 21330 × 20255，调整前后 HDR headroom 2.7793 → 1.8125。
+- 跳过项为 `testOptionalRealRAWWorkflow`，其对应 ValidationInputs 顶层 RAW fixture 未提供；六张测试是另一独立 fixture，不能将两者混为同一覆盖。
+- 全量 UI 10 项初次为 9 通过、1 失败：旧完整流程在单击后即时断言侧栏消失，没有等待新增双击识别的失败窗口。仅将该断言改为等待实际关闭，`testGridInspectorSelectionAndPanoramaWorkflow` 复测通过（74.532 秒），包含移轴、透视、曝光/高光、机身方向、拖动/Revert、LCC 裁剪开关、完整分辨率导出、自动回导和设置。应用代码未因这个测试调整改变。
+- 结果：本轮 30 个不同测试最终覆盖 **29 通过、1 明确跳过**。不把初次失败的全量命令记成成功；证据分别为 `09-full-suite.log`、`09-workflow-recheck.log`。
+- 分发归档：0.1.0 (3) Release archive 成功，应用源码 `f2176a1599771306f76eb71837a57c8ab25dd812`，构建时应用文件无未提交修改，只有文档在整理。严格签名、仅 iPad、en/zh-Hans、App Store profile、dSYM UUID、隐私/许可/标定资源及私有 RAW 排除均通过。源码图标 1024×1024、无 alpha。归档验证 JSON：`09-archive-validation.json`。
+- 当前归档不代表已经上传或分发，发布结果另行记录。实体 iPad 的 HDR、可用内存、持续温度/耗电尚待 beta 验证。
+- 本项修改完整流程的手势等待断言、更新 `docs/ipad-preview.md` 与本追踪记录；不修改应用逻辑。依赖 IPAD-01…08、10、11。提交标题含 IPAD-09-QA。
