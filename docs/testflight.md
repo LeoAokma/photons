@@ -6,6 +6,10 @@
 
 ## 当前状态
 
+- 2026-11-16 23:13 EST，最新内部构建 **0.3.0 (6)** 已加入现有 `Developer Beta`，状态为 **Testing**，组内有 3 位测试者。源码为 `e5364464338660305b25ff6a6d705131316b4789`，包含最新 main 整合及全景亮度控制；英文 What to Test 已保存。旧 build 5 的外部审核仍为 **In Review**。本次没有增加测试者或提交新的外部审核。完整验证及发布追踪见 [TF-MAC-06](reports/developer-beta-mac-6-2026-11-16.md)。
+
+### 首轮构建 0.3.0 (5) 的历史记录
+
 - 本机已安装 Xcode 27.2，Apple Developer Program 已激活，应用及安装包分发证书已创建且通过本机信任校验。显式 App ID `com.leoaokma.photons`、App Store Connect 应用记录及 Mac App Store provisioning profile 均已创建，证书／描述文件匹配检查通过。
 - 应用首次启动默认英语，设置中的默认选项保持一致；用户保存的中文选择会保留。App Store Connect 的主要语言为 English (U.S.)。
 - `0.3.0 (5)` 已包含功能分支 `86d58dc` 的更新，以及英语默认语言修正；上传包的源码标记为 `17dc9cd`。release 主程序与 helper 编译成功，10 项签名门禁测试和沙盒诊断通过。沙盒诊断覆盖书签往返、GPU、降噪、HDR 及全景任务回导；真实外部目录的首次授权仍需交互验证。
