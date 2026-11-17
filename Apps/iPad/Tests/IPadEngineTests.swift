@@ -139,11 +139,24 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertEqual(count,1); XCTAssertTrue(first.image === again.image)
     }
 
+    func testHistogramAdditiveBandsAndPixelCoverageKeepNeutralPeaks() {
+        let bands = MobileHistogramReading.bands(tops: [20,40,60],bottom: 100)
+        XCTAssertEqual(bands.map(\.mask),[7,3,1]) // white, yellow, red; no channel exceeds 1.
+        XCTAssertEqual(bands.map(\.height),[40,20,20])
+        let neutral = MobileHistogramReading.bands(tops: [25,25,25],bottom: 100).filter { $0.height > 0 }
+        XCTAssertEqual(neutral.count,1); XCTAssertEqual(neutral.first?.mask,7)
+        let points = [CGPoint(x: 0,y: 100),CGPoint(x: 0.5,y: 10),CGPoint(x: 1,y: 100)]
+        var cursor = 0
+        XCTAssertEqual(MobileHistogramReading.top(points,from: 0.2,to: 0.8,cursor: &cursor),10)
+        XCTAssertEqual(MobileHistogramReading.top(points,from: 0.8,to: 1,cursor: &cursor),64,accuracy: 0.0001)
+        XCTAssertTrue(MobileHistogramReading.bin(at: 0.75).tail,"HDR/SDR use the same fixed axis")
+    }
+
     func testHistogramAxisAndDisplayClippingMatchMacSemantics() throws {
-        XCTAssertEqual(MobileHistogramReading.bin(at: 0.25,hdr: true).index,128)
-        XCTAssertTrue(MobileHistogramReading.bin(at: 0.5,hdr: true).tail)
-        XCTAssertEqual(MobileHistogramReading.bin(at: 0.75,hdr: true).index,128)
-        XCTAssertEqual(MobileHistogramReading.bin(at: 1,hdr: false).index,255)
+        XCTAssertEqual(MobileHistogramReading.bin(at: 0.25).index,128)
+        XCTAssertTrue(MobileHistogramReading.bin(at: 0.5).tail)
+        XCTAssertEqual(MobileHistogramReading.bin(at: 0.75).index,128)
+        XCTAssertEqual(MobileHistogramReading.bin(at: 1).index,255)
         let sample = LinearSample(width: 3,height: 1,rgba: [0,0,0,1, 1,1,1,1, 4,4,4,1])
         let histogram = HistogramSnapshot(sample: sample,canvas: ImageSize(width: 300,height: 100)).hdr
         XCTAssertEqual(histogram.luma.clippedLow,1.0/3,accuracy: 0.001)

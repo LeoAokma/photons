@@ -141,3 +141,11 @@
 - 文件：MobileEngine.swift、IPadEngineTests.swift。依赖 IPAD-07、IPAD-09-MAIN (`835e1dd`)，沿用共享版本标识，无移植实现。
 - 验证：iPad Pro 11-inch (M5) / iOS 27.2，`testLegacyPreviewIsRegeneratedAfterEngineUpgrade` 与原配对缓存切换/重启/失效测试均通过（2 项 / 0 失败），日志 `09-cache-generation.log`。升级测试将有效旧记录放在真实旧版键名下，验证重渲染一次、后续重开/HDR 切换复用新缓存。
 - 限制：算法维护者仍需按共享引擎既有契约更新版本标识；这不是源文件内容 hash。回退会恢复旧键规则，可能命中旧像素，不宜单独回退并保留新引擎。
+
+## IPAD-06-MAIN — 对齐最新 Mac 直方图规则
+
+- 来源：`737f92d` 的 HistogramCardView / HistogramPlot，406c/413 修正。iPad 同步采用固定 SDR/HDR 各半宽轴；SDR 模式显示上限位于白点。每个物理像素条取完整覆盖区间的曲线最大值，避免单 bin 窄峰高度随位置漂移。
+- 用 sRGB 通道存在位构造白/黄/青/品红/R/G/B 填充，普通合成替代在未知 P3/EDR 空间 plusLighter 相加，避免中性重叠偏粉。用户的 HDR/SDR 显示选项与实际 bins 保持独立。
+- 文件：MobileHistogram.swift、IPadEngineTests.swift；依赖 IPAD-06 与 main merge `835e1dd`。
+- 验证：轴/显示削顶、叠加色带/窄峰覆盖两项引擎测试，英文触摸直方图及中文浏览/设置/镜头详情两项 UI 测试通过，4 项 / 0 失败；iPad Pro 11-inch M5 / iOS27.2，`09-histogram-main.log`。检查完整中文网格/直方图截图，白色重叠与坐标显示正确，截图在 `main-chinese-screenshots/`。
+- 限制：实体 EDR 面板仍待 beta；回退视图与对应测试可一起进行，不改库数据。
