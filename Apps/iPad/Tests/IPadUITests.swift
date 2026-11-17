@@ -2,6 +2,39 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testWorkspaceGuidesCoverToolbarAndSinglePhotoGestures() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60))
+        let help = app.buttons["workspace-guide"]
+        XCTAssertLessThan(help.frame.midX,app.buttons["import-photos"].frame.midX)
+        help.tap()
+        XCTAssertTrue(app.staticTexts["guide-step-title"].waitForExistence(timeout: 5))
+        var titles = Set<String>()
+        for _ in 0..<20 {
+            titles.insert(app.staticTexts["guide-step-title"].label)
+            XCTAssertTrue(app.otherElements["guide-highlight"].exists)
+            if !app.buttons["guide-next"].isEnabled { break }
+            app.buttons["guide-next"].tap()
+        }
+        XCTAssertTrue(titles.isSuperset(of: ["Browse and select photos","Library and folders","Grid view","Single-photo view","Replay this guide","Import photos","HDR / SDR preview","Start a panorama","Photo tools","Adjustments and history","Export and share","Settings and cache"]))
+        let close = app.buttons["guide-close"]
+        XCTAssertGreaterThan(close.frame.midX,app.frame.midX)
+        XCTAssertGreaterThan(close.frame.midY,app.frame.midY)
+        close.tap(); XCTAssertEqual(first.value as? String,"Not selected")
+        first.doubleTap()
+        XCTAssertTrue(app.otherElements["photo-canvas-container"].waitForExistence(timeout: 10))
+        help.tap(); XCTAssertEqual(app.staticTexts["guide-step-title"].label,"View one photo")
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@","swipe left or right")).firstMatch.exists)
+        app.buttons["guide-next"].tap(); XCTAssertEqual(app.staticTexts["guide-step-title"].label,"Choose a zoom level")
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Single photo zoom guide"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["guide-next"].tap(); XCTAssertEqual(app.staticTexts["guide-step-title"].label,"Move through the folder")
+        close.tap(); XCTAssertTrue(app.otherElements["photo-canvas-container"].exists)
+    }
+    @MainActor
     func testGridSelectionKeepsCardFramesAndHonorsCollapsedInspector() throws {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]

@@ -8,6 +8,7 @@ import PhotonsPanorama
 
 public struct MobileWorkspaceView: View {
     @StateObject private var model = MobileWorkspaceModel()
+    @StateObject private var guide = MobileGuideController()
     @State private var importer = false
     @State private var panoramaWorkspace = false
     @State private var settingsWorkspace = false
@@ -35,7 +36,8 @@ public struct MobileWorkspaceView: View {
                         if sidebarVisible && geometry.size.width >= 950 { libraryRail.frame(width: 190); Divider() }
                         VStack(spacing: 0) {
                             taskBar
-                            if model.showGrid { libraryGrid } else { canvas }
+                            if model.showGrid { libraryGrid.mobileGuideTarget("workspace.grid",in: guide) }
+                            else { canvas.mobileGuideTarget("workspace.canvas",in: guide) }
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
                         if geometry.size.width >= 950 && inspectorVisible {
                             MobileInspector(model: model).frame(width: 310).frame(maxHeight: .infinity)
@@ -93,6 +95,7 @@ public struct MobileWorkspaceView: View {
         .alert("Photons Studio", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L10n.tr("slices.ok"), role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
+        .mobileGuideOverlay(guide)
         .environment(\.locale,Locale(identifier: L10n.language))
     }
     private var workspaceToolbar: some View {
@@ -101,23 +104,31 @@ public struct MobileWorkspaceView: View {
                 if wideLayout { sidebarVisible.toggle() } else { sidebarSheet = true }
             } label: { Image(systemName: "sidebar.left") }
                 .accessibilityLabel(L10n.tr("ipad.3339973aae80")).accessibilityIdentifier("toggle-sidebar")
+                .mobileGuideTarget("workspace.library",in: guide)
             Text("Photons").font(.headline)
             Divider().frame(height: 20)
             Button { model.showGrid = true } label: { Image(systemName: "number") }
                 .foregroundStyle(model.showGrid ? Color.orange : .secondary)
                 .accessibilityLabel(L10n.tr("ipad.47da4e5507b6")).accessibilityIdentifier("grid-view")
+                .mobileGuideTarget("workspace.gridMode",in: guide)
             Button { model.showGrid = false; model.render() } label: { Image(systemName: "rectangle") }
                 .foregroundStyle(model.showGrid ? Color.secondary : .orange).disabled(model.active == nil)
                 .accessibilityLabel(L10n.tr("ipad.c3470af228c5")).accessibilityIdentifier("single-view")
+                .mobileGuideTarget("workspace.singleMode",in: guide)
             Spacer(minLength: 8)
+            MobileGuideButton { guide.start(MobileGuideSteps.workspace(grid: model.showGrid)) }
+                .accessibilityIdentifier("workspace-guide").mobileGuideTarget("workspace.help",in: guide)
             Button { importer = true } label: { Image(systemName: "plus") }
                 .disabled(model.busy).accessibilityLabel(L10n.tr("ipad.6b071abc6cf0")).accessibilityIdentifier("import-photos")
+                .mobileGuideTarget("workspace.import",in: guide)
             Button(model.hdr ? "HDR" : "SDR") { model.toggleHDR() }
                 .font(.caption.weight(.semibold)).buttonStyle(.bordered).tint(model.hdr ? .orange : .gray).accessibilityIdentifier("display-mode").disabled(model.busy)
+                .mobileGuideTarget("workspace.hdr",in: guide)
             if model.selected.count >= 2 {
                 Button { model.beginPanorama(); panoramaWorkspace = true } label: { Image(systemName: "pano") }
                     .disabled(model.busy).keyboardShortcut("m", modifiers: .control)
                     .accessibilityLabel(L10n.tr("ipad.2be61912014b")).accessibilityIdentifier("panorama-tool")
+                    .mobileGuideTarget("workspace.panorama",in: guide)
             }
             Menu {
                 Button(L10n.tr("ipad.40c527f3f714"), systemImage: "camera.filters") { tool = .lcc }.disabled(model.active == nil)
@@ -126,6 +137,7 @@ public struct MobileWorkspaceView: View {
                 Button(L10n.tr("ipad.ba7bc9604cf8"), systemImage: "checklist") { tool = .capabilities }
             } label: { Image(systemName: "slider.horizontal.3") }
                 .disabled(model.busy).accessibilityLabel(L10n.tr("5ca6730d4415")).accessibilityIdentifier("tools-menu")
+                .mobileGuideTarget("workspace.tools",in: guide)
             Button {
                 if wideLayout {
                     inspectorVisible.toggle()
@@ -133,11 +145,15 @@ public struct MobileWorkspaceView: View {
                 } else { inspectorSheet = true }
             } label: { Image(systemName: "sidebar.right") }
                 .accessibilityLabel(L10n.tr("ipad.5602d0e1c70b")).accessibilityIdentifier("toggle-inspector")
+                .mobileGuideTarget("workspace.inspector",in: guide)
             Button { tool = .export } label: { Image(systemName: "square.and.arrow.up") }
                 .disabled(!model.canExport || model.busy).accessibilityLabel(L10n.tr("76420433f22d")).accessibilityIdentifier("export-photo")
+                .mobileGuideTarget("workspace.export",in: guide)
             Button { settingsWorkspace = true } label: { Image(systemName: "gearshape") }
                 .keyboardShortcut(",", modifiers: .control).accessibilityLabel(L10n.tr("df3d58c7d84b")).accessibilityIdentifier("settings-button")
+                .mobileGuideTarget("workspace.settings",in: guide)
         }.font(.body).buttonStyle(.borderless).padding(.horizontal, 18).frame(height: 58).background(Color(white: 0.12))
+            .mobileGuideTarget("workspace.toolbar",in: guide)
     }
     private func tapPhoto(_ photo: MobilePhoto) {
         if selectMode {
@@ -292,7 +308,7 @@ public struct MobileWorkspaceView: View {
                 MobilePhotoCanvas(image: image, hdr: model.hdr, identity: model.plan == nil ? (model.active?.id ?? "") : "panorama",
                                   fullSize: model.canvasSize,detail: model.detailFrame,detailStatus: model.detailStatus,
                                   onViewportChange: { model.requestDetail($0) },
-                                  onNavigate: { model.movePhoto(by: $0, among: visiblePhotos) })
+                                  onNavigate: { model.movePhoto(by: $0, among: visiblePhotos) },guide: guide)
                     .padding(20)
             } else { ContentUnavailableView(L10n.tr("ipad.defc2cfd9694"), systemImage: "photo") }
             if model.rendering { ProgressView().padding(16).background(.ultraThinMaterial, in: Capsule()).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).padding() }
@@ -303,7 +319,9 @@ public struct MobileWorkspaceView: View {
                     Text(photo.name).font(.caption).lineLimit(1).accessibilityIdentifier("current-photo-name")
                     Button { model.movePhoto(by: 1, among: visiblePhotos) } label: { Image(systemName: "chevron.right") }
                         .disabled(visiblePhotos.last?.id == photo.id || model.busy).accessibilityIdentifier("next-photo").accessibilityLabel(L10n.tr("ipad.a471f92bee76"))
-                }.padding(10).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding(12)
+                }.padding(10).background(.ultraThinMaterial, in: Capsule())
+                    .mobileGuideTarget("workspace.navigation",in: guide)
+                    .frame(maxHeight: .infinity, alignment: .bottom).padding(12)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }

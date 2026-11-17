@@ -38,6 +38,7 @@ struct MobilePhotoCanvas: View {
     var detailStatus = ""
     var onViewportChange: (MobileDetailRequest?) -> Void = { _ in }
     var onNavigate: (Int) -> Void = { _ in }
+    var guide: MobileGuideController? = nil
     @AppStorage("photons.mobile.zoomTarget") private var zoomTarget = 1.0
     @State private var command = MobileZoomCommand()
     @State private var isFit = true
@@ -64,6 +65,7 @@ struct MobilePhotoCanvas: View {
                     } label: { Text(String(format: "↔ %.0f%%",zoomTarget * 100)) }
                     .accessibilityIdentifier("zoom-options").accessibilityLabel(L10n.tr("ipad.f8308849679f"))
                 }.font(.caption).padding(10).background(.ultraThinMaterial,in: Capsule())
+                    .mobileGuideTarget("workspace.zoom",in: guide)
                 if !detailStatus.isEmpty { Text(detailStatus).accessibilityIdentifier("detail-status").font(.caption2).padding(6).background(.ultraThinMaterial,in: RoundedRectangle(cornerRadius: 6)) }
             }.padding(8)
         }

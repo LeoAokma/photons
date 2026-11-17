@@ -11,6 +11,24 @@ import PhotonsPanorama
 @testable import PhotonsExtensions
 
 final class IPadEngineTests: XCTestCase {
+    @MainActor
+    func testGuideGeometryFallbackNavigationAndDismissal() {
+        let guide = MobileGuideController()
+        let viewport = CGRect(x: 0,y: 40,width: 1000,height: 700)
+        guide.register("toolbar",frame: CGRect(x: 0,y: 40,width: 1000,height: 58))
+        guide.register("offscreen",frame: CGRect(x: 800,y: 900,width: 200,height: 80))
+        var completions = 0
+        guide.start([.init("one",target: "offscreen",fallback: "toolbar"),.init("two",target: "toolbar")]) { completions += 1 }
+        XCTAssertEqual(guide.highlight(in: viewport),CGRect(x: 0,y: 0,width: 1000,height: 58))
+        guide.previous(); XCTAssertEqual(guide.index,0)
+        guide.next(); guide.next(); XCTAssertEqual(guide.index,1)
+        let target = CGRect(x: 850,y: 20,width: 100,height: 50)
+        let safe = CGRect(x: 16,y: 16,width: 968,height: 600)
+        let card = MobileGuideLayout.cardArea(target: target,safe: safe)
+        XCTAssertTrue(safe.contains(card)); XCTAssertFalse(card.intersects(target))
+        guide.close(); guide.close(); XCTAssertFalse(guide.active); XCTAssertEqual(completions,1)
+        XCTAssertEqual(MobileGuideLayout.cardArea(target: safe,safe: safe),safe)
+    }
     private var folder: URL!
     override func setUpWithError() throws {
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("ipad-test-\(UUID())", isDirectory: true)
