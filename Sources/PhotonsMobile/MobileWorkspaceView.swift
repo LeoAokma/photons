@@ -12,6 +12,7 @@ public struct MobileWorkspaceView: View {
     @State private var panoramaWorkspace = false
     @State private var settingsWorkspace = false
     @State private var selectMode = false
+    @State private var gridTapSequence = MobileGridTapSequence()
     @State private var inspectorSheet = false
     @State private var sidebarVisible = false
     @State private var sidebarSheet = false
@@ -53,7 +54,7 @@ public struct MobileWorkspaceView: View {
         .preferredColorScheme(.dark).tint(.orange)
         .task { await model.start() }
         .onChange(of: model.showGrid) { _,grid in if !grid && model.plan != nil { inspectorVisible = true } }
-        .onChange(of: model.folderScope) { _,_ in selectMode = false }
+        .onChange(of: model.folderScope) { _,_ in selectMode = false; gridTapSequence = .init() }
         .onChange(of: inspectorSheet) { _,visible in
             if !visible && model.showGrid && !selectMode { model.clearSelection() }
         }
@@ -137,35 +138,28 @@ public struct MobileWorkspaceView: View {
             model.toggleSelection(photo)
         } else {
             let same = model.active?.id == photo.id
-            if same && wideLayout && inspectorVisible {
+            if same && (!wideLayout || inspectorVisible) {
                 inspectorVisible = false; model.clearSelection(); return
             }
             model.selected = [photo.id]
             model.select(photo)
             if wideLayout { inspectorVisible = true }
-            else { inspectorSheet = true }
+            // On a narrow screen the inspector is opened explicitly from its toolbar
+            // button. A modal sheet here would intercept the second tap of a double tap.
         }
     }
     private func beginSelection(_ photo: MobilePhoto) {
+        gridTapSequence = .init()
         selectMode = true
         model.selected = [photo.id]
         model.select(photo)
     }
-    private func photoGesture(_ photo: MobilePhoto) -> AnyGesture<Void> {
-        if selectMode {
-            // Selection mode has no double-tap action, so a checkmark need not wait
-            // for a second tap or a long-press recognizer to fail.
-            return AnyGesture(TapGesture().onEnded { model.toggleSelection(photo) })
+    private func photoTap(_ photo: MobilePhoto, count: Int) {
+        switch gridTapSequence.action(photoID: photo.id,tapCount: count,selectionMode: selectMode) {
+        case .select: tapPhoto(photo)
+        case .open: model.select(photo,open: true)
+        case .toggleSelection: model.toggleSelection(photo)
         }
-        return AnyGesture(LongPressGesture(minimumDuration: 0.45)
-            .exclusively(before: TapGesture(count: 2).exclusively(before: TapGesture()))
-            .onEnded { value in
-                switch value {
-                case .first: beginSelection(photo)
-                case .second(.first): model.select(photo, open: true)
-                case .second(.second): tapPhoto(photo)
-                }
-            }.map { _ in () })
     }
     private var libraryRail: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -262,7 +256,10 @@ public struct MobileWorkspaceView: View {
                             .contentShape(Rectangle())
                             .onAppear { model.thumbnailVisibility(photo.id,visible: true) }
                             .onDisappear { model.thumbnailVisibility(photo.id,visible: false) }
-                            .gesture(photoGesture(photo))
+                            .gesture(MobileGridTap { photoTap(photo,count: $0) })
+                            .simultaneousGesture(LongPressGesture(minimumDuration: MobileGridTapRecognizer.longPressDuration).onEnded { _ in
+                                if !selectMode { beginSelection(photo) }
+                            })
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(.isButton)
                             .accessibilityAction { tapPhoto(photo) }

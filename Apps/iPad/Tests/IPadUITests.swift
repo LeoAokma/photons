@@ -2,6 +2,41 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testCompactGridFirstTapKeepsGridAndDoubleTapOpens() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+        XCUIDevice.shared.orientation = .portrait
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60))
+        guard app.frame.width < 950 else { throw XCTSkip("Run on an iPad with a compact portrait width") }
+        first.tap(); XCTAssertEqual(first.value as? String,"Selected")
+        XCTAssertFalse(app.otherElements["RGB histogram"].exists)
+        first.tap(); XCTAssertEqual(first.value as? String,"Not selected")
+        first.doubleTap()
+        XCTAssertTrue(app.descendants(matching: .any)["photo-canvas"].waitForExistence(timeout: 10))
+        app.buttons["grid-view"].tap()
+        app.buttons["toggle-inspector"].tap()
+        XCTAssertTrue(app.otherElements["RGB histogram"].waitForExistence(timeout: 10))
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertEqual(first.value as? String,"Not selected")
+    }
+    @MainActor
+    func testGridDragDoesNotSelectPhoto() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60))
+        let start = first.coordinate(withNormalizedOffset: CGVector(dx: 0.5,dy: 0.65))
+        start.press(forDuration: 0.05,thenDragTo: start.withOffset(CGVector(dx: 0,dy: -100)))
+        XCTAssertEqual(first.value as? String,"Not selected")
+        XCTAssertFalse(app.buttons["finish-selection"].exists)
+        XCTAssertTrue(app.scrollViews["photo-grid"].exists)
+        first.tap(); XCTAssertEqual(first.value as? String,"Selected")
+    }
+    @MainActor
     func testOptionalLargeRAWZoomAt100PercentDoesNotCrash() throws {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo","--boston"]
@@ -294,7 +329,7 @@ final class IPadUITests: XCTestCase {
         first.tap()
         XCTAssertTrue(app.otherElements["RGB histogram"].waitForExistence(timeout: 30))
         first.tap()
-        // Single taps wait for the double-tap recognizer to fail before closing the inspector.
+        // A repeated single tap clears selection and its histogram.
         XCTAssertTrue(app.otherElements["RGB histogram"].waitForNonExistence(timeout: 5))
         first.press(forDuration: 0.7)
         XCTAssertTrue(app.buttons["finish-selection"].waitForExistence(timeout: 5))

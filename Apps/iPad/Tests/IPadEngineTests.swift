@@ -438,6 +438,21 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertEqual(model.edit.light.exposure,0.7)
     }
 
+    func testGridTapSequenceActsOnFirstTapAndKeepsDoubleTapOnSamePhoto() {
+        var sequence = MobileGridTapSequence()
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 1,selectionMode: false),.select)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 2,selectionMode: false),.open)
+        // Rapid taps on different cells must select, not accidentally open the second cell.
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 1,selectionMode: false),.select)
+        XCTAssertEqual(sequence.action(photoID: "b",tapCount: 2,selectionMode: false),.select)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 3,selectionMode: false),.select)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 1,selectionMode: false),.select)
+        // Every tap remains an independent checkbox action while multi-selecting.
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 1,selectionMode: true),.toggleSelection)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 2,selectionMode: true),.toggleSelection)
+        XCTAssertEqual(sequence.action(photoID: "a",tapCount: 2,selectionMode: false),.select)
+    }
+
     @MainActor
     func testPanoramaZoomKeepsLowResolutionPreviewWithoutReadingSources() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("preview-only"))
