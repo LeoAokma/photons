@@ -251,7 +251,8 @@ struct MobilePanoramaWorkspace: View {
                     if let plan = model.plan { MobilePositionDiagram(plan: plan).frame(height: 280) }
                     Text(L10n.tr("ipad.6bd1217be525")).font(.caption).foregroundStyle(.secondary)
                 }
-                DisclosureGroup(L10n.tr("ipad.a38fa6d1cdc0")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(L10n.tr("ipad.a38fa6d1cdc0")).font(.headline)
                     if mode == .shift {
                     Toggle(L10n.tr("ipad.c44d573e0600"), isOn: $manualSensor).onChange(of: manualSensor) { _,enabled in
                         if !enabled, let known = sources.first?.sensor { sensorWidth = known.width; sensorHeight = known.height }
@@ -264,7 +265,7 @@ struct MobilePanoramaWorkspace: View {
                     Toggle(L10n.tr("ipad.884e937d3d20"), isOn: $options.matchExposure)
                     Toggle(L10n.tr("ipad.a55dd8a88660"), isOn: $options.avoidMotion)
                     Slider(value: $options.seamSoftness, in: 0...20) { Text(L10n.tr("ipad.11b8fec683fe")) }
-                }
+                }.accessibilityIdentifier("panorama-alignment-options")
                 Button(L10n.tr("ipad.602ad77cd80f"), action: align).buttonStyle(.borderedProminent)
                     .disabled(model.busy || !validSensor || sources.count < 2).accessibilityIdentifier("align-panorama")
                 Divider()
