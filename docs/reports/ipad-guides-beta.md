@@ -109,3 +109,16 @@ Mac `swift test --disable-automatic-resolution --skip-update --filter DevelopTes
 改用从实际控件位置取得的屏幕坐标拖动后全流程通过。已查看截图，确认卡片、滑动提示与 Close 正常显示。
 证据：`local/validation/guide-06.*`、`guide-06-ui-3.*`、`guide-06-review.png`（均忽略）。
 `git diff --check` 通过；物理设备/VoiceOver 手工操作未验证。此项依赖共用教程，可独立回退滑动行为。
+
+## 新增功能 commit 索引
+
+| 编号 | Commit | 行为 |
+| --- | --- | --- |
+| IPAD-GUIDE-01 | `108e72b` | 对齐选项始终展开 |
+| IPAD-GUIDE-02 | `e3da364` | 主界面网格/单张红框教程 |
+| IPAD-GUIDE-03 | `e77b65f` | 拼接各模块、拖动和解算教程 |
+| IPAD-GUIDE-04 | `22db4c5` | 每个 build 首次快速上手 |
+| IPAD-GUIDE-05 | `ed5147b` | 跟随设备语言及即时切换 |
+| IPAD-GUIDE-06 | `e206f11` | 所有教程左右滑动翻页 |
+
+最终集成验证和 DB/PB 发布记录见 [iPad Beta 5](ipad-beta-5-2026-11-17.md)。
