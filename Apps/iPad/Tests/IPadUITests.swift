@@ -2,6 +2,27 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testMultiSelectionTapsToggleWithoutOpeningPhotos() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"], second = app.buttons["photo-Sample-02.tiff"], third = app.buttons["photo-Sample-03.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60)); first.press(forDuration: 0.7)
+        XCTAssertEqual(first.value as? String,"Selected")
+        second.tap(); XCTAssertEqual(second.value as? String,"Selected")
+        third.tap(); XCTAssertEqual(third.value as? String,"Selected")
+        second.tap(); XCTAssertEqual(second.value as? String,"Not selected")
+        third.tap(); XCTAssertEqual(third.value as? String,"Not selected")
+        // Two quick taps are independent checkbox actions in selection mode.
+        second.doubleTap(); XCTAssertEqual(second.value as? String,"Not selected")
+        XCTAssertTrue(app.scrollViews["photo-grid"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["photo-canvas"].exists)
+        app.buttons["finish-selection"].tap()
+        second.doubleTap()
+        XCTAssertTrue(app.descendants(matching: .any)["photo-canvas"].waitForExistence(timeout: 10))
+    }
+    @MainActor
     func testPanoramaZoomShowsPreviewNoticeAndFitClearsIt() throws {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]

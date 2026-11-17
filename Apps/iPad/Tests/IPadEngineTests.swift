@@ -221,6 +221,26 @@ final class IPadEngineTests: XCTestCase {
     }
 
     @MainActor
+    func testMultiSelectionDoesNotLoadOrReplaceTheActiveEditor() async throws {
+        let model = MobileWorkspaceModel()
+        let first = MobilePhoto(id: "first",name: "first",url: folder.appendingPathComponent("missing-first.tiff"),rating: 0,width: 768,height: 512)
+        let second = MobilePhoto(id: "second",name: "second",url: folder.appendingPathComponent("missing-second.tiff"),rating: 0,width: 768,height: 512)
+        model.active = first; model.selected = [first.id]
+        model.edit.light.exposure = 0.7
+        for _ in 0..<20 {
+            model.toggleSelection(second)
+            XCTAssertTrue(model.selected.contains(second.id))
+            model.toggleSelection(second)
+            XCTAssertFalse(model.selected.contains(second.id))
+        }
+        XCTAssertEqual(model.selected,[first.id]); XCTAssertEqual(model.active?.id,first.id)
+        XCTAssertEqual(model.edit.light.exposure,0.7); XCTAssertFalse(model.selectionLoading)
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertNil(model.error); XCTAssertEqual(model.active?.id,first.id)
+        XCTAssertEqual(model.edit.light.exposure,0.7)
+    }
+
+    @MainActor
     func testPanoramaZoomKeepsLowResolutionPreviewWithoutReadingSources() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("preview-only"))
         let photos = urls.map { MobilePhoto(id: $0.lastPathComponent,name: $0.lastPathComponent,url: $0,rating: 0,width: 768,height: 512) }

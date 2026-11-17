@@ -178,8 +178,8 @@ final class MobileWorkspaceModel: ObservableObject {
         }
     }
     func toggleSelection(_ photo: MobilePhoto) {
+        // A checkbox changes the selection set, not the active editor or its render jobs.
         if selected.contains(photo.id) { selected.remove(photo.id) } else { selected.insert(photo.id) }
-        select(photo)
     }
     func clearSelection() {
         invalidateDetail(clearViewport: true)

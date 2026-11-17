@@ -151,6 +151,22 @@ public struct MobileWorkspaceView: View {
         model.selected = [photo.id]
         model.select(photo)
     }
+    private func photoGesture(_ photo: MobilePhoto) -> AnyGesture<Void> {
+        if selectMode {
+            // Selection mode has no double-tap action, so a checkmark need not wait
+            // for a second tap or a long-press recognizer to fail.
+            return AnyGesture(TapGesture().onEnded { model.toggleSelection(photo) })
+        }
+        return AnyGesture(LongPressGesture(minimumDuration: 0.45)
+            .exclusively(before: TapGesture(count: 2).exclusively(before: TapGesture()))
+            .onEnded { value in
+                switch value {
+                case .first: beginSelection(photo)
+                case .second(.first): model.select(photo, open: true)
+                case .second(.second): tapPhoto(photo)
+                }
+            }.map { _ in () })
+    }
     private var libraryRail: some View {
         VStack(alignment: .leading, spacing: 20) {
             Label("LIBRARY", systemImage: "photo.stack").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -244,13 +260,7 @@ public struct MobileWorkspaceView: View {
                                 }.padding(7).background(model.selected.contains(photo.id) ? Color.orange.opacity(0.12) : .clear)
                                     .clipShape(RoundedRectangle(cornerRadius: 9))
                             .contentShape(Rectangle())
-                            .gesture(LongPressGesture(minimumDuration: 0.45).exclusively(before: TapGesture(count: 2).exclusively(before: TapGesture())).onEnded { value in
-                                switch value {
-                                case .first: beginSelection(photo)
-                                case .second(.first): selectMode = false; model.select(photo, open: true)
-                                case .second(.second): tapPhoto(photo)
-                                }
-                            })
+                            .gesture(photoGesture(photo))
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(.isButton)
                             .accessibilityAction { tapPhoto(photo) }
@@ -306,7 +316,12 @@ struct MobileThumbnail: UIViewRepresentable {
 /// Present generated floating-point pixels directly. UIImage(cgImage:) does not reliably mark
 /// these as HDR, even when CGImage carries headroom; its image-view path can flatten the result.
 final class MobilePreviewSurface: UIView {
+    private var presentedImage: CGImage?
+    private var presentedHDR: Bool?
     func present(_ image: CGImage,hdr: Bool) {
+        // A selection highlight redraw must not resubmit every unchanged thumbnail.
+        guard presentedImage !== image || presentedHDR != hdr else { return }
+        presentedImage = image; presentedHDR = hdr
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.contentsGravity = .resizeAspect
         layer.contents = image
