@@ -1,4 +1,5 @@
 #if os(iOS)
+import PhotonsLocalization
 import Foundation
 import CoreGraphics
 import Compression
@@ -51,7 +52,7 @@ struct MobileCachedPreview: Codable {
     var pixels: Data
     init(_ frame: MobileFrame) throws {
         let image = frame.image
-        guard let bytes = image.dataProvider?.data else { throw MobileError.message("Missing preview pixels.") }
+        guard let bytes = image.dataProvider?.data else { throw MobileError.message(L10n.tr("ipad.cd6d72bf603e")) }
         width = image.width; height = image.height; rowBytes = image.bytesPerRow
         bitmapInfo = image.bitmapInfo.rawValue; headroom = image.contentHeadroom; histogram = frame.histogram
         fullSize = frame.fullSize
@@ -63,12 +64,12 @@ struct MobileCachedPreview: Codable {
                     source.bindMemory(to: UInt8.self).baseAddress!,source.count,nil,COMPRESSION_LZFSE)
             }
         }
-        guard count > 0 else { throw MobileError.message("Could not cache preview.") }
+        guard count > 0 else { throw MobileError.message(L10n.tr("ipad.bdef0977f78d")) }
         compressed.count = count; pixels = compressed
     }
     func frame() throws -> MobileFrame {
         guard (1...2048).contains(width), (1...2048).contains(height), rowBytes >= width*8, rowBytes <= width*8+1024, !pixels.isEmpty else {
-            throw MobileError.message("Invalid preview dimensions.")
+            throw MobileError.message(L10n.tr("ipad.2207d378b4fa"))
         }
         // Decode into a fixed, validated buffer: corrupt cache data cannot expand without bound.
         var bytes = Data(count: rowBytes*height)
@@ -78,12 +79,12 @@ struct MobileCachedPreview: Codable {
                     input.bindMemory(to: UInt8.self).baseAddress!,input.count,nil,COMPRESSION_LZFSE)
             }
         }
-        guard count == bytes.count else { throw MobileError.message("Invalid cached preview.") }
+        guard count == bytes.count else { throw MobileError.message(L10n.tr("ipad.cab1190e041a")) }
         guard bytes.count == rowBytes*height, let provider = CGDataProvider(data: bytes as CFData),
               let image = CGImage(headroom: headroom,width: width,height: height,bitsPerComponent: 16,bitsPerPixel: 64,
                 bytesPerRow: rowBytes,space: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!,
                 bitmapInfo: CGBitmapInfo(rawValue: bitmapInfo),provider: provider,decode: nil,shouldInterpolate: true,intent: .defaultIntent) else {
-            throw MobileError.message("Invalid cached preview.")
+            throw MobileError.message(L10n.tr("ipad.cab1190e041a"))
         }
         return MobileFrame(image: image,histogram: histogram,fullSize: fullSize)
     }

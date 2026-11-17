@@ -90,3 +90,12 @@
 - 文件：MobileProfileDetails.swift、MobileTools.swift、MobileEngine.swift、engine/UI tests。来源：参考当前 Mac LCCProfileLibraryView 覆盖图与说明，复用共享 LCCProfileStore/Codec/校验；不修改配置原始数据。
 - 验证：`testLensProfileDetailsPreserveCaptureMetadataAndCoverage`、`testLensProfileOpensMetadataCoverageAndCaptureDetails` 均通过（2 项 / 0 失败），内置配置的元数据/覆盖区域校验、设置进入详情和展开帧。日志 `11-lens-details.log`，UI 保留详情截图。
 - 限制：仅显示文件实际包含的可选元数据，缺失机身显示 Not recorded；不同配置的备注/文件名作为用户数据不自动翻译。无新增依赖；IPAD-10 将翻译新增界面。提交标题含 IPAD-11；回退视图与导航入口一起进行。
+
+## IPAD-10
+
+- 变更：iPad 增加简体中文，覆盖浏览/编辑/全景/LCC/导出/文件夹/直方图/缓存/镜头详情及本地状态错误。复用共享 L10n，新增 273 条中英文资源；当前移动代码引用的 348 个 key 均有双语文本且插值/格式占位符一致。日期等控件继承所选 locale。
+- 设置：General → Language 提供 English / 简体中文，沿用 Mac 的进程内固定语言策略，明确提示重启后生效。系统选择器/系统错误随 iPadOS 语言；文件名、相机型号、用户备注不自动翻译。原有偏好键、文件路径和控件 ID 保留。
+- 文件：PhotonsMobile 界面/本地状态字符串、共享 en/zh-Hans.json、Info.plist、UI 测试；新增资源不修改 Mac 既有词条。依赖本轮其他界面改动，尤其 IPAD-11。
+- 验证：中文网格/直方图/自定义倍率/设置/镜头详情 UI 通过；英文缩放回归通过；实际语言偏好切换、退出重开中文、再切回英文并重开通过。日志 `10-chinese-ui.log`、`10-language-preference.log`、最终 `10-chinese-final.log`。静态校验所有 key/参数匹配，既有技术标识不变。
+- 截图：改用 XCUIScreen 捕获完整横屏，避免模拟器 app.screenshot 的方向裁切。检查中文网格、缓存设置和镜头详情布局；发现共享 Light 词条语义不适合明暗面板，改为独立词条。最终截图位于 `local/build-logs/ipad-content-update/chinese-final-screenshots/`，镜头日期显示为中文。
+- 限制：中文为简体；不翻译用户数据。物理设备可访问性字号/系统面板体验留待 beta；回退时同时移除界面调用和本轮新增资源，勿改写原有共享词条。提交标题含 IPAD-10。

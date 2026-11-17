@@ -24,7 +24,7 @@ struct MobileBodyOrientationPicker: View {
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(selection == angle ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: selection == angle ? 1.5 : 0.6))
                     }.buttonStyle(.plain)
                         .accessibilityLabel("\(angle.rawValue)° \(cameraBody.placementLabel(angle))")
-                        .accessibilityValue(selection == angle ? "Selected" : "Not selected")
+                        .accessibilityValue(selection == angle ? L10n.tr("3f4ebc4aad97") : L10n.tr("0e0c21de6988"))
                         .accessibilityIdentifier("panorama.body.orientation.\(angle.rawValue)")
                 }
             }

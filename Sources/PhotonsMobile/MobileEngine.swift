@@ -1,4 +1,5 @@
 #if os(iOS)
+import PhotonsLocalization
 import Foundation
 import CoreImage
 import ImageIO
@@ -106,14 +107,14 @@ actor MobileEngine {
         let grants = urls.map(FileAccess.init)
         defer { withExtendedLifetime(grants) {} }
         guard !urls.contains(where: { $0.pathExtension.lowercased() == "photonslibrary" }) else {
-            throw MobileError.message("iPad uses one library. Import photographs or folders of photographs, not another library package.")
+            throw MobileError.message(L10n.tr("ipad.425098113457"))
         }
-        if let folder, !(try folderIndex()).folders.contains(where: { $0.id == folder }) { throw MobileError.message("Folder not found.") }
+        if let folder, !(try folderIndex()).folders.contains(where: { $0.id == folder }) { throw MobileError.message(L10n.tr("ipad.ccbf07f84d31")) }
         let previous = folder == nil ? Set<String>() : Set(try photos().map(\.id))
         let service = ImportService(catalog: try database())
         service.shouldCancel = { Task.isCancelled }
         let summary = try service.run(sources: urls, options: .init(mode: .copy, skipDuplicates: skipDuplicates),
-                               onFile: { n,total in progress("Importing \(n) of \(total)", Double(n) / Double(max(1,total))) })
+                               onFile: { n,total in progress(L10n.tr("ipad.3b4dffa48409", String(describing: (n)), String(describing: (total))), Double(n) / Double(max(1,total))) })
         if let folder { try movePhotos(Set(try photos().map(\.id)).subtracting(previous),to: folder) }
         return summary
     }
@@ -155,7 +156,7 @@ actor MobileEngine {
         // Render scene-linear pixels once. Both display variants and both histogram modes derive
         // from that same result, so a mode toggle never decodes/develops the photograph again.
         let pixels = try render(photo.url, edit: edit, edge: edge, hdr: true, histogram: true, linear: true)
-        guard let display = pixels.display else { throw MobileError.message("The renderer returned no image.") }
+        guard let display = pixels.display else { throw MobileError.message(L10n.tr("ipad.fa4fb4d75cac")) }
         let fullSize = CropGeometry(geometry: edit.geometry,source: try sourceSizes[photo.url] ?? ImageSourceDecoder.size(at: photo.url)).canvas
         let snapshot = pixels.histogramSample.map { HistogramSnapshot(sample: $0,canvas: fullSize) }
         let pair = try makePair(display,snapshot: snapshot,fullSize: fullSize)
@@ -246,12 +247,12 @@ actor MobileEngine {
         let available = Double(os_proc_available_memory()) * 0.65
         #endif
         guard Double(size.pixelCount) * scale * scale * 24 < available else {
-            throw MobileError.message("Not enough memory for this magnification. Choose a smaller percentage.")
+            throw MobileError.message(L10n.tr("ipad.ac87115610b9"))
         }
         let result = try render(photo.url,edit: edit,edge: max(1,Int(Double(max(size.width,size.height))*scale)),
                                 hdr: true,histogram: false,linear: true,detail: request)
         try Task.checkCancellation()
-        guard let pixels = result.display else { throw MobileError.message("No detail pixels returned.") }
+        guard let pixels = result.display else { throw MobileError.message(L10n.tr("ipad.ff89b23fe243")) }
         let full = CropGeometry(geometry: edit.geometry,source: graphSize).canvas
         let rect = CGRect(x: Double(result.window.x)/Double(full.width),y: Double(result.window.y)/Double(full.height),
                           width: Double(result.window.width)/Double(full.width),height: Double(result.window.height)/Double(full.height))
@@ -271,7 +272,7 @@ actor MobileEngine {
         // Core Image uses bottom-left coordinates; the viewport uses top-left.
         let crop = CGRect(x: r.minX*scene.extent.width,y: (1-r.maxY)*scene.extent.height,
                           width: r.width*scene.extent.width,height: r.height*scene.extent.height).integral.intersection(scene.extent)
-        guard !crop.isEmpty else { throw MobileError.message("The detail viewport is empty.") }
+        guard !crop.isEmpty else { throw MobileError.message(L10n.tr("ipad.8953b228e9cf")) }
         let image = scene.cropped(to: crop).transformed(by: .init(translationX: -crop.minX,y: -crop.minY))
         let rect = CGRect(x: crop.minX/scene.extent.width,y: 1-crop.maxY/scene.extent.height,width: crop.width/scene.extent.width,height: crop.height/scene.extent.height)
         var pair = try makePair(image,snapshot: nil,fullSize: nil); pair.rect = rect; detailCache.put(pair,key: key)
@@ -296,7 +297,7 @@ actor MobileEngine {
         let space = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!
         guard let cg = previewContext.createCGImage(image,from: image.extent,format: .RGBAh,colorSpace: space),
               let provider = cg.dataProvider else {
-            throw MobileError.message("Could not create the preview.")
+            throw MobileError.message(L10n.tr("ipad.9d1d128ebb9f"))
         }
         var peak: Float = 1
         if hdr {
@@ -309,12 +310,12 @@ actor MobileEngine {
         guard let tagged = CGImage(headroom: peak,width: cg.width,height: cg.height,bitsPerComponent: cg.bitsPerComponent,
             bitsPerPixel: cg.bitsPerPixel,bytesPerRow: cg.bytesPerRow,space: space,bitmapInfo: cg.bitmapInfo,
             provider: provider,decode: nil,shouldInterpolate: true,intent: .defaultIntent) else {
-            throw MobileError.message("Could not tag the preview's dynamic range.")
+            throw MobileError.message(L10n.tr("ipad.db99213268e0"))
         }
         return tagged
     }
     func frame(_ plan: PanoramaPlan, hdr: Bool) throws -> MobileFrame {
-        guard let preview = plan.preview else { throw MobileError.message("No composite preview was produced.") }
+        guard let preview = plan.preview else { throw MobileError.message(L10n.tr("ipad.31c7603f6bac")) }
         if panoramaPreview === preview, let pair = panoramaPair { return pair.frame(hdr: hdr) }
         let linear = CIImage(cgImage: preview)
         let scale = min(1,192 / max(linear.extent.width, linear.extent.height))
@@ -360,12 +361,12 @@ actor MobileEngine {
         releaseWorkingMemory()
         let scene = try PanoramaSource(url: photo.url)
         if let flat {
-            guard scene.isRAW, ImageSourceDecoder.isRAW(flat) else { throw MobileError.message("Traditional LCC requires a Bayer RAW photograph and its matching RAW flat. Use a lens profile for rendered photographs.") }
+            guard scene.isRAW, ImageSourceDecoder.isRAW(flat) else { throw MobileError.message(L10n.tr("ipad.e5b9fa63daa2")) }
             let lease = FileAccess(flat); defer { withExtendedLifetime(lease) {} }
             return (try LCCCorrectionEngine.traditional(scene: scene, flatURL: flat, cancellation: cancellation,
                                                        progress: { progress($0, nil) }), nil)
         }
-        guard let profileID else { throw MobileError.message("Choose a lens profile first.") }
+        guard let profileID else { throw MobileError.message(L10n.tr("ipad.02a8ea1eb9fc")) }
         let profile = try LCCProfileStore().load(profileID)
         if let manifest = try PanoramaManifest.read(from: photo.url), manifest.frames.count > 1 {
             let result = try LCCCorrectionEngine.postProcess(scene: scene, manifest: manifest, profile: profile,
@@ -380,7 +381,7 @@ actor MobileEngine {
                          orientation: PanoramaBodyOrientation, cropToCoverage: Bool = false, cancellation: PanoramaCancellation,
                          progress: @Sendable @escaping (String, Double?) -> Void) throws -> PanoramaPlan {
         guard plan.registrationMode != .perspective else { throw MobileError.message(PanoramaRegistrationMode.perspectiveLCCNotice) }
-        guard let sensor = plan.sources.first?.sensor else { throw MobileError.message("Sensor dimensions are required for LCC.") }
+        guard let sensor = plan.sources.first?.sensor else { throw MobileError.message(L10n.tr("ipad.e9baccefa276")) }
         let engine = PanoramaEngine(), profile = try LCCProfileStore().load(profileID)
         let fields = try LCCCorrectionEngine.fields(profile, cancellation: cancellation)
         let prepared = try engine.prepareLCCImages(plan, cancellation: cancellation, progress: { progress($0, nil) })
@@ -391,9 +392,9 @@ actor MobileEngine {
     }
     /// Reuse the measured coverage and corrected preview pixels; changing the crop does not decode RAWs or solve LCC again.
     func setLCCCrop(_ original: PanoramaPlan, enabled: Bool, cancellation: PanoramaCancellation) throws -> PanoramaPlan {
-        guard var state = original.lccState else { throw MobileError.message("Apply LCC before cropping to its corrected area.") }
+        guard var state = original.lccState else { throw MobileError.message(L10n.tr("ipad.75892278f586")) }
         if enabled && state.suggestedCropRect == nil {
-            throw MobileError.message("The lens profile does not cover a rectangular area that can be safely cropped.")
+            throw MobileError.message(L10n.tr("ipad.cce675d2aa5a"))
         }
         var plan = original
         state.cropRect = enabled ? state.suggestedCropRect : nil
@@ -436,18 +437,18 @@ actor MobileEngine {
         let available = Double(os_proc_available_memory())*0.8
         #endif
         guard estimate < available else {
-            throw MobileError.message("This export needs more memory than is currently available. Choose a smaller long edge, or export fewer source photos. The output size has not been reduced automatically.")
+            throw MobileError.message(L10n.tr("ipad.7bafa62b2133"))
         }
         let dir = libraryURL.deletingLastPathComponent().appendingPathComponent("Exports", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let base = plan.map { $0.sources.count > 1 ? PanoramaManifest.defaultName($0.sources.map(\.url)) : $0.sources[0].url.deletingPathExtension().lastPathComponent + "_lcc" }
-            ?? photo?.url.deletingPathExtension().lastPathComponent ?? "Photo"
+            ?? photo?.url.deletingPathExtension().lastPathComponent ?? L10n.tr("7b50017ae47e")
         let output = OutputNameAllocator().reserve(base: base, ext: settings.format == "dng" ? "dng" : settings.preset.format.fileExtension,
                                                        in: dir, policy: .rename)
-        guard let output else { throw MobileError.message("Could not reserve an output filename.") }
+        guard let output else { throw MobileError.message(L10n.tr("ipad.5ecbcaf30161")) }
         let temporary = dir.appendingPathComponent(".\(UUID().uuidString).\(output.pathExtension)")
         defer { try? FileManager.default.removeItem(at: temporary) }
-        progress("Rendering", 0.1)
+        progress(L10n.tr("ipad.e2fe353986e6"), 0.1)
         let preset = settings.preset
         if let plan {
             let scene = try PanoramaEngine().renderComposite(plan, cancellation: cancellation, outputLongEdge: settings.longEdge > 0 ? settings.longEdge : nil,
@@ -463,7 +464,7 @@ actor MobileEngine {
         } else if let photo {
             let result = try render(photo.url, edit: edit, edge: settings.longEdge, hdr: settings.hdr,
                                     histogram: false, linear: settings.hdr || settings.format == "dng")
-            guard let display = result.display else { throw MobileError.message("The renderer returned no pixels.") }
+            guard let display = result.display else { throw MobileError.message(L10n.tr("ipad.581ba110257c")) }
             let linear = LinearPixels(width: display.width, height: display.height, rgba: display.rgba, primaries: .displayP3)
             let packet = try PanoramaManifest.read(from: photo.url)?.encoded()
             if settings.format == "dng" {
@@ -479,13 +480,13 @@ actor MobileEngine {
                 let rendered = settings.hdr ? linear.displaySDR(bitDepth: preset.effectiveBitDepth, toneMap: .global) : display
                 try writeRendered(rendered, to: temporary, preset: preset, packet: packet, photo: photo, edit: edit)
             }
-        } else { throw MobileError.message("Select a photo first.") }
+        } else { throw MobileError.message(L10n.tr("ipad.c162e32895fb")) }
         try cancellation.check()
         try FileManager.default.moveItem(at: temporary, to: output)
-        progress("Importing output", 0.95)
+        progress(L10n.tr("ipad.68cf9d755003"), 0.95)
         let imported = try importPhotos([output], skipDuplicates: true, progress: { _,_ in })
-        guard imported.failed == 0 else { throw MobileError.message("Saved \(output.lastPathComponent) in Documents/Exports, but automatic library import failed. You can import the saved file again.") }
-        progress("Export complete", 1)
+        guard imported.failed == 0 else { throw MobileError.message(L10n.tr("ipad.152205333949", String(describing: (output.lastPathComponent)))) }
+        progress(L10n.tr("3e6886d17a1c"), 1)
         releaseWorkingMemory()
         return output
     }
@@ -497,7 +498,7 @@ actor MobileEngine {
             if crop.isNeeded { image = GainMapSizing.crop(image, crop) }
         }
         let source = SourceMetadata.read(from: photo?.url)
-        var item = ExportItem(id: photo?.id ?? "panorama", name: photo?.name ?? "Panorama", edit: edit, sourceURL: photo?.url)
+        var item = ExportItem(id: photo?.id ?? "panorama", name: photo?.name ?? L10n.tr("ipad.2be61912014b"), edit: edit, sourceURL: photo?.url)
         item.panoramaMetadata = packet
         var metadata = ExportMetadataContext(source: source, edit: edit, embedXMP: edit != nil)
         metadata.panoramaData = try PanoramaExportMetadata.data(for: item, source: source,

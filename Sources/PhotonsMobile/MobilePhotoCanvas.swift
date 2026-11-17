@@ -1,4 +1,5 @@
 #if os(iOS)
+import PhotonsLocalization
 import SwiftUI
 import UIKit
 import PhotonsCore
@@ -50,16 +51,16 @@ struct MobilePhotoCanvas: View {
                 .accessibilityIdentifier(accessibilityID)
             VStack(alignment: .trailing,spacing: 6) {
                 HStack(spacing: 12) {
-                    Text(isFit ? "Fit" : String(format: "%.0f%%",actualScale * 100))
+                    Text(isFit ? L10n.tr("53c9aca4b68c") : String(format: "%.0f%%",actualScale * 100))
                         .monospacedDigit().accessibilityIdentifier("zoom-state")
-                    Button("Fit") { command = .init(scale: nil) }.accessibilityIdentifier("zoom-fit")
+                    Button(L10n.tr("53c9aca4b68c")) { command = .init(scale: nil) }.accessibilityIdentifier("zoom-fit")
                     Menu {
                         ForEach([0.5,1,2],id: \.self) { value in
                             Button(String(format: "%.0f%%",value * 100)) { choose(value) }
                         }
-                        Button("Custom…") { customText = String(format: "%.0f",zoomTarget * 100); custom = true }
+                        Button(L10n.tr("ipad.c4e69d543a44")) { customText = String(format: "%.0f",zoomTarget * 100); custom = true }
                     } label: { Text(String(format: "↔ %.0f%%",zoomTarget * 100)) }
-                    .accessibilityIdentifier("zoom-options").accessibilityLabel("Double-tap magnification")
+                    .accessibilityIdentifier("zoom-options").accessibilityLabel(L10n.tr("ipad.f8308849679f"))
                 }.font(.caption).padding(10).background(.ultraThinMaterial,in: Capsule())
                 if !detailStatus.isEmpty { Text(detailStatus).font(.caption2).padding(6).background(.ultraThinMaterial,in: RoundedRectangle(cornerRadius: 6)) }
             }.padding(8)
@@ -67,14 +68,14 @@ struct MobilePhotoCanvas: View {
         .sheet(isPresented: $custom) {
             NavigationStack {
                 Form {
-                    TextField("Percent (10–800)",text: $customText)
+                    TextField(L10n.tr("ipad.6211faaf785b"),text: $customText)
                         .keyboardType(.decimalPad).accessibilityIdentifier("zoom-custom-input")
-                    Text("Double-tap switches between Fit and this magnification. 100% shows one image pixel per display pixel.").font(.caption).foregroundStyle(.secondary)
-                }.navigationTitle("Custom magnification").navigationBarTitleDisplayMode(.inline)
+                    Text(L10n.tr("ipad.3e8fb0033f67")).font(.caption).foregroundStyle(.secondary)
+                }.navigationTitle(L10n.tr("ipad.689b97e52438")).navigationBarTitleDisplayMode(.inline)
                     .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { custom = false } }
+                        ToolbarItem(placement: .cancellationAction) { Button(L10n.tr("cameraBodies.cancel")) { custom = false } }
                         ToolbarItem(placement: .confirmationAction) {
-                            Button("Apply") {
+                            Button(L10n.tr("63c73c4730f4")) {
                                 if let value = MobileZoomGeometry.validPercent(customText) { choose(value); custom = false }
                             }.disabled(MobileZoomGeometry.validPercent(customText) == nil)
                                 .accessibilityIdentifier("zoom-custom-apply")

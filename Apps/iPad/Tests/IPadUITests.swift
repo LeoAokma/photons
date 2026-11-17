@@ -2,8 +2,47 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testLanguagePreferenceAppliesOnRestartAndCanReturnToEnglish() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
+        app.buttons["settings-button"].tap(); app.buttons["interface-language"].tap(); app.buttons["简体中文"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Language changes apply after restarting Photons."].exists)
+        app.terminate(); app.launchEnvironment.removeValue(forKey: "PHOTONS_LANGUAGE"); app.launch()
+        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.staticTexts["语言更改将在重新启动 Photons 后生效。"].waitForExistence(timeout: 5))
+        app.buttons["interface-language"].tap(); app.buttons["English"].firstMatch.tap()
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.staticTexts["Language changes apply after restarting Photons."].waitForExistence(timeout: 5))
+    }
+    @MainActor
+    func testChineseInterfaceCoversBrowsingSettingsAndLensDetails() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "zh-Hans"; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60)); first.tap()
+        XCTAssertTrue(app.otherElements["RGB 直方图"].waitForExistence(timeout: 15))
+        let histogram = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); histogram.name = "Chinese grid and inspector"; histogram.lifetime = .keepAlways; add(histogram)
+        first.doubleTap(); app.buttons["zoom-options"].tap()
+        XCTAssertTrue(app.buttons["自定义…"].waitForExistence(timeout: 5)); app.buttons["自定义…"].tap()
+        XCTAssertTrue(app.navigationBars["自定义倍率"].waitForExistence(timeout: 5))
+        app.buttons["取消"].firstMatch.tap()
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.buttons["interface-language"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["语言更改将在重新启动 Photons 后生效。"].exists)
+        let settings = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); settings.name = "Chinese settings"; settings.lifetime = .keepAlways; add(settings)
+        app.buttons["镜头配置"].firstMatch.tap()
+        app.buttons["lens-profile-43A1CC00-1115-4000-8000-000000000001"].tap()
+        XCTAssertTrue(app.staticTexts["标定机身"].waitForExistence(timeout: 10))
+        let lens = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); lens.name = "Chinese lens profile"; lens.lifetime = .keepAlways; add(lens)
+    }
+    @MainActor
     func testLensProfileOpensMetadataCoverageAndCaptureDetails() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
         app.buttons["settings-button"].tap(); app.buttons["Lens profiles"].firstMatch.tap()
@@ -14,11 +53,11 @@ final class IPadUITests: XCTestCase {
         for _ in 0..<6 where !capture.isHittable { app.swipeUp() }
         XCTAssertTrue(capture.exists); capture.tap()
         XCTAssertTrue(app.staticTexts["Sensor size"].waitForExistence(timeout: 5))
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Lens profile capture details"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Lens profile capture details"; shot.lifetime = .keepAlways; add(shot)
     }
     @MainActor
     func testSettingsMeasuresAndClearsPreviewCache() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
         app.buttons["settings-button"].tap()
@@ -29,13 +68,13 @@ final class IPadUITests: XCTestCase {
         let count = app.descendants(matching: .any)["cache-file-count"].firstMatch
         XCTAssertTrue(count.waitForExistence(timeout: 10))
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"),object: count)],timeout: 10),.completed)
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Preview cache settings"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Preview cache settings"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["close-settings"].tap()
         XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 5))
     }
     @MainActor
     func testHistogramShowsClippingAndTouchReadout() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         let first = app.buttons["photo-Sample-01.tiff"]
         XCTAssertTrue(first.waitForExistence(timeout: 60)); first.tap()
@@ -43,11 +82,11 @@ final class IPadUITests: XCTestCase {
         XCTAssertTrue(plot.waitForExistence(timeout: 15)); plot.tap()
         XCTAssertTrue(app.descendants(matching: .any)["histogram-readout"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["histogram-clipping"].firstMatch.exists)
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "iPad histogram details"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "iPad histogram details"; shot.lifetime = .keepAlways; add(shot)
     }
     @MainActor
     func testFoldersFilterMoveAndPersist() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         let first = app.buttons["photo-Sample-01.tiff"]
         XCTAssertTrue(first.waitForExistence(timeout: 60))
@@ -66,7 +105,7 @@ final class IPadUITests: XCTestCase {
     }
     @MainActor
     func testDoubleTapOpensPhotoAndSwipesNavigate() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         let first = app.buttons["photo-Sample-01.tiff"]
         XCTAssertTrue(first.waitForExistence(timeout: 60)); first.doubleTap()
@@ -83,7 +122,7 @@ final class IPadUITests: XCTestCase {
     }
     @MainActor
     func testDoubleTapTogglesFitAndSelectedMagnification() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         let first = app.buttons["photo-Sample-01.tiff"]
         XCTAssertTrue(first.waitForExistence(timeout: 60)); first.doubleTap()
@@ -109,13 +148,13 @@ final class IPadUITests: XCTestCase {
         XCTAssertTrue(input.waitForNonExistence(timeout: 5))
         canvas.doubleTap()
         XCTAssertTrue(state.wait(for: \.label,toEqual: "150%",timeout: 10))
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Custom 150 percent magnification"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Custom 150 percent magnification"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["zoom-fit"].tap()
         XCTAssertTrue(state.wait(for: \.label,toEqual: "Fit",timeout: 10))
     }
     @MainActor
     func testGridInspectorToggleDeselectsPhoto() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         let first = app.buttons["photo-Sample-01.tiff"]
         XCTAssertTrue(first.waitForExistence(timeout: 60))
@@ -137,7 +176,7 @@ final class IPadUITests: XCTestCase {
     @MainActor
     func testGridInspectorSelectionAndPanoramaWorkflow() throws {
         continueAfterFailure = false
-        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         let first = app.buttons["photo-Sample-01.tiff"]
         XCTAssertTrue(first.waitForExistence(timeout: 90), app.debugDescription)
@@ -177,7 +216,7 @@ final class IPadUITests: XCTestCase {
         highlights.adjust(toNormalizedSliderPosition: 0.25)
         let ready = NSPredicate(format: "enabled == true")
         XCTAssertTrue(app.buttons["panorama-export"].wait(for: \.isEnabled,toEqual: true,timeout: 15))
-        let tone = XCTAttachment(screenshot: app.screenshot()); tone.name = "Panorama exposure and HDR brightness"; tone.lifetime = .keepAlways; add(tone)
+        let tone = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); tone.name = "Panorama exposure and HDR brightness"; tone.lifetime = .keepAlways; add(tone)
         resetBrightness.tap()
         XCTAssertFalse(resetBrightness.isEnabled)
         expectation(for: ready,evaluatedWith: app.buttons["panorama-export"])
@@ -188,7 +227,7 @@ final class IPadUITests: XCTestCase {
             orientation.tap()
             XCTAssertEqual(orientation.value as? String,"Selected")
         }
-        let angles = XCTAttachment(screenshot: app.screenshot()); angles.name = "Body orientation diagrams"; angles.lifetime = .keepAlways; add(angles)
+        let angles = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); angles.name = "Body orientation diagrams"; angles.lifetime = .keepAlways; add(angles)
         let frame = app.descendants(matching: .any)["shift-frame-0"]
         XCTAssertTrue(frame.exists, app.debugDescription)
         let value = frame.value as? String
@@ -229,20 +268,20 @@ final class IPadUITests: XCTestCase {
         crop.tap()
         XCTAssertEqual(crop.value as? String,"0")
         XCTAssertTrue(app.buttons["panorama-export"].isEnabled)
-        let workspace = XCTAttachment(screenshot: app.screenshot()); workspace.name = "Large panorama workspace"; workspace.lifetime = .keepAlways; add(workspace)
+        let workspace = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); workspace.name = "Large panorama workspace"; workspace.lifetime = .keepAlways; add(workspace)
         app.buttons["panorama-export"].tap()
         app.buttons["export-size"].tap()
         app.buttons["Full resolution"].tap()
         app.buttons["confirm-export"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Saved ")).firstMatch.waitForExistence(timeout: 90), app.debugDescription)
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "iPad panorama workspace"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "iPad panorama workspace"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.navigationBars["General"].waitForExistence(timeout: 5))
         app.buttons["Photo library"].firstMatch.tap()
         XCTAssertTrue(app.switches["Skip duplicate imports"].waitForExistence(timeout: 5))
         app.buttons["Lens profiles"].firstMatch.tap()
         XCTAssertTrue(app.buttons["Import lens profile"].waitForExistence(timeout: 5))
-        let settings = XCTAttachment(screenshot: app.screenshot()); settings.name = "Full-screen settings tabs"; settings.lifetime = .keepAlways; add(settings)
+        let settings = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); settings.name = "Full-screen settings tabs"; settings.lifetime = .keepAlways; add(settings)
         app.buttons["close-settings"].tap()
         app.buttons["grid-view"].tap()
         app.buttons["panorama-tool"].tap()

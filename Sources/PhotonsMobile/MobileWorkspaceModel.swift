@@ -1,4 +1,5 @@
 #if os(iOS)
+import PhotonsLocalization
 import SwiftUI
 import UIKit
 import PhotonsCore
@@ -14,12 +15,12 @@ final class MobileWorkspaceModel: ObservableObject {
     func chooseFolder(_ scope: MobileFolderScope) { guard !busy else { return }; clearSelection(); folderScope = scope; showGrid = true }
     func moveSelection(to folder: UUID?) {
         let ids = selected
-        run("Moving photographs") {
+        run(L10n.tr("ipad.8d3225a3f8c7")) {
             try await self.engine.movePhotos(ids,to: folder); try await self.reload(); self.clearSelection()
         }
     }
     func removeFolder(_ id: UUID) {
-        run("Removing folder") {
+        run(L10n.tr("ipad.c828063bffb6")) {
             try await self.engine.removeFolder(id)
             if self.folderScope == .folder(id) { self.folderScope = .unfiled }
             try await self.reload(); self.clearSelection()
@@ -86,7 +87,7 @@ final class MobileWorkspaceModel: ObservableObject {
         detailTask = Task {
             do {
                 try await Task.sleep(for: .milliseconds(180))
-                detailStatus = "Rendering detail…"
+                detailStatus = L10n.tr("ipad.02b3d04c1ad2")
                 let result: MobileDetailFrame
                 if let plan { result = try await engine.detail(plan,hdr: mode,request: request) }
                 else if let photo { result = try await engine.detail(photo,edit: values,hdr: mode,request: request) }
@@ -146,7 +147,7 @@ final class MobileWorkspaceModel: ObservableObject {
                     if active?.id == photo.id && showGrid && plan == nil { frame = value }
                 } catch is CancellationError { break }
                 catch { previewErrors[photo.id] = error.localizedDescription }
-                if !busy { status = "Preparing previews \(index + 1) of \(list.count)"; progress = Double(index + 1) / Double(max(1,list.count)) }
+                if !busy { status = L10n.tr("ipad.9d30fdcf7baa", String(describing: (index + 1)), String(describing: (list.count))); progress = Double(index + 1) / Double(max(1,list.count)) }
                 await Task.yield()
             }
             if !Task.isCancelled && !busy { status = ""; progress = nil }
@@ -237,7 +238,7 @@ final class MobileWorkspaceModel: ObservableObject {
     func reset() {
         guard let id = active?.id else { return }
         Task {
-            do { let original = try await engine.importedEdit(id); mutate("Restore imported settings") { $0 = original } }
+            do { let original = try await engine.importedEdit(id); mutate(L10n.tr("ipad.53fc2db3b345")) { $0 = original } }
             catch { self.error = error.localizedDescription }
         }
     }
@@ -277,29 +278,29 @@ final class MobileWorkspaceModel: ObservableObject {
         busy = true; status = title; progress = nil; cancellation = PanoramaCancellation()
         job = Task {
             do { try await work() }
-            catch is CancellationError { status = "Cancelled" }
+            catch is CancellationError { status = L10n.tr("a37778f17c5f") }
             catch { self.error = error.localizedDescription }
             busy = false; progress = nil
             status = ""; requestDetail(viewport)
         }
     }
-    func cancel() { cancellation.cancel(); job?.cancel(); status = "Cancelling…" }
+    func cancel() { cancellation.cancel(); job?.cancel(); status = L10n.tr("e8e08b0f61dd") }
     func importPhotos(_ urls: [URL]) {
         let destination: UUID?
         if case .folder(let id) = folderScope { destination = id } else { destination = nil }
-        run("Importing") {
+        run(L10n.tr("ipad.d252fffacbf0")) {
             let summary = try await self.engine.importPhotos(urls, skipDuplicates: UserDefaults.standard.object(forKey: "photons.mobile.skipDuplicates") as? Bool ?? true, folder: destination,progress: self.report)
             try await self.reload()
-            if summary.failed > 0 { self.error = "\(summary.failed) file(s) could not be imported. Imported photos have been retained." }
+            if summary.failed > 0 { self.error = L10n.tr("ipad.c4d002431eed", String(describing: (summary.failed))) }
             self.warmThumbnails()
         }
     }
     func importProfile(_ url: URL) {
-        run("Importing lens profile") { try await self.engine.importProfile(url); self.profiles = try await self.engine.profiles() }
+        run(L10n.tr("ipad.fd4d52fa1e2c")) { try await self.engine.importProfile(url); self.profiles = try await self.engine.profiles() }
     }
     func stitch(options: PanoramaOptions, positions: [Int: CGPoint], sensor: SensorSize?, registrationMode: PanoramaRegistrationMode = .shift) {
         let sources = selectedPhotos, tone = plan?.tone ?? .panoramaDefault
-        run("Aligning panorama") {
+        run(L10n.tr("ipad.29baca75d5da")) {
             let result = try await self.engine.analyze(sources, options: options, positions: positions, sensor: sensor, registrationMode: registrationMode,
                                                        tone: tone,cancellation: self.cancellation, progress: self.report)
             let frame = try await self.engine.frame(result, hdr: self.hdr)
@@ -330,7 +331,7 @@ final class MobileWorkspaceModel: ObservableObject {
     func correct(flat: URL?, profileID: UUID?, position: CGPoint?, refine: Bool,
                  body: PanoramaCameraBody, orientation: PanoramaBodyOrientation) {
         guard let photo = active else { return }
-        run("LCC correction") {
+        run(L10n.tr("ipad.40c527f3f714")) {
             let result = try await self.engine.correct(photo, flat: flat, profileID: profileID, position: position, refine: refine,
                 body: body, orientation: orientation, cancellation: self.cancellation, progress: self.report)
             self.plan = result.0; self.manifest = result.1; self.frame = try await self.engine.frame(result.0, hdr: self.hdr); self.showGrid = false
@@ -338,20 +339,20 @@ final class MobileWorkspaceModel: ObservableObject {
     }
     func correctPanorama(profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody, orientation: PanoramaBodyOrientation, cropToCoverage: Bool = false) {
         guard let plan else { return }
-        run("Correcting panorama") {
+        run(L10n.tr("ipad.9d9a557acc3c")) {
             let updated = try await self.engine.correctPanorama(plan, profileID: profileID, offset: offset, body: body,
                 orientation: orientation, cropToCoverage: cropToCoverage, cancellation: self.cancellation, progress: self.report)
             let frame = try await self.engine.frame(updated, hdr: self.hdr)
             try Task.checkCancellation()
             self.plan = updated
             self.manifest = nil
-            self.lccPositionNote = offset == nil ? "Scene-based LCC placement is an estimate. Check the source positions and, if necessary, specify a measured reference before exporting." : nil
+            self.lccPositionNote = offset == nil ? L10n.tr("ipad.ff75b3b3ea64") : nil
             self.frame = frame
         }
     }
     func setLCCCrop(_ enabled: Bool) {
         guard let plan else { return }
-        run("Updating corrected-area crop") {
+        run(L10n.tr("ipad.b2890667bbfb")) {
             let updated = try await self.engine.setLCCCrop(plan, enabled: enabled, cancellation: self.cancellation)
             let frame = try await self.engine.frame(updated, hdr: self.hdr)
             try Task.checkCancellation()
@@ -360,7 +361,7 @@ final class MobileWorkspaceModel: ObservableObject {
         }
     }
     func createProfile(name: String, frames: [LCCCreationFrame], sensor: SensorSize) {
-        run("Creating lens profile") {
+        run(L10n.tr("ipad.5f845b591681")) {
             try await self.engine.createProfile(name: name, frames: frames, sensor: sensor, cancellation: self.cancellation, progress: self.report)
             self.profiles = try await self.engine.profiles()
         }
@@ -369,7 +370,7 @@ final class MobileWorkspaceModel: ObservableObject {
         guard !busy else { return }
         let photo = active, edit = edit, plan = plan, manifest = manifest
         panoramaExporting = panoramaReturnToGrid != nil
-        run("Exporting") {
+        run(L10n.tr("ipad.eb9b51193618")) {
             defer { self.panoramaExporting = false }
             self.output = try await self.engine.export(photo: photo, edit: edit, plan: plan, manifest: manifest,
                 settings: settings, cancellation: self.cancellation, progress: self.report)
@@ -382,7 +383,7 @@ final class MobileWorkspaceModel: ObservableObject {
         Task { await engine.releaseWorkingMemory() }
     }
     func clearPreviewCache() async throws {
-        guard !busy else { throw MobileError.message("Wait for the current task to finish before clearing the cache.") }
+        guard !busy else { throw MobileError.message(L10n.tr("ipad.580e1a655542")) }
         busy = true
         defer { busy = false }
         previewTask?.cancel(); thumbnailTask?.cancel()

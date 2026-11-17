@@ -1,4 +1,5 @@
 #if os(iOS)
+import PhotonsLocalization
 import SwiftUI
 import PhotonsCore
 import PhotonsPanorama
@@ -34,14 +35,14 @@ struct MobilePanoramaFlow: View {
             else {
                 NavigationStack {
                     VStack(alignment: .leading, spacing: 24) {
-                        Text("How were these photographs captured?").font(.largeTitle.weight(.semibold))
-                        Text("Choose a stitching method before alignment starts.").foregroundStyle(.secondary)
-                        choice(.shift, title: "Shift panorama", icon: "arrow.up.and.down.and.arrow.left.and.right", detail: "Lens or back movements on a shift camera. Includes body travel, draggable sensor positions and lens-profile LCC.")
-                        choice(.perspective, title: "Perspective panorama", icon: "perspective", detail: "Overlapping views captured by rotating or tilting the camera. Aligns image features using perspective transforms.")
+                        Text(L10n.tr("ipad.5751afd037c5")).font(.largeTitle.weight(.semibold))
+                        Text(L10n.tr("ipad.261d16b51159")).foregroundStyle(.secondary)
+                        choice(.shift, title: L10n.tr("ipad.b71c15ebb55f"), icon: "arrow.up.and.down.and.arrow.left.and.right", detail: L10n.tr("ipad.02328ac07839"))
+                        choice(.perspective, title: L10n.tr("ipad.7899ba345db2"), icon: "perspective", detail: L10n.tr("ipad.407b4cb69332"))
                         Spacer()
                     }.frame(maxWidth: 760).padding(36).frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(white: 0.075)).navigationTitle("Panorama").navigationBarTitleDisplayMode(.inline)
-                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+                        .background(Color(white: 0.075)).navigationTitle(L10n.tr("ipad.2be61912014b")).navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.tr("3fd47edce45b")) { dismiss() } } }
                 }
             }
         }.preferredColorScheme(.dark).tint(.orange)
@@ -97,7 +98,7 @@ struct MobilePanoramaWorkspace: View {
                         HStack {
                             if let fraction = model.progress { ProgressView(value: fraction).frame(width: 130) } else { ProgressView() }
                             Text(model.status).font(.caption).lineLimit(1); Spacer()
-                            Button("Cancel task") { model.cancel() }
+                            Button(L10n.tr("ipad.a1d26b85bf20")) { model.cancel() }
                         }.padding(12)
                     }
                     if geometry.size.width >= 750 {
@@ -107,18 +108,18 @@ struct MobilePanoramaWorkspace: View {
                     }
                     Divider()
                     HStack {
-                        if let plan = model.plan { Text("\(Int(plan.outputSize.width)) × \(Int(plan.outputSize.height)) · \(photos.count) photographs").font(.caption) }
+                        if let plan = model.plan { Text(L10n.tr("ipad.373e02dc1d14", String(describing: (Int(plan.outputSize.width))), String(describing: (Int(plan.outputSize.height))), String(describing: (photos.count)))).font(.caption) }
                         Spacer()
-                        Button("Stitch / Export") { export = true }
+                        Button(L10n.tr("ipad.157f52f85cb4")) { export = true }
                             .buttonStyle(.borderedProminent).disabled(model.plan == nil || dirty || model.busy || model.rendering || cropNeedsUpdate)
                             .accessibilityIdentifier("panorama-export")
                     }.padding(14)
                 }.background(Color(white: 0.075))
             }
-            .navigationTitle(mode == .shift ? "Shift panorama" : "Perspective panorama").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(mode == .shift ? L10n.tr("ipad.b71c15ebb55f") : L10n.tr("ipad.7899ba345db2")).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { if model.busy { model.cancel() }; dismiss() }.accessibilityIdentifier("close-panorama")
+                    Button(L10n.tr("3fd47edce45b")) { if model.busy { model.cancel() }; dismiss() }.accessibilityIdentifier("close-panorama")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button(model.hdr ? "HDR" : "SDR") { model.toggleHDR() }.disabled(model.busy).accessibilityIdentifier("panorama-display-mode")
@@ -151,11 +152,11 @@ struct MobilePanoramaWorkspace: View {
         .sheet(isPresented: $export) {
             NavigationStack {
                 MobileExportSheet(model: model, onExport: { dismiss() })
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { export = false } } }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.tr("3fd47edce45b")) { export = false } } }
             }.preferredColorScheme(.dark)
         }
-        .alert("Panorama", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("OK") { model.error = nil }
+        .alert(L10n.tr("ipad.2be61912014b"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+            Button(L10n.tr("slices.ok")) { model.error = nil }
         } message: { Text(model.error ?? "") }
     }
     private var preview: some View {
@@ -166,27 +167,27 @@ struct MobilePanoramaWorkspace: View {
                     MobilePhotoCanvas(image: image, hdr: model.hdr, identity: "panorama-workspace",accessibilityID: "panorama-preview",fullSize: model.canvasSize,
                                       detail: model.detailFrame,detailStatus: model.detailStatus,onViewportChange: { model.requestDetail($0) })
                         .padding(20)
-                    if dirty { Text("Positions changed · update alignment to refresh this preview").font(.caption).padding(12).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding() }
+                    if dirty { Text(L10n.tr("ipad.88fd9edaed0d")).font(.caption).padding(12).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding() }
                 } else {
-                    ContentUnavailableView("Panorama preview", systemImage: "pano", description: Text(model.busy ? "Aligning the selected photographs…" : "Drag the source frames or enter measured positions, then update alignment."))
+                    ContentUnavailableView(L10n.tr("slices.preview"), systemImage: "pano", description: Text(model.busy ? L10n.tr("ipad.25afb41e1b07") : L10n.tr("ipad.0d16cdbf4439")))
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             if model.plan?.isRegistered == true {
                 Divider()
                 VStack(spacing: 6) {
                     HStack(alignment: .center,spacing: 20) {
-                        MobileSlider(title: "Exposure (EV)",value: toneBinding(\.exposureEV),range: -4...4,step: 0.05,commit: {})
+                        MobileSlider(title: L10n.tr("ipad.81aa08939843"),value: toneBinding(\.exposureEV),range: -4...4,step: 0.05,commit: {})
                             .accessibilityIdentifier("panorama-exposure")
-                        MobileSlider(title: "HDR highlight brightness (stops)",value: Binding(get: {
+                        MobileSlider(title: L10n.tr("panorama.tone.highlights"),value: Binding(get: {
                             log2(model.plan?.tone.highlightHeadroom ?? 4)
                         },set: { value in
                             var tone = model.plan?.tone ?? .panoramaDefault
                             tone.highlightHeadroom = pow(2,min(4,max(0,value.isFinite ? value : 2))); model.setPanoramaTone(tone)
                         }),range: 0...4,step: 0.1,commit: {}).accessibilityIdentifier("panorama-hdr-brightness")
-                        Button("Reset") { model.setPanoramaTone(.panoramaDefault) }
+                        Button(L10n.tr("panorama.tone.reset")) { model.setPanoramaTone(.panoramaDefault) }
                             .disabled(model.plan?.tone == .panoramaDefault).accessibilityIdentifier("reset-panorama-brightness")
                     }
-                    Text("Exposure adjusts the whole image. HDR brightness limits highlights. These settings are included in exports.")
+                    Text(L10n.tr("panorama.tone.hint"))
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(12).background(.thinMaterial).disabled(model.busy)
             }
@@ -202,16 +203,16 @@ struct MobilePanoramaWorkspace: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if mode == .shift {
-                Text("SHIFT PANORAMA").font(.headline)
-                Picker("Camera body", selection: $bodyType) { ForEach(PanoramaCameraBody.allCases) { Text($0.name).tag($0) } }
+                Text(L10n.tr("ipad.1d5e10d2cfa8")).font(.headline)
+                Picker(L10n.tr("ee38b80c37d9"), selection: $bodyType) { ForEach(PanoramaCameraBody.allCases) { Text($0.name).tag($0) } }
                 MobileBodyOrientationPicker(cameraBody: bodyType, selection: $orientation)
                 Text(bodyType.travel(at: orientation).summary).font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Text("Layout").font(.caption.weight(.semibold))
+                    Text(L10n.tr("ipad.a511909161e1")).font(.caption.weight(.semibold))
                     Spacer()
-                    Button("Revert", action: revertLayout).buttonStyle(.bordered)
+                    Button(L10n.tr("ipad.0026c5053478"), action: revertLayout).buttonStyle(.bordered)
                         .disabled(appliedLayout == nil || appliedLayout == layout)
-                        .accessibilityHint("Restore the last successfully aligned layout without running alignment again")
+                        .accessibilityHint(L10n.tr("ipad.c6c279a60a1f"))
                         .accessibilityIdentifier("revert-panorama-layout")
                 }
                 if validSensor {
@@ -219,7 +220,7 @@ struct MobilePanoramaWorkspace: View {
                         positions: $positions, selected: $selectedFrame, changed: { guided = true })
                         .frame(height: 310)
                 }
-                Text("Dashed outline: total sensor travel. Cross: body zero. Drag a frame to set an approximate position; update alignment to verify the overlap.")
+                Text(L10n.tr("ipad.e8b944b7ea4c"))
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(photos.enumerated()), id: \.offset) { i,photo in
                     Button { selectedFrame = i } label: {
@@ -228,59 +229,59 @@ struct MobilePanoramaWorkspace: View {
                             VStack(alignment: .leading) {
                                 Text(photo.name).font(.caption.weight(.semibold))
                                 let point = positions[i] ?? .zero
-                                Text(String(format: "X %+.1f · Y %+.1f mm", point.x, point.y)).font(.caption.monospacedDigit())
+                                Text(String(format: L10n.tr("ipad.9126f1282784"), point.x, point.y)).font(.caption.monospacedDigit())
                             }
                             Spacer(); if selectedFrame == i { Image(systemName: "checkmark.circle.fill") }
                         }.padding(8).background(selectedFrame == i ? Color.orange.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8))
                     }.buttonStyle(.plain).accessibilityIdentifier("select-frame-\(i)")
                 }
                 if photos.indices.contains(selectedFrame) {
-                    Text("Selected frame position").font(.caption.weight(.semibold))
+                    Text(L10n.tr("ipad.03ccf7f28574")).font(.caption.weight(.semibold))
                     MobilePositionFields(position: Binding(get: { positions[selectedFrame] ?? .zero }, set: { positions[selectedFrame] = $0; guided = true }))
                 }
-                Toggle("Use position guidance", isOn: $guided).accessibilityIdentifier("position-guidance")
-                Text(guided ? "Positions guide matching near your measurements; image features still determine the final alignment." : "Automatic alignment shows relative positions; the absolute optical center has not been confirmed.").font(.caption).foregroundStyle(.secondary)
+                Toggle(L10n.tr("ipad.1451cd3ff100"), isOn: $guided).accessibilityIdentifier("position-guidance")
+                Text(guided ? L10n.tr("ipad.1e6c54d4cfc9") : L10n.tr("ipad.eb13eb208f76")).font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Text("PERSPECTIVE PANORAMA").font(.headline)
+                    Text(L10n.tr("ipad.8fc486edfaf6")).font(.headline)
                     if let plan = model.plan { MobilePositionDiagram(plan: plan).frame(height: 280) }
-                    Text("Image features determine the perspective alignment. This preview uses a planar projection; very wide or 360° panoramas are not yet supported.").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.tr("ipad.6bd1217be525")).font(.caption).foregroundStyle(.secondary)
                 }
-                DisclosureGroup("Alignment options") {
+                DisclosureGroup(L10n.tr("ipad.a38fa6d1cdc0")) {
                     if mode == .shift {
-                    Toggle("Override sensor dimensions", isOn: $manualSensor).onChange(of: manualSensor) { _,enabled in
+                    Toggle(L10n.tr("ipad.c44d573e0600"), isOn: $manualSensor).onChange(of: manualSensor) { _,enabled in
                         if !enabled, let known = sources.first?.sensor { sensorWidth = known.width; sensorHeight = known.height }
                     }
                     if manualSensor {
-                        LabeledContent("Width (mm)") { TextField("Width", value: $sensorWidth, format: .number) }
-                        LabeledContent("Height (mm)") { TextField("Height", value: $sensorHeight, format: .number) }
-                    } else { Text(String(format: "%.2f × %.2f mm", sensorWidth, sensorHeight)).font(.caption) }
+                        LabeledContent(L10n.tr("ipad.66194cc31a4f")) { TextField(L10n.tr("ipad.3019947b6daf"), value: $sensorWidth, format: .number) }
+                        LabeledContent(L10n.tr("ipad.c52c57e0197a")) { TextField(L10n.tr("ipad.bfe2eca40179"), value: $sensorHeight, format: .number) }
+                    } else { Text(String(format: L10n.tr("ipad.6f62f1f9443a"), sensorWidth, sensorHeight)).font(.caption) }
                     }
-                    Toggle("Match exposure", isOn: $options.matchExposure)
-                    Toggle("Avoid moving subjects", isOn: $options.avoidMotion)
-                    Slider(value: $options.seamSoftness, in: 0...20) { Text("Seam softness") }
+                    Toggle(L10n.tr("ipad.884e937d3d20"), isOn: $options.matchExposure)
+                    Toggle(L10n.tr("ipad.a55dd8a88660"), isOn: $options.avoidMotion)
+                    Slider(value: $options.seamSoftness, in: 0...20) { Text(L10n.tr("ipad.11b8fec683fe")) }
                 }
-                Button("Update alignment", action: align).buttonStyle(.borderedProminent)
+                Button(L10n.tr("ipad.602ad77cd80f"), action: align).buttonStyle(.borderedProminent)
                     .disabled(model.busy || !validSensor || sources.count < 2).accessibilityIdentifier("align-panorama")
                 Divider()
                 if mode == .shift {
-                Text("LCC CORRECTION").font(.caption.weight(.semibold))
-                Picker("Lens profile", selection: $profileID) {
-                    Text("Choose a profile").tag(UUID?.none)
+                Text(L10n.tr("ipad.6f427ab8e70e")).font(.caption.weight(.semibold))
+                Picker(L10n.tr("5c30b533510f"), selection: $profileID) {
+                    Text(L10n.tr("ipad.416c3478ef2c")).tag(UUID?.none)
                     ForEach(model.profiles) { Text($0.name).tag(Optional($0.id)) }
                 }
-                Toggle("Crop to corrected area", isOn: $cropToLCC).toggleStyle(MobileCheckboxStyle())
+                Toggle(L10n.tr("ipad.2c1f86e2653a"), isOn: $cropToLCC).toggleStyle(MobileCheckboxStyle())
                     .accessibilityIdentifier("panorama-crop-lcc")
                     .disabled(model.plan?.lccState.map { $0.suggestedCropRect == nil && !cropToLCC } ?? false)
                     .onChange(of: cropToLCC) { _,enabled in
                         if model.plan?.lccState != nil && !dirty { model.setLCCCrop(enabled) }
                     }
-                Text("Keeps the largest rectangle fully covered by the lens calibration.").font(.caption).foregroundStyle(.secondary)
-                Button("Apply lens profile") {
+                Text(L10n.tr("ipad.70ddfa521391")).font(.caption).foregroundStyle(.secondary)
+                Button(L10n.tr("ipad.08b90bbe8907")) {
                     guard let profileID, let plan = model.plan else { return }
                     let offset = guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: positions[selectedFrame] ?? .zero).profileOffset(in: plan, sensor: sensor) : nil
                     model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation, cropToCoverage: cropToLCC)
                 }.disabled(model.busy || dirty || model.plan == nil || profileID == nil).accessibilityIdentifier("panorama-lcc")
-                if let lcc = model.plan?.lccState { Label(lcc.profileName, systemImage: "checkmark.seal"); Text(String(format: "Coverage %.1f%%", lcc.coveredFraction * 100)).font(.caption) }
+                if let lcc = model.plan?.lccState { Label(lcc.profileName, systemImage: "checkmark.seal"); Text(String(format: L10n.tr("ipad.0858f5e8bf0a"), lcc.coveredFraction * 100)).font(.caption) }
                 if let note = model.lccPositionNote { Text(note).font(.caption).foregroundStyle(.orange) }
                 } else { Text(PanoramaRegistrationMode.perspectiveLCCNotice).font(.caption).foregroundStyle(.secondary) }
                 if let histogram = model.frame?.histogram { MobileHistogram(histogram: histogram).frame(height: 100) }
@@ -395,7 +396,7 @@ private struct MobileDraggableFrame: View {
             .position(x: zero.x + center.x * scale, y: zero.y - center.y * scale)
             .accessibilityElement(children: .ignore).accessibilityLabel(name)
             .accessibilityAddTraits(.isButton).accessibilityAction { selected = index }
-            .accessibilityValue(String(format: "X %.1f, Y %.1f millimeters", center.x, center.y))
+            .accessibilityValue(String(format: L10n.tr("ipad.95fedff80e4b"), center.x, center.y))
             .accessibilityIdentifier("shift-frame-\(index)")
     }
 }

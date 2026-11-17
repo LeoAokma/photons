@@ -1,4 +1,5 @@
 #if os(iOS)
+import PhotonsLocalization
 import SwiftUI
 import UIKit
 import PhotonsCore
@@ -81,27 +82,27 @@ struct MobileHistogram: View {
                 if hdr { HStack { Spacer(); Text("+1"); Spacer(); Text("+2"); Spacer(); Text("+3"); Spacer(); Text("+4") } }
             }.font(.system(size: 9).monospacedDigit()).foregroundStyle(.secondary)
             HStack(alignment: .top) {
-                metric("Above white",measured.luma.clippedHigh)
-                Spacer(minLength: 3); metric("Clipped high",measured.luma.clippedCeiling)
-                Spacer(minLength: 3); metric("Clipped low",measured.luma.clippedLow)
+                metric(L10n.tr("ipad.f513cadb12e6"),measured.luma.clippedHigh)
+                Spacer(minLength: 3); metric(L10n.tr("ipad.3494bc107f0b"),measured.luma.clippedCeiling)
+                Spacer(minLength: 3); metric(L10n.tr("ipad.c7fb958ca041"),measured.luma.clippedLow)
             }.accessibilityIdentifier("histogram-clipping")
             if let pointer {
                 let reading = MobileHistogramReading.bin(at: pointer,hdr: hdr)
                 HStack(spacing: 6) {
-                    Text(reading.tail ? String(format: "+%.2f EV",Double(reading.index)/64) : "Code \(reading.index)")
+                    Text(reading.tail ? String(format: L10n.tr("ipad.194dbe6365ff"),Double(reading.index)/64) : L10n.tr("ipad.e58137125ffd", String(describing: (reading.index))))
                     ForEach(Array([histogram.red,histogram.green,histogram.blue].enumerated()),id: \.offset) { i,channel in
                         let bins = reading.tail ? channel.hdrBins : channel.bins
                         Text("\(["R","G","B"][i]) \(bins.indices.contains(reading.index) ? bins[reading.index] : 0)")
                             .foregroundStyle([Color.red,.green,.blue][i])
                     }
                 }.font(.system(size: 10).monospacedDigit()).accessibilityIdentifier("histogram-readout")
-            } else { Text("Touch histogram to inspect bins").font(.caption2).foregroundStyle(.secondary) }
+            } else { Text(L10n.tr("ipad.c3f0710b2a57")).font(.caption2).foregroundStyle(.secondary) }
             HStack {
-                Text("Sample \(histogram.sampleCount) px")
+                Text(L10n.tr("ipad.ad4d56d9f46a", String(describing: (histogram.sampleCount))))
                 Spacer()
-                Text(String(format: "Display +%.1f EV",log2(max(1,hdr ? headroom : 1))))
+                Text(String(format: L10n.tr("ipad.2d872cd6dc23"),log2(max(1,hdr ? headroom : 1))))
             }.font(.system(size: 9).monospacedDigit()).foregroundStyle(.secondary)
-        }.accessibilityElement(children: .contain).accessibilityLabel("RGB histogram")
+        }.accessibilityElement(children: .contain).accessibilityLabel(L10n.tr("ipad.6b98e8e09447"))
             .onAppear { updateHeadroom() }
             .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification)) { _ in updateHeadroom() }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in updateHeadroom() }

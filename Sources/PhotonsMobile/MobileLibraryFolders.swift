@@ -1,4 +1,5 @@
 #if os(iOS)
+import PhotonsLocalization
 import Foundation
 import SwiftUI
 
@@ -23,10 +24,10 @@ struct MobileFolderIndex: Codable, Equatable, Sendable {
     func validatedName(_ raw: String, excluding: UUID? = nil) throws -> String {
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name.count <= 100, !name.contains("/"), !name.contains("\n") else {
-            throw MobileError.message("Use a folder name of 1–100 characters without slashes or newlines.")
+            throw MobileError.message(L10n.tr("ipad.5b6e118424f4"))
         }
         guard !folders.contains(where: { $0.id != excluding && $0.name.compare(name,options: [.caseInsensitive,.diacriticInsensitive]) == .orderedSame }) else {
-            throw MobileError.message("A folder with this name already exists.")
+            throw MobileError.message(L10n.tr("ipad.a4a2bf24cfaa"))
         }
         return name
     }
@@ -38,7 +39,7 @@ extension MobileEngine {
         let result = try JSONDecoder().decode(MobileFolderIndex.self,from: Data(contentsOf: url))
         guard result.version == 1, Set(result.folders.map(\.id)).count == result.folders.count,
               Set(result.assignments.values).isSubset(of: Set(result.folders.map(\.id))) else {
-            throw MobileError.message("The library folder index could not be read. Your originals are unchanged.")
+            throw MobileError.message(L10n.tr("ipad.146824e1ae93"))
         }
         return result
     }
@@ -54,7 +55,7 @@ extension MobileEngine {
     }
     func renameFolder(_ id: UUID,to name: String) throws {
         var index = try folderIndex()
-        guard let position = index.folders.firstIndex(where: { $0.id == id }) else { throw MobileError.message("Folder not found.") }
+        guard let position = index.folders.firstIndex(where: { $0.id == id }) else { throw MobileError.message(L10n.tr("ipad.ccbf07f84d31")) }
         index.folders[position].name = try index.validatedName(name,excluding: id); try saveFolders(index)
     }
     func removeFolder(_ id: UUID) throws {
@@ -64,9 +65,9 @@ extension MobileEngine {
     }
     func movePhotos(_ ids: Set<String>,to folder: UUID?) throws {
         var index = try folderIndex()
-        guard folder == nil || index.folders.contains(where: { $0.id == folder }) else { throw MobileError.message("Folder not found.") }
+        guard folder == nil || index.folders.contains(where: { $0.id == folder }) else { throw MobileError.message(L10n.tr("ipad.ccbf07f84d31")) }
         let known = Set(try photos().map(\.id))
-        guard ids.isSubset(of: known) else { throw MobileError.message("A selected photograph is no longer in this library.") }
+        guard ids.isSubset(of: known) else { throw MobileError.message(L10n.tr("ipad.aaa15f657632")) }
         for id in ids { index.assignments[id] = folder }
         try saveFolders(index)
     }
@@ -78,25 +79,25 @@ struct MobileFolderList: View {
     @State private var removing: MobileLibraryFolder?
     var body: some View {
         VStack(alignment: .leading,spacing: 12) {
-            folderButton("All photographs",icon: "square.grid.2x2",scope: .all)
-            folderButton("Unfiled",icon: "tray",scope: .unfiled)
+            folderButton(L10n.tr("ipad.ca22cb69bbf7"),icon: "square.grid.2x2",scope: .all)
+            folderButton(L10n.tr("ipad.d64dc9ae400c"),icon: "tray",scope: .unfiled)
             ForEach(model.folders.folders) { folder in
                 folderButton(folder.name,icon: "folder",scope: .folder(folder.id))
                     .contextMenu {
-                        Button("Rename folder") { editor = .init(folder: folder) }
-                        Button("Remove folder",role: .destructive) { removing = folder }
+                        Button(L10n.tr("ipad.7249f19c9e4f")) { editor = .init(folder: folder) }
+                        Button(L10n.tr("ipad.f2a987fb119b"),role: .destructive) { removing = folder }
                     }
             }
-            Button("New folder",systemImage: "folder.badge.plus") { editor = .init() }
+            Button(L10n.tr("ipad.cf28f49ec597"),systemImage: "folder.badge.plus") { editor = .init() }
                 .accessibilityIdentifier("new-library-folder")
         }.disabled(model.busy)
         .sheet(item: $editor) { value in
             MobileFolderEditorView(model: model,folder: value.folder)
         }
-        .alert("Remove folder?",isPresented: Binding(get: { removing != nil },set: { if !$0 { removing = nil } })) {
-            Button("Remove folder",role: .destructive) { if let removing { model.removeFolder(removing.id) }; removing = nil }
-            Button("Cancel",role: .cancel) { removing = nil }
-        } message: { Text("The photographs will return to Unfiled. Originals and edits will be kept.") }
+        .alert(L10n.tr("ipad.2c5db903d029"),isPresented: Binding(get: { removing != nil },set: { if !$0 { removing = nil } })) {
+            Button(L10n.tr("ipad.f2a987fb119b"),role: .destructive) { if let removing { model.removeFolder(removing.id) }; removing = nil }
+            Button(L10n.tr("cameraBodies.cancel"),role: .cancel) { removing = nil }
+        } message: { Text(L10n.tr("ipad.fd373fefc8c9")) }
     }
     private func folderButton(_ title: String,icon: String,scope: MobileFolderScope) -> some View {
         Button { model.chooseFolder(scope) } label: {
@@ -106,7 +107,7 @@ struct MobileFolderList: View {
                 Text("\(model.photos.filter { model.folders.contains($0.id,in: scope) }.count)").font(.caption.monospacedDigit())
             }
         }.foregroundStyle(model.folderScope == scope ? Color.orange : Color.primary)
-            .accessibilityLabel(title).accessibilityValue(model.folderScope == scope ? "Selected" : "Not selected")
+            .accessibilityLabel(title).accessibilityValue(model.folderScope == scope ? L10n.tr("3f4ebc4aad97") : L10n.tr("0e0c21de6988"))
     }
 }
 private struct MobileFolderEditor: Identifiable { let id = UUID(); var folder: MobileLibraryFolder? = nil }
@@ -119,15 +120,15 @@ private struct MobileFolderEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Folder name",text: $name).accessibilityIdentifier("library-folder-name")
+                TextField(L10n.tr("ipad.14d34edf50ef"),text: $name).accessibilityIdentifier("library-folder-name")
                 if let error { Text(error).foregroundStyle(.red) }
-                Text("Folders organize photographs inside the single iPad library. Originals are stored once.").font(.caption)
-            }.navigationTitle(folder == nil ? "New folder" : "Rename folder")
+                Text(L10n.tr("ipad.e5005439291a")).font(.caption)
+            }.navigationTitle(folder == nil ? L10n.tr("ipad.cf28f49ec597") : L10n.tr("ipad.7249f19c9e4f"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) { Button(L10n.tr("cameraBodies.cancel")) { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
+                        Button(L10n.tr("cameraBodies.save")) {
                             Task {
                                 do {
                                     if let folder { try await model.engine.renameFolder(folder.id,to: name) }

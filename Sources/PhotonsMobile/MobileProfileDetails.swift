@@ -11,34 +11,34 @@ struct MobileProfileDetails: View {
     var body: some View {
         Form {
             if let profile {
-                Section("Profile information") {
-                    LabeledContent("Name",value: profile.name)
-                    LabeledContent("Camera",value: profile.camera)
-                    if let aperture = profile.aperture { LabeledContent("Aperture",value: String(format: "f/%g",aperture)) }
-                    LabeledContent("Calibration body",value: LCCProfileSummary(profile).calibrationBody?.name ?? "Not recorded")
-                    LabeledContent("Created") { Text(profile.createdAt,style: .date) }
-                    LabeledContent("Profile version",value: "\(profile.schemaVersion)")
-                    LabeledContent("Calibration frames",value: "\(profile.captures.count)")
+                Section(L10n.tr("ipad.8cd6944d65f3")) {
+                    LabeledContent(L10n.tr("d44e9b3d3b31"),value: profile.name)
+                    LabeledContent(L10n.tr("dacf07026026"),value: profile.camera)
+                    if let aperture = profile.aperture { LabeledContent(L10n.tr("e3df0be2e19a"),value: String(format: "f/%g",aperture)) }
+                    LabeledContent(L10n.tr("ipad.6a1540145498"),value: LCCProfileSummary(profile).calibrationBody?.name ?? L10n.tr("ipad.b37c7879f6c3"))
+                    LabeledContent(L10n.tr("ipad.d70b9e24bca2")) { Text(profile.createdAt,style: .date) }
+                    LabeledContent(L10n.tr("ipad.fbdd0904cfa1"),value: "\(profile.schemaVersion)")
+                    LabeledContent(L10n.tr("ipad.2c7635a09933"),value: "\(profile.captures.count)")
                     Text(L10n.tr("lcc.profile.compatibility")).font(.caption).foregroundStyle(.secondary)
-                    ShareLink(item: LCCProfileStore().url(for: id)) { Label("Share profile",systemImage: "square.and.arrow.up") }
+                    ShareLink(item: LCCProfileStore().url(for: id)) { Label(L10n.tr("ipad.0590386ef566"),systemImage: "square.and.arrow.up") }
                 }
-                if !profile.notes.isEmpty { Section("Notes") { Text(profile.notes).textSelection(.enabled) } }
+                if !profile.notes.isEmpty { Section(L10n.tr("ipad.8a7525b1492f")) { Text(profile.notes).textSelection(.enabled) } }
                 ForEach(profile.orientations) { orientation in
                     let captures = profile.captures(for: orientation)
                     Section {
                         MobileProfileCoverage(captures: captures).frame(height: 190)
                             .accessibilityIdentifier("profile-coverage-\(orientation.rawValue)")
-                        Text(String(format: "Shift X %+.1f…%+.1f mm · Y %+.1f…%+.1f mm",
+                        Text(String(format: L10n.tr("ipad.a391b22a7b4c"),
                             captures.map(\.shiftX).min() ?? 0,captures.map(\.shiftX).max() ?? 0,
                             captures.map(\.shiftY).min() ?? 0,captures.map(\.shiftY).max() ?? 0)).font(.caption.monospacedDigit())
-                        Text("Rectangles show measured sensor coverage; dots mark capture centers. X points right and Y points up.").font(.caption).foregroundStyle(.secondary)
+                        Text(L10n.tr("ipad.059ff47cbfc0")).font(.caption).foregroundStyle(.secondary)
                         ForEach(captures) { capture in
                             DisclosureGroup {
                                 captureDetails(capture)
                             } label: { Text(capture.filename).lineLimit(2) }
                             .accessibilityIdentifier("profile-capture-\(capture.id.uuidString)")
                         }
-                    } header: { Text("\(orientation.title) · \(captures.count) frames") }
+                    } header: { Text(L10n.tr("ipad.5725b0ce1bfc", String(describing: (orientation.title)), String(describing: (captures.count)))) }
                 }
                 Section {
                     Text(L10n.tr("462dcac8baeb"))
@@ -46,10 +46,10 @@ struct MobileProfileDetails: View {
                 }.font(.caption).foregroundStyle(.secondary)
             } else if let error {
                 Text(error).foregroundStyle(.red)
-                Button("Retry") { Task { await load() } }
-            } else { ProgressView("Loading profile…") }
+                Button(L10n.tr("ipad.942087cc2d41")) { Task { await load() } }
+            } else { ProgressView(L10n.tr("ipad.f5d7beb0a27c")) }
         }
-        .navigationTitle(profile?.name ?? "Lens profile details")
+        .navigationTitle(profile?.name ?? L10n.tr("ipad.5e1b2d89ee2a"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: id) { await load() }
     }
@@ -58,15 +58,15 @@ struct MobileProfileDetails: View {
         catch { self.error = error.localizedDescription }
     }
     @ViewBuilder private func captureDetails(_ capture: LCCProfileCapture) -> some View {
-        LabeledContent("Shift position",value: String(format: "X %+.1f · Y %+.1f mm",capture.shiftX,capture.shiftY))
-        LabeledContent("Sensor size",value: String(format: "%.2f × %.2f mm",capture.sensorWidth,capture.sensorHeight))
-        LabeledContent("Pixel dimensions",value: "\(capture.pixelWidth) × \(capture.pixelHeight)")
+        LabeledContent(L10n.tr("ipad.111dab75a809"),value: String(format: L10n.tr("ipad.9126f1282784"),capture.shiftX,capture.shiftY))
+        LabeledContent(L10n.tr("ipad.29ee9c7ef27d"),value: String(format: L10n.tr("ipad.6f62f1f9443a"),capture.sensorWidth,capture.sensorHeight))
+        LabeledContent(L10n.tr("ipad.2cb7d0483082"),value: "\(capture.pixelWidth) × \(capture.pixelHeight)")
         if let iso = capture.iso { LabeledContent("ISO",value: String(format: "%g",iso)) }
-        if let seconds = capture.exposureSeconds { LabeledContent("Exposure time",value: String(format: "%.6g s",seconds)) }
-        if let date = capture.capturedAt { LabeledContent("Captured",value: date) }
-        if let body = capture.bodyOrientation { LabeledContent("Body orientation",value: "\(body.rawValue)°") }
-        gridDetails(capture.grid,title: "Measurement grid")
-        if let grid = capture.renderGrid { gridDetails(grid,title: "Render grid") }
+        if let seconds = capture.exposureSeconds { LabeledContent(L10n.tr("ipad.239bb77f5ec3"),value: String(format: L10n.tr("ipad.b42125d9d18b"),seconds)) }
+        if let date = capture.capturedAt { LabeledContent(L10n.tr("ipad.8a03fa9ad749"),value: date) }
+        if let body = capture.bodyOrientation { LabeledContent(L10n.tr("ipad.88930b71fe3b"),value: "\(body.rawValue)°") }
+        gridDetails(capture.grid,title: L10n.tr("ipad.0949587a78e9"))
+        if let grid = capture.renderGrid { gridDetails(grid,title: L10n.tr("ipad.f9b87f1487ec")) }
     }
     @ViewBuilder private func gridDetails(_ grid: LCCMeasurementGrid,title: String) -> some View {
         LabeledContent(title,value: "\(grid.width) × \(grid.height) · \(grid.channels.joined(separator: "/"))")
@@ -92,7 +92,7 @@ struct MobileProfileCoverage: View {
                 context.fill(Path(ellipseIn: CGRect(x: rect.midX-2,y: rect.midY-2,width: 4,height: 4)),with: .color(.primary.opacity(0.7)))
             }
         }.background(.quaternary,in: RoundedRectangle(cornerRadius: 8))
-            .accessibilityLabel("Lens calibration coverage")
+            .accessibilityLabel(L10n.tr("ipad.084018dd2281"))
     }
 }
 #endif
