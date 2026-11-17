@@ -51,6 +51,9 @@ public struct MobileWorkspaceView: View {
         .preferredColorScheme(.dark).tint(.orange)
         .task { await model.start() }
         .onChange(of: model.showGrid) { _,grid in if !grid && model.plan != nil { inspectorVisible = true } }
+        .onChange(of: inspectorSheet) { _,visible in
+            if !visible && model.showGrid && !selectMode { model.clearSelection() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in model.memoryWarning() }
         .fileImporter(isPresented: $importer, allowedContentTypes: [.image, .rawImage, .folder], allowsMultipleSelection: true) { result in
             do { model.importPhotos(try result.get()) } catch { model.error = error.localizedDescription }
@@ -112,7 +115,12 @@ public struct MobileWorkspaceView: View {
                 Button("Preview capabilities", systemImage: "checklist") { tool = .capabilities }
             } label: { Image(systemName: "slider.horizontal.3") }
                 .disabled(model.busy).accessibilityLabel("Tools").accessibilityIdentifier("tools-menu")
-            Button { if wideLayout { inspectorVisible.toggle() } else { inspectorSheet = true } } label: { Image(systemName: "sidebar.right") }
+            Button {
+                if wideLayout {
+                    inspectorVisible.toggle()
+                    if !inspectorVisible && model.showGrid && !selectMode { model.clearSelection() }
+                } else { inspectorSheet = true }
+            } label: { Image(systemName: "sidebar.right") }
                 .accessibilityLabel("Toggle photo information").accessibilityIdentifier("toggle-inspector")
             Button { tool = .export } label: { Image(systemName: "square.and.arrow.up") }
                 .disabled(!model.canExport || model.busy).accessibilityLabel("Export").accessibilityIdentifier("export-photo")
@@ -125,9 +133,12 @@ public struct MobileWorkspaceView: View {
             model.toggleSelection(photo)
         } else {
             let same = model.active?.id == photo.id
+            if same && wideLayout && inspectorVisible {
+                inspectorVisible = false; model.clearSelection(); return
+            }
             model.selected = [photo.id]
             model.select(photo)
-            if wideLayout { inspectorVisible = same ? !inspectorVisible : true }
+            if wideLayout { inspectorVisible = true }
             else { inspectorSheet = true }
         }
     }
@@ -231,6 +242,7 @@ public struct MobileWorkspaceView: View {
                             .accessibilityAddTraits(.isButton)
                             .accessibilityAction { tapPhoto(photo) }
                             .accessibilityIdentifier("photo-\(photo.name)")
+                            .accessibilityValue(model.selected.contains(photo.id) ? "Selected" : "Not selected")
 
                         }
                     }.padding(14)

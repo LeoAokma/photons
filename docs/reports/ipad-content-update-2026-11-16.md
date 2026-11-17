@@ -22,3 +22,11 @@
 - 验证：iPad Pro 13-inch (M5) 模拟器 `testClosingPanoramaDiscardsTransientPreviewAndRestoresView` 通过，1 项 / 0 失败；日志 `local/build-logs/ipad-content-update/01-close.log`。
 - 限制：物理设备 HDR/内存待 beta 验证；回退需同时回退视图与模型生命周期入口。
 - Commit：以 `IPAD-01` 查询提交标题；无移植代码。
+
+## IPAD-02
+
+- 原问题：再次单击当前照片会关闭侧栏，但勾选与橙色高亮残留。
+- 变更：单击当前照片、关闭网格侧栏或收起窄屏信息面板时清空单选；取消过期选中/渲染任务，避免错误照片回填。多选模式不受侧栏开关影响。缩略图增加明确的无障碍选中状态。
+- 文件：MobileWorkspaceModel.swift、MobileWorkspaceView.swift、IPadUITests.swift。
+- 验证：`testGridInspectorToggleDeselectsPhoto` 模拟器 UI 测试通过，1 项 / 0 失败，覆盖两次单击、重新选中及侧栏按钮关闭；日志 `02-selection.log`。
+- 依赖：基线；提交标题含 `IPAD-02`，无移植。限制：窄屏分支已编译，完整横竖屏手动检查留待最终验收；回退模型方法与调用方一起回退。

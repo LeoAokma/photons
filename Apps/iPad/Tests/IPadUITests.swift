@@ -2,6 +2,23 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testGridInspectorToggleDeselectsPhoto() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60))
+        first.tap()
+        XCTAssertEqual(first.value as? String,"Selected")
+        XCTAssertTrue(app.otherElements["RGB histogram"].waitForExistence(timeout: 20))
+        first.tap()
+        XCTAssertEqual(first.value as? String,"Not selected")
+        XCTAssertFalse(app.otherElements["RGB histogram"].exists)
+        first.tap()
+        XCTAssertEqual(first.value as? String,"Selected")
+        app.buttons["toggle-inspector"].tap()
+        XCTAssertEqual(first.value as? String,"Not selected")
+    }
+    @MainActor
     func testGridInspectorSelectionAndPanoramaWorkflow() throws {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()

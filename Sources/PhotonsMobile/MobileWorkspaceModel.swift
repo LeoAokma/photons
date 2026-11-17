@@ -117,6 +117,12 @@ final class MobileWorkspaceModel: ObservableObject {
         if selected.contains(photo.id) { selected.remove(photo.id) } else { selected.insert(photo.id) }
         select(photo)
     }
+    func clearSelection() {
+        previewTask?.cancel(); selectionTask?.cancel()
+        generation += 1; selectionRevision += 1
+        selected.removeAll(); active = nil; frame = nil; plan = nil; manifest = nil
+        selectionLoading = false; rendering = false
+    }
     func render() {
         guard !selectionLoading, let photo = active, plan == nil else { return }
         previewTask?.cancel(); generation += 1
