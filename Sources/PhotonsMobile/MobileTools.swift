@@ -105,11 +105,15 @@ struct MobileProfilesSheet: View {
         Form {
             Section("Installed profiles") {
                 ForEach(model.profiles) { profile in
-                    VStack(alignment: .leading) {
-                        Text(profile.name)
-                        Text(profile.camera).font(.caption).foregroundStyle(.secondary)
-                        ShareLink(item: LCCProfileStore().url(for: profile.id)) { Text("Share profile") }.font(.caption)
-                    }
+                    NavigationLink {
+                        MobileProfileDetails(engine: model.engine,id: profile.id)
+                    } label: {
+                        VStack(alignment: .leading,spacing: 4) {
+                            Text(profile.name)
+                            Text(profile.camera).font(.caption).foregroundStyle(.secondary)
+                            Text("\(profile.captureCount) calibration frames · \(profile.variants.count) orientations").font(.caption)
+                        }
+                    }.accessibilityIdentifier("lens-profile-\(profile.id.uuidString)")
                 }
                 Button("Import lens profile") { importer = true }
             }

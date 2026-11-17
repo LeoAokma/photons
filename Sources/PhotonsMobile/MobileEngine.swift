@@ -332,6 +332,7 @@ actor MobileEngine {
     func profiles() throws -> [LCCProfileSummary] {
         let store = LCCProfileStore(); try store.installBundledProfile(); return store.catalog().profiles
     }
+    func profile(_ id: UUID) throws -> LCCLensProfile { try LCCProfileStore().load(id) }
     func importProfile(_ url: URL) throws {
         let lease = FileAccess(url); defer { withExtendedLifetime(lease) {} }
         let profile = try LCCProfileCodec.decode(Data(contentsOf: url))

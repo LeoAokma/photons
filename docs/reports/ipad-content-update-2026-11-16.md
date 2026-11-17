@@ -83,3 +83,10 @@
 - 文件：MobileCacheSettings.swift、MobileTools.swift、MobileEngine.swift、MobileWorkspaceModel.swift、engine/UI tests。依赖 IPAD-07 (`461f7d5`)；无移植代码。
 - 验证：`testClearCacheKeepsLibraryOriginalsEditsFoldersAndProfiles`、`testSettingsMeasuresAndClearsPreviewCache` 最终通过（2 项 / 0 失败），覆盖清理后磁盘/内存归零、照片字节/编辑/归类/配置/导出保留、再次请求重建，以及 UI 确认/计数/返回网格。早期 UI 断言受系统重复按钮节点与组合内容可访问性影响，修正定位并提供明确文件数无障碍值后通过。最终日志 `08-cache-settings-final.log`。
 - 限制：内存行统计引擎预览缓存，并非整个应用占用；确认说明原片和编辑不被删除。回退时同步回退 UI/模型/引擎入口，磁盘缓存可由 IPAD-07 继续使用。提交标题含 IPAD-08。
+
+## IPAD-11
+
+- 变更：Lens profiles 列表可进入完整详情，显示相机、光圈、标定机身、创建日期、格式版本、标定帧数、备注、共享配置。按方向展示 Mac 同规则的测量覆盖矩形/中心点和 X/Y 移轴范围；展开帧可查看文件名、位置、传感器/像素尺寸、ISO、曝光时间、拍摄日期、机身方向、测量与渲染网格尺寸/通道/空间。
+- 文件：MobileProfileDetails.swift、MobileTools.swift、MobileEngine.swift、engine/UI tests。来源：参考当前 Mac LCCProfileLibraryView 覆盖图与说明，复用共享 LCCProfileStore/Codec/校验；不修改配置原始数据。
+- 验证：`testLensProfileDetailsPreserveCaptureMetadataAndCoverage`、`testLensProfileOpensMetadataCoverageAndCaptureDetails` 均通过（2 项 / 0 失败），内置配置的元数据/覆盖区域校验、设置进入详情和展开帧。日志 `11-lens-details.log`，UI 保留详情截图。
+- 限制：仅显示文件实际包含的可选元数据，缺失机身显示 Not recorded；不同配置的备注/文件名作为用户数据不自动翻译。无新增依赖；IPAD-10 将翻译新增界面。提交标题含 IPAD-11；回退视图与导航入口一起进行。

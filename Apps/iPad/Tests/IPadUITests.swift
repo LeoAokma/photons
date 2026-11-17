@@ -2,6 +2,21 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testLensProfileOpensMetadataCoverageAndCaptureDetails() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
+        app.buttons["settings-button"].tap(); app.buttons["Lens profiles"].firstMatch.tap()
+        let profile = app.buttons["lens-profile-43A1CC00-1115-4000-8000-000000000001"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10)); profile.tap()
+        XCTAssertTrue(app.staticTexts["Calibration body"].waitForExistence(timeout: 10))
+        let capture = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "profile-capture-")).firstMatch
+        for _ in 0..<6 where !capture.isHittable { app.swipeUp() }
+        XCTAssertTrue(capture.exists); capture.tap()
+        XCTAssertTrue(app.staticTexts["Sensor size"].waitForExistence(timeout: 5))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Lens profile capture details"; shot.lifetime = .keepAlways; add(shot)
+    }
+    @MainActor
     func testSettingsMeasuresAndClearsPreviewCache() throws {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft

@@ -17,6 +17,20 @@ final class IPadEngineTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
 
+    func testLensProfileDetailsPreserveCaptureMetadataAndCoverage() async throws {
+        let engine = engine(), profiles = try await engine.profiles()
+        let summary = try XCTUnwrap(profiles.first { $0.id == LCCLensProfile.builtInID })
+        let profile = try await engine.profile(summary.id)
+        try profile.validate()
+        XCTAssertEqual(summary.captureCount,profile.captures.count)
+        XCTAssertFalse(profile.notes.isEmpty); XCTAssertNotNil(LCCProfileSummary(profile).calibrationBody)
+        for orientation in profile.orientations {
+            let captures = profile.captures(for: orientation), bounds = MobileProfileCoverage.bounds(profile.captures(for: orientation))
+            XCTAssertFalse(bounds.isNull)
+            for capture in captures { XCTAssertTrue(bounds.contains(capture.fieldRect)); XCTAssertGreaterThan(capture.grid.width,1); XCTAssertGreaterThan(capture.pixelWidth,0) }
+        }
+    }
+
     func testClearCacheKeepsLibraryOriginalsEditsFoldersAndProfiles() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("clear-cache"))
         let group = try await engine.createFolder("Keep")
