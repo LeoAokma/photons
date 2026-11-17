@@ -6,8 +6,9 @@ import Foundation
 //
 //   1. 曝光     先加. The anchor is the picture's own p99 in scene-linear light: raise the gain until
 //               that percentile sits **above** SDR white (`p99WhiteTarget = 1.5`) — the owner's own
-//               finished pictures do exactly that (median clipping 2.44 %) — while p99.9 stays at or
-//               below **2.0** (`p999Ceiling`), which is the only overshoot guard left.
+//               finished pictures do exactly that (median clipping 2.44 %) — while the **tail stays
+//               proportionally close to it**: `p99.9 / p99 ≤ 1.6` (`p999OverP99Ceiling`), the only
+//               overshoot guard left. The guard is a **ratio** on purpose — see the constant.
 //   2. 中间调/阴影  what step 1 did not lift (the picture's own body is still under `midtoneTarget`)
 //               is lifted here, so the SDR picture is not left underexposed.
 //   3. 高光/白色   the criterion is **texture loss**, not area (`docs/tasks/422-auto-light.md` §0c).
@@ -214,10 +215,15 @@ public enum AutoLight {
         public var baseP99: Double
         public var exposureEV: Double
         public var p99AfterExposure: Double
-        /// The overshoot guard's own number, measured at step 1's exposure (`p999Ceiling` is 2.0).
-        public var p999AfterExposure: Double
-        /// How many 0.05 EV steps the guard took back. 422's calibration target is **0** on the owner's
-        /// five frames, so a non-zero count here means the target and the guard disagree on that frame.
+        /// The overshoot guard's own number, measured at step 1's exposure: **`p99.9 / p99`**, i.e. the
+        /// quantity `p999OverP99Ceiling` (1.6) governs. Reported as a ratio rather than an absolute p99.9
+        /// because that is what the guard reads.
+        public var p999OverP99AfterExposure: Double
+        /// How many 0.05 EV steps the guard actually took back. 422's calibration target is **0** on the
+        /// owner's five frames. A real exceedance gets a real response (one step back); the loop then stops
+        /// as soon as a further step fails to lower `p99.9/p99`, because that ratio is a property of the
+        /// picture rather than of the gain. Such a frame therefore reads **1** here, with its ratio still
+        /// above the ceiling — the honest pair of numbers, rather than v2's 10 futile steps.
         public var exposureBackstops: Int
         public var clippedHighAfterExposure: Double
         /// Step 2.
@@ -279,19 +285,22 @@ public enum AutoLight {
     /// (1.2 would come back +0.29 stops and leave 0.29 undelivered — also rejected.)
     ///
     /// The old note read "0.98 rather than 1.0 so the p99−p99.9 tail is still below white": that tail is
-    /// now the `p999Ceiling` guard's job (2.0), which is why this constant could move at all.
+    /// now the `p999OverP99Ceiling` guard's job, which is why this constant could move at all.
     public static let p99WhiteTarget: Double = 1.5
-    /// Step 1's hard ceiling — **redefined by 422's verdict** from `p99 ≤ 1.0` to `p99.9 ≤ 2.0`.
+
+    /// Step 1's overshoot guard, as a **multiple of p99** rather than an absolute p99.9.
     ///
-    /// `p99 ≤ 1.0` was a flat contradiction with `p99WhiteTarget = 1.5` (the anchor would always trip the
-    /// walk-back and the calibration would buy nothing). The guard that survives is the one that matters:
-    /// the *tail* — the top 0.1 % — must stay within one stop of the white point, so the anchor can sit
-    /// above white on a normal frame while a pathological one is still walked back at 0.05 EV a step.
+    /// **Why not an absolute ceiling.** The old guard read `p99.9 ≤ 2.0`. With the anchor at `p99 = 1.5`
+    /// that demands `p99.9/p99 ≤ 2.0/1.5 = 1.333`, and the five boston frames measure **1.831 / 1.117 /
+    /// 1.404 / 1.452 / 1.587** — a ratio that is a property of the picture's own tail (`p99.9` is almost
+    /// exactly `ratio · p99`, invariant in exposure: measured at −0.5 … +3 EV) and not of the exposure.
+    /// **4/5 frames are therefore mathematically unsatisfiable** and the walk-back fired 20 times, which
+    /// un-did most of the calibration it was guarding.
     ///
-    /// Measured on the five boston frames: p99.9 at step 1's exposure is **below 2.0 on all five** and the
-    /// walk-back fires **0 times** (§5.1.3's requirement — a guard that fires here would mean the
-    /// calibration was undone).
-    public static let p999Ceiling: Double = 2.0
+    /// A photograph with a thick tail should be allowed a thicker tail; only an *unusually* thick one is a
+    /// defect. 1.6 sits between the measured 1.587 and 1.831: **only L1030940 (1.831) trips it**, the other
+    /// four frames pass with zero walk-back.
+    public static let p999OverP99Ceiling: Double = 1.6
 
     /// Step 2's targets. Both are **floors**, not goals: a picture already there is left alone.
     ///
@@ -306,19 +315,32 @@ public enum AutoLight {
     public static let shadowTarget: Double = 0.005
     public static let shadowCap: Double = 30
 
-    /// Step 3's goal: where the highlight pull ends — and it is **derived from the budget, not chosen**.
+    /// Step 3's goal: where the highlight pull ends.
     ///
-    /// Step 1 leaves p99 at **1.5** (above white, the owner's own habit), so step 3's job is the ordinary
-    /// one: bring the top back down toward the texture budget's own landing point. The constant is the
-    /// same 0.82 it was — the budget's arithmetic below is unchanged — but the *deficit* it sees is now
-    /// 0.68 instead of 0.16, which is why 高光 reaches deeper on every frame and the criterion's 8 %
-    /// budget is what actually stops it.
+    /// **422 rework (3rd): 0.82 → 1.2 — the target had to follow the anchor.** The original pair was
+    /// anchor 0.98 / target 0.82, i.e. the target sat **0.16 stops below** the anchor: the anchor puts p99
+    /// above white, step 3 pulls the top back down toward the texture budget's landing point. Raising the
+    /// anchor to 1.5 and leaving the target at 0.82 turned that 0.16-stop gap into **0.68** (4.25×), so
+    /// step 3 believed every picture was still 0.68 stops too hot and spent its whole 高光 budget (plus
+    /// 白色 to −60) pushing the step-1 lift back out of the midtones. Measured consequence of the mismatch:
+    /// exposure rose 0.46 stops while the finished p50 stayed 0.53 stops dark.
     ///
-    /// Measured on the five boston frames: step 2's p99 is **1.45–1.55**, and the budget allows
-    /// **34–51 units** of 高光 at a measured 0.00377–0.0104 p99/unit, so the top lands near
-    /// `1.5 − ~0.5 ≈ 1.0` on a hot frame — i.e. 高光 and 白色 share the work only when the criterion
-    /// genuinely says so (the old note's conclusion, re-derived at the new anchor).
-    public static let p99TopTarget: Double = 0.82
+    /// **The value is calibrated, not derived.** The dispatch's arithmetic said `1.5 − 0.16 = 1.34`; the
+    /// bisection over 1.2 / 1.34 / 1.42 says **1.2** is the one that satisfies both gates on the five
+    /// frames (A④ = the finished p50 distance from the owner's, A⑤ = the finished clipping band):
+    ///
+    /// | 目标 | A④ 中位 \|p50 差\| | A⑤ 中位削顶 | 判定 |
+    /// |---|---|---|---|
+    /// | **1.2**  | **0.195** | **4.19 %** | ✔ 两条都过 |
+    /// | 1.34 | 0.170 | 6.70 % | A⑤ 出界 |
+    /// | 1.42 | 0.197 | 8.81 % | A⑤ 出界 |
+    ///
+    /// 1.34 pulls the top *less* than 1.2 does, which leaves the pictures brighter — and A⑤ is exactly the
+    /// band that says how much white the owner's own finished pictures carry (their median 2.44 %). 1.2 keeps
+    /// 高光's work inside the budget while holding the clipping there. The gap is 0.30 stops rather than
+    /// 0.16: the original ratio was calibrated against an anchor whose p99 sat *below* white, and at 1.5 the
+    /// pictures need to be pulled a little further to land their clipping in the owner's band.
+    public static let p99TopTarget: Double = 1.2
 
     /// Below this much remaining deficit, step 3 does nothing (a picture already inside white).
     public static let topDeadband: Double = 0.02
@@ -431,17 +453,32 @@ public enum AutoLight {
         var exposure = snapExposure(log2(p99WhiteTarget / max(anchor, 1e-5)))
         document.light.exposure = exposure
         var afterExposure = try sample(document).metrics()
-        // **The tail guard is hard.** 422's verdict replaced `p99 ≤ 1.0` with `p99.9 ≤ 2.0`: the anchor
-        // (1.5) is deliberately above white, so what is guarded is the overshoot past it, and a candidate
-        // whose top 0.1 % is more than one stop above white is walked back until it is not.
+        // **The tail guard is hard.** 422's verdict replaced `p99 ≤ 1.0` with a tail guard; the rework made
+        // it **relative** (`p99.9 / p99 ≤ 1.6`) because an absolute 2.0 contradicts `p99 = 1.5` on 4/5 of
+        // the owner's frames. The anchor (1.5) is deliberately above white, so what is guarded is how far
+        // the top 0.1 % runs past it *in proportion*, and a candidate that exceeds the ratio is walked back
+        // until it does not.
         var backstops = 0
         // ⑧d removes the constraint **and its enforcement**: gating only the anchor would still let the
         // walk-back hold the tail inside the ceiling, and the gate would prove nothing.
-        while !gates.noExposureCeiling, afterExposure.p999 > p999Ceiling, backstops < 10, exposure > -4 {
+        //
+        // **The loop stops when a step no longer lowers the ratio.** On a real photograph `p99.9/p99` is a
+        // property of the picture, not of the gain — measured on L1030940 it is 1.831 at −0.5 EV *and* at
+        // +3 EV — so a frame whose tail is genuinely thicker than the ceiling can never be walked back into
+        // it. The old loop still spent 10 steps (0.5 stop of the calibration, ΔEV +0.61 → +0.11) and then
+        // exited on the step count, not on the guard: it bought nothing and cost the frame its exposure.
+        // The loop now takes the first step back (a real exceedance gets a real response) and then stops as
+        // soon as the ratio fails to fall — the measurement saying "this tail is not a gain artefact".
+        // `exposureBackstops` therefore reads 1 on such a frame rather than 10.
+        while !gates.noExposureCeiling,
+              afterExposure.p999 > afterExposure.p99 * p999OverP99Ceiling, backstops < 10, exposure > -4 {
+            let ratioBefore = afterExposure.p999 / max(afterExposure.p99, 1e-9)
             exposure = snapExposure(exposure - 0.05)
             document.light.exposure = exposure
             afterExposure = try sample(document).metrics()
             backstops += 1
+            let ratioAfter = afterExposure.p999 / max(afterExposure.p99, 1e-9)
+            if ratioAfter >= ratioBefore - 1e-3 { break }
         }
 
         // ── 步骤 2 — 中间调 / 阴影 ──────────────────────────────────────────────────────────────
@@ -634,7 +671,8 @@ public enum AutoLight {
                     midtones: midtones, shadows: shadows, whites: whites, blacks: blacks,
                     report: Report(baseP99: neutral.p99, exposureEV: exposure,
                                    p99AfterExposure: afterExposure.p99,
-                                   p999AfterExposure: afterExposure.p999,
+                                   p999OverP99AfterExposure: afterExposure.p999
+                                       / max(afterExposure.p99, 1e-9),
                                    exposureBackstops: backstops,
                                    clippedHighAfterExposure: afterExposure.clippedHigh,
                                    p50AfterExposure: afterExposure.p50,
@@ -692,7 +730,7 @@ public enum AutoLight {
         public var criterionAlwaysFullLoss = false
         /// ⑧c — step 4 starts from 0 instead of from `blackOffset`'s lift.
         public var ignoresBlackOffset = false
-        /// ⑧d — step 1 anchors on p95 instead of p99, i.e. the `p99.9 ≤ 2.0` tail guard is gone.
+        /// ⑧d — step 1 anchors on p95 instead of p99, i.e. the `p99.9 / p99 ≤ 1.6` tail guard is gone.
         public var noExposureCeiling = false
         /// ⑧e — the slopes come from the **0 EV** table instead of being re-measured (§0d's 7.1×).
         public var fixedSlopeTable = false

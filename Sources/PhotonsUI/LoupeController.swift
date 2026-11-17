@@ -4639,11 +4639,11 @@ public final class LoupeController: NSViewController, HeadroomSource {
             print("AUTO LIGHT · measurement failed: \(error)")
             return nil
         }
-        print(String(format: "AUTO LIGHT · p99 %.4f → EV %+.2f → p99 %.4f (p99.9 %.2f, 回退 %d) · "
+        print(String(format: "AUTO LIGHT · p99 %.4f → EV %+.2f → p99 %.4f (p99.9/p99 %.2f, 回退 %d) · "
                      + "高光 %.0f (损失 %.2f%% / 门 %.1f%%) · 白色 %.0f · "
                      + "中间调 %.0f 阴影 %.0f · 黑色 %.0f (削底 %.2f%%) · 对比 %.0f · %d renders %.0f ms",
                      plan.report.baseP99, plan.report.exposureEV, plan.report.p99AfterExposure,
-                     plan.report.p999AfterExposure, plan.report.exposureBackstops,
+                     plan.report.p999OverP99AfterExposure, plan.report.exposureBackstops,
                      plan.highlights, plan.report.textureLoss * 100,
                      plan.report.textureLossThreshold * 100, plan.whites,
                      plan.midtones, plan.shadows, plan.blacks,
