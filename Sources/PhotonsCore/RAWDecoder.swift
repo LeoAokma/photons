@@ -1027,6 +1027,7 @@ public final class RAWDecoder {
         let extent = output.extent.integral
         let w = Int(extent.width), h = Int(extent.height)
         guard w > 0, h > 0 else { throw DecodeError.badDimensions(extent.size) }
+        try MetalTextureLimits.validate(width: w, height: h, device: device)
         ph.outputImage = (CACurrentMediaTime() - cursor) * 1000
         cursor = CACurrentMediaTime()
 

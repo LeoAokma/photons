@@ -3,6 +3,7 @@ import CoreImage
 import ImageIO
 import CryptoKit
 import UIKit
+import Metal
 import PhotonsCore
 import PhotonsCatalog
 import PhotonsPanorama
@@ -17,6 +18,22 @@ final class IPadEngineTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
+
+    func testOptionalOversizedRAWThrowsBeforeMetalAllocation() throws {
+        let input = FileManager.default.urls(for: .documentDirectory,in: .userDomainMask)[0]
+            .appendingPathComponent("ValidationInputs/628-633/B0000628.3FR")
+        guard FileManager.default.fileExists(atPath: input.path) else { throw XCTSkip("Optional local 100 MP RAW fixture") }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let size = try ImageSourceDecoder.size(at: input)
+        guard max(size.width,size.height) > MetalTextureLimits.maximum2DDimension(for: device) else {
+            throw XCTSkip("This device supports the original source dimensions")
+        }
+        XCTAssertThrowsError(try RAWDecoder().decodeDetailed(input)) { error in
+            guard let dimensions = error as? TextureDimensionError else { return XCTFail("Unexpected error: \(error)") }
+            XCTAssertGreaterThan(max(dimensions.width,dimensions.height),dimensions.maximum)
+            print("RAW descriptor safely rejected: \(dimensions.width) × \(dimensions.height), limit \(dimensions.maximum)")
+        }
+    }
 
     func testLensProfileDetailsPreserveCaptureMetadataAndCoverage() async throws {
         let engine = engine(), profiles = try await engine.profiles()
