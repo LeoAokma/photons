@@ -53,7 +53,6 @@ actor MobileEngine {
     private var photoCache = MobilePreviewMemoryCache(budget: 96 * 1024 * 1024)
     private var thumbnailCache = MobilePreviewMemoryCache(budget: 16 * 1024 * 1024)
     private var detailCache = MobilePreviewMemoryCache(budget: 48 * 1024 * 1024)
-    private var detailPanoramaPreview: CGImage?
     private var panoramaPreview: CGImage?
     private var panoramaPair: MobilePreviewPair?
     private var sourceSignatures: [URL: String] = [:]
@@ -128,7 +127,7 @@ actor MobileEngine {
     func rating(_ rating: Int, id: String) throws { try database().setRating(rating, forAsset: id) }
     func importedEdit(_ id: String) throws -> EditModel { try database().importedDevelop(forAsset: id) ?? .neutral }
     func releaseWorkingMemory() {
-        graph = nil; graphKey = ""; photoCache.clear(); thumbnailCache.clear(); detailCache.clear(); detailPanoramaPreview = nil
+        graph = nil; graphKey = ""; photoCache.clear(); thumbnailCache.clear(); detailCache.clear()
         panoramaPreview = nil; panoramaPair = nil; context.clearCaches(); previewContext.clearCaches()
     }
 
@@ -261,24 +260,6 @@ actor MobileEngine {
                           width: Double(result.window.width)/Double(full.width),height: Double(result.window.height)/Double(full.height))
         var pair = try makePair(pixels,snapshot: nil,fullSize: nil); pair.rect = rect
         detailCache.put(pair,key: key)
-        return MobileDetailFrame(image: pair.frame(hdr: hdr).image,rect: rect)
-    }
-    func detail(_ plan: PanoramaPlan,hdr: Bool,request: MobileDetailRequest) throws -> MobileDetailFrame {
-        try Task.checkCancellation()
-        if detailPanoramaPreview !== plan.preview { detailCache.clear(); detailPanoramaPreview = plan.preview }
-        let key = "panorama:\(request.rect):\(request.scale)"
-        if let pair = detailCache.get(key), let rect = pair.rect { return MobileDetailFrame(image: pair.frame(hdr: hdr).image,rect: rect) }
-        let edge = max(1,Int(max(plan.outputSize.width,plan.outputSize.height)*min(1,max(0.1,request.scale))))
-        let scene = try PanoramaEngine().renderComposite(plan,outputLongEdge: edge)
-        try Task.checkCancellation()
-        let r = request.rect
-        // Core Image uses bottom-left coordinates; the viewport uses top-left.
-        let crop = CGRect(x: r.minX*scene.extent.width,y: (1-r.maxY)*scene.extent.height,
-                          width: r.width*scene.extent.width,height: r.height*scene.extent.height).integral.intersection(scene.extent)
-        guard !crop.isEmpty else { throw MobileError.message(L10n.tr("ipad.8953b228e9cf")) }
-        let image = scene.cropped(to: crop).transformed(by: .init(translationX: -crop.minX,y: -crop.minY))
-        let rect = CGRect(x: crop.minX/scene.extent.width,y: 1-crop.maxY/scene.extent.height,width: crop.width/scene.extent.width,height: crop.height/scene.extent.height)
-        var pair = try makePair(image,snapshot: nil,fullSize: nil); pair.rect = rect; detailCache.put(pair,key: key)
         return MobileDetailFrame(image: pair.frame(hdr: hdr).image,rect: rect)
     }
     private func makePair(_ display: DisplayImage,snapshot: HistogramSnapshot?,fullSize: ImageSize?) throws -> MobilePreviewPair {

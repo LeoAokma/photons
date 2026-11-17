@@ -1735,5 +1735,6 @@
   "886fc2719d25": "自动调节",
   "a0dc4ea6b223": "自动调节：按纹理损失安排曝光、高光、白色、黑色与对比",
   "187f2e7d1e49": "明暗 · 自动",
-  "panorama.histogram.title": "直方图"
+  "panorama.histogram.title": "直方图",
+  "panorama.preview.lowResolution": "正在预览低分辨率接片"
 }

@@ -2,6 +2,29 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testPanoramaZoomShowsPreviewNoticeAndFitClearsIt() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60)); first.press(forDuration: 0.7)
+        app.buttons["photo-Sample-02.tiff"].tap(); app.buttons["panorama-tool"].tap()
+        app.buttons["choose-panorama-shift"].tap()
+        let preview = app.descendants(matching: .any)["panorama-preview"].firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout: 60))
+        let canvas = app.otherElements["panorama-preview-container"]
+        canvas.buttons["zoom-options"].tap(); app.buttons["200%"].tap()
+        preview.doubleTap()
+        let notice = canvas.staticTexts["detail-status"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        XCTAssertEqual(notice.label,"Previewing low-res stitch")
+        XCTAssertFalse(app.staticTexts["Rendering detail…"].exists)
+        canvas.buttons["zoom-fit"].tap()
+        XCTAssertTrue(notice.waitForNonExistence(timeout: 5))
+        app.buttons["close-panorama"].tap()
+    }
+    @MainActor
     func testPanoramaHistogramStaysInsidePreviewAndFolds() throws {
         continueAfterFailure=false
         let app=XCUIApplication();app.launchArguments=["--demo","--reset-demo"]

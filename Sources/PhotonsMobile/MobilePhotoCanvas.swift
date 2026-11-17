@@ -62,9 +62,11 @@ struct MobilePhotoCanvas: View {
                     } label: { Text(String(format: "↔ %.0f%%",zoomTarget * 100)) }
                     .accessibilityIdentifier("zoom-options").accessibilityLabel(L10n.tr("ipad.f8308849679f"))
                 }.font(.caption).padding(10).background(.ultraThinMaterial,in: Capsule())
-                if !detailStatus.isEmpty { Text(detailStatus).font(.caption2).padding(6).background(.ultraThinMaterial,in: RoundedRectangle(cornerRadius: 6)) }
+                if !detailStatus.isEmpty { Text(detailStatus).accessibilityIdentifier("detail-status").font(.caption2).padding(6).background(.ultraThinMaterial,in: RoundedRectangle(cornerRadius: 6)) }
             }.padding(8)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("\(accessibilityID)-container")
         .sheet(isPresented: $custom) {
             NavigationStack {
                 Form {

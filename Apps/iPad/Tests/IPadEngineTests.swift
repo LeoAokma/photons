@@ -221,6 +221,27 @@ final class IPadEngineTests: XCTestCase {
     }
 
     @MainActor
+    func testPanoramaZoomKeepsLowResolutionPreviewWithoutReadingSources() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("preview-only"))
+        let photos = urls.map { MobilePhoto(id: $0.lastPathComponent,name: $0.lastPathComponent,url: $0,rating: 0,width: 768,height: 512) }
+        let plan = try await engine.analyze(photos,options: .init(),positions: [:],sensor: nil,cancellation: .init(),progress: { _,_ in })
+        let model = MobileWorkspaceModel()
+        model.plan = plan; model.frame = try await engine.frame(plan,hdr: false)
+        let preview = model.frame?.image
+        // Missing originals would fail any attempted detail decode or composite.
+        for url in urls { try FileManager.default.removeItem(at: url) }
+        model.requestDetail(.init(rect: CGRect(x: 0.25,y: 0.25,width: 0.5,height: 0.5),scale: 1))
+        XCTAssertFalse(model.detailStatus.isEmpty)
+        let notice = model.detailStatus
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(model.detailStatus,notice)
+        XCTAssertNil(model.detailFrame); XCTAssertNil(model.error)
+        XCTAssertTrue(model.frame?.image === preview)
+        model.requestDetail(nil)
+        XCTAssertEqual(model.detailStatus,"")
+    }
+
+    @MainActor
     func testClosingPanoramaDiscardsTransientPreviewAndRestoresView() async throws {
         let model = MobileWorkspaceModel()
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("close-samples"))

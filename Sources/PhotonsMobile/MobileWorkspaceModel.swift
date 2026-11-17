@@ -82,16 +82,20 @@ final class MobileWorkspaceModel: ObservableObject {
     func requestDetail(_ request: MobileDetailRequest?) {
         viewport = request
         detailTask?.cancel(); detailRevision += 1
-        guard let request, !selectionLoading, !busy else { detailFrame = nil; detailStatus = ""; return }
-        let ticket = detailRevision, photo = active, plan = plan, values = edit, mode = hdr
+        // The panorama workspace displays the analysis preview. Zooming must not start
+        // a full source decode/composite; full-quality rendering belongs to export.
+        if plan != nil {
+            detailFrame = nil
+            detailStatus = request == nil ? "" : L10n.tr("panorama.preview.lowResolution")
+            return
+        }
+        guard let request, !selectionLoading, !busy, let photo = active else { detailFrame = nil; detailStatus = ""; return }
+        let ticket = detailRevision, values = edit, mode = hdr
         detailTask = Task {
             do {
                 try await Task.sleep(for: .milliseconds(180))
                 detailStatus = L10n.tr("ipad.02b3d04c1ad2")
-                let result: MobileDetailFrame
-                if let plan { result = try await engine.detail(plan,hdr: mode,request: request) }
-                else if let photo { result = try await engine.detail(photo,edit: values,hdr: mode,request: request) }
-                else { return }
+                let result = try await engine.detail(photo,edit: values,hdr: mode,request: request)
                 guard !Task.isCancelled, ticket == detailRevision else { return }
                 detailFrame = result; detailStatus = ""
             } catch is CancellationError { }
