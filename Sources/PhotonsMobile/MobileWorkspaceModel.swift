@@ -13,6 +13,8 @@ final class MobileWorkspaceModel: ObservableObject {
     @Published var edit = EditModel.neutral
     @Published var history = EditHistory()
     @Published var frame: MobileFrame?
+    @Published var detailFrame: MobileDetailFrame?
+    @Published var detailStatus = ""
     @Published var thumbnails: [String: MobileFrame] = [:]
     @Published var previewErrors: [String: String] = [:]
     @Published var plan: PanoramaPlan?
@@ -45,6 +47,39 @@ final class MobileWorkspaceModel: ObservableObject {
     private var cancellation = PanoramaCancellation()
     private var generation = 0
     private var selectionRevision = 0
+    private var detailTask: Task<Void,Never>?
+    private var detailRevision = 0
+    private var viewport: MobileDetailRequest?
+    var canvasSize: CGSize? {
+        if let plan { return plan.outputSize }
+        if let size = frame?.fullSize { return CGSize(width: size.width,height: size.height) }
+        guard let photo = active, photo.width > 0, photo.height > 0 else { return nil }
+        let size = CropGeometry(geometry: edit.geometry,source: ImageSize(width: photo.width,height: photo.height)).canvas
+        return CGSize(width: size.width,height: size.height)
+    }
+    private func invalidateDetail(clearViewport: Bool = false) {
+        detailTask?.cancel(); detailRevision += 1; detailFrame = nil; detailStatus = ""
+        if clearViewport { viewport = nil }
+    }
+    func requestDetail(_ request: MobileDetailRequest?) {
+        viewport = request
+        detailTask?.cancel(); detailRevision += 1
+        guard let request, !selectionLoading, !busy else { detailFrame = nil; detailStatus = ""; return }
+        let ticket = detailRevision, photo = active, plan = plan, values = edit, mode = hdr
+        detailTask = Task {
+            do {
+                try await Task.sleep(for: .milliseconds(180))
+                detailStatus = "Rendering detail…"
+                let result: MobileDetailFrame
+                if let plan { result = try await engine.detail(plan,hdr: mode,request: request) }
+                else if let photo { result = try await engine.detail(photo,edit: values,hdr: mode,request: request) }
+                else { return }
+                guard !Task.isCancelled, ticket == detailRevision else { return }
+                detailFrame = result; detailStatus = ""
+            } catch is CancellationError { }
+            catch { if ticket == detailRevision { detailStatus = error.localizedDescription } }
+        }
+    }
     private var panoramaReturnToGrid: Bool?
     private var panoramaExporting = false
 
@@ -56,6 +91,7 @@ final class MobileWorkspaceModel: ObservableObject {
     func endPanorama() {
         guard let returnToGrid = panoramaReturnToGrid else { return }
         panoramaReturnToGrid = nil
+        invalidateDetail(clearViewport: true)
         if busy && !panoramaExporting { cancel() }
         previewTask?.cancel(); generation += 1; rendering = false
         plan = nil; manifest = nil; lccPositionNote = nil
@@ -98,6 +134,7 @@ final class MobileWorkspaceModel: ObservableObject {
         }
     }
     func select(_ photo: MobilePhoto, open: Bool = false) {
+        invalidateDetail(clearViewport: true)
         previewTask?.cancel(); selectionTask?.cancel(); generation += 1
         selectionRevision += 1
         let ticket = selectionRevision
@@ -121,6 +158,7 @@ final class MobileWorkspaceModel: ObservableObject {
         select(photo)
     }
     func clearSelection() {
+        invalidateDetail(clearViewport: true)
         previewTask?.cancel(); selectionTask?.cancel()
         generation += 1; selectionRevision += 1
         selected.removeAll(); active = nil; frame = nil; plan = nil; manifest = nil
@@ -134,6 +172,7 @@ final class MobileWorkspaceModel: ObservableObject {
     }
     func render() {
         guard !selectionLoading, let photo = active, plan == nil else { return }
+        invalidateDetail()
         previewTask?.cancel(); generation += 1
         let ticket = generation, values = edit, hdr = hdr
         rendering = true
@@ -143,6 +182,7 @@ final class MobileWorkspaceModel: ObservableObject {
                 let result = try await engine.frame(photo, edit: values, hdr: hdr)
                 guard !Task.isCancelled, ticket == generation else { return }
                 frame = result; rendering = false
+                requestDetail(viewport)
             } catch is CancellationError { }
             catch { if ticket == generation { rendering = false; self.error = error.localizedDescription } }
         }
@@ -201,6 +241,7 @@ final class MobileWorkspaceModel: ObservableObject {
     }
     private func run(_ title: String, work: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }
+        invalidateDetail()
         thumbnailTask?.cancel(); previewTask?.cancel(); generation += 1; rendering = false
         busy = true; status = title; progress = nil; cancellation = PanoramaCancellation()
         job = Task {
@@ -235,6 +276,7 @@ final class MobileWorkspaceModel: ObservableObject {
     }
     func setPanoramaTone(_ tone: PanoramaToneSettings) {
         guard !busy, tone.isValid, var plan else { return }
+        invalidateDetail()
         // Publish the output parameters immediately. A pending preview can be cancelled safely;
         // export and a subsequent LCC/alignment job still see the latest requested settings.
         plan.tone = tone; self.plan = plan; manifest?.tone = tone
@@ -247,6 +289,7 @@ final class MobileWorkspaceModel: ObservableObject {
                 let rendered = try await engine.frame(updated,hdr: hdr)
                 guard !Task.isCancelled,ticket == generation else { return }
                 self.plan = updated; frame = rendered; rendering = false
+                requestDetail(viewport)
             } catch is CancellationError { }
             catch { if ticket == generation { rendering = false; self.error = error.localizedDescription } }
         }
@@ -301,6 +344,7 @@ final class MobileWorkspaceModel: ObservableObject {
         }
     }
     func memoryWarning() {
+        invalidateDetail(clearViewport: true)
         previewTask?.cancel(); thumbnailTask?.cancel(); thumbnails.removeAll()
         Task { await engine.releaseWorkingMemory() }
     }

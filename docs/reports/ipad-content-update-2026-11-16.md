@@ -37,3 +37,18 @@
 - 文件：MobileWorkspaceView.swift、MobileWorkspaceModel.swift、IPadUITests.swift。
 - 验证：`testDoubleTapOpensPhotoAndSwipesNavigate`、`testGridInspectorToggleDeselectsPhoto` 通过，2 项 / 0 失败；日志 `03-navigation.log`。初次边界断言受到旧样例导出污染，测试现以 `--demo --reset-demo` 重置专用 Generated Samples 库；正常用户库不受影响。单击断言等待系统双击识别窗口结束。
 - 依赖：IPAD-02 (`1ad56ac`)；提交标题含 `IPAD-03`。限制：缩放导航规则将在 IPAD-04 延续；物理触屏最终体验由 beta 验证。无移植，回退需同步恢复手势与 UI 测试。
+
+## IPAD-04
+
+- 变更：大图右上角显示当前倍率、Fit 和双击目标；50/100/200% 及 10–800% 自定义倍率持久保存。双击在 Fit 与目标间切换，手势缩放/平移保留；100% 按图像像素对屏幕物理像素计算。缩放或平移结束后的可见区域以 180 ms 去抖请求实际像素，不再只拉伸 Fit 预览。
+- 渲染：使用共享 RenderGraph 的 outputWindow，包含编辑后裁剪/旋转坐标，额外 64 px 邻域支持防止窗口边界影响锐化；全景/LCC 使用共享线性 composite 的可见区域。旧请求在切图、编辑、HDR 切换、退出全景及内存警告后失效。空间不足保留预览并给出提示，不虚称已有完整细节。
+- 文件：新增 MobilePhotoCanvas.swift；MobileEngine/WorkspaceModel/WorkspaceView/PanoramaWorkspace，engine/UI 测试。
+- 验证：`testZoomDetailMatchesEditedFullResolutionPixels` 通过，比较裁剪、旋转、曝光后的局部和完整渲染；最初无邻域余量时边缘差异暴露了锐化边界问题，修复后通过。模拟器内存预算使用物理内存的受限比例，实体机使用可用进程内存。
+- UI 验证：`testDoubleTapTogglesFitAndSelectedMagnification` 最终通过，覆盖 Fit↔200%、Fit↔50%、自定义150%和 Fit 按钮；自定义输入改为带固定顶部操作栏的 sheet，避免键盘遮住确认按钮。导航在新视口实现上已通过。日志 `04-zoom.log`、`04-zoom-ui.log`。
+- 依赖：IPAD-03 (`e886f58`)。提交标题含 IPAD-04。限制：原始文件解码仍可能需要整幅源图；局部输出避免整幅后处理/显示缓冲，但不声称 RAW 解码完全分块。全景多源高倍率受内存预算限制。无移植；回退需同步回退新视口、引擎区域入口和模型请求失效逻辑。
+
+## 补充需求
+
+- IPAD-10：iPad 简体中文界面，独立 commit，与其余功能同一 PR/build。
+- IPAD-11：Lens profiles 详情（相机/光圈/标定机身/备注、方向与覆盖范围、各标定帧参数），独立 commit，与其余功能同一 PR/build。
+- IPAD-09 的最终交付还依赖 IPAD-10、IPAD-11。

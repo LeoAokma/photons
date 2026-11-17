@@ -163,8 +163,9 @@ struct MobilePanoramaWorkspace: View {
             ZStack {
                 Color(white: 0.055)
                 if model.plan != nil, let image = model.frame?.image {
-                    MobilePhotoCanvas(image: image, hdr: model.hdr, identity: "panorama-workspace")
-                        .padding(20).accessibilityIdentifier("panorama-preview")
+                    MobilePhotoCanvas(image: image, hdr: model.hdr, identity: "panorama-workspace",accessibilityID: "panorama-preview",fullSize: model.canvasSize,
+                                      detail: model.detailFrame,detailStatus: model.detailStatus,onViewportChange: { model.requestDetail($0) })
+                        .padding(20)
                     if dirty { Text("Positions changed · update alignment to refresh this preview").font(.caption).padding(12).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding() }
                 } else {
                     ContentUnavailableView("Panorama preview", systemImage: "pano", description: Text(model.busy ? "Aligning the selected photographs…" : "Drag the source frames or enter measured positions, then update alignment."))

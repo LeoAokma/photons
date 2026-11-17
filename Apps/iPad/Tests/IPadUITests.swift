@@ -9,7 +9,7 @@ final class IPadUITests: XCTestCase {
         XCTAssertTrue(first.waitForExistence(timeout: 60)); first.doubleTap()
         let name = app.staticTexts["current-photo-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 10)); XCTAssertEqual(name.label,"Sample-01.tiff")
-        let canvas = app.scrollViews["photo-canvas"]
+        let canvas = app.descendants(matching: .any)["photo-canvas"].firstMatch
         XCTAssertTrue(canvas.waitForExistence(timeout: 10)); canvas.swipeLeft()
         XCTAssertTrue(name.wait(for: \.label,toEqual: "Sample-02.tiff",timeout: 10))
         canvas.swipeRight()
@@ -17,6 +17,38 @@ final class IPadUITests: XCTestCase {
         canvas.swipeRight()
         XCTAssertEqual(name.label,"Sample-01.tiff")
         XCTAssertFalse(app.buttons["previous-photo"].isEnabled)
+    }
+    @MainActor
+    func testDoubleTapTogglesFitAndSelectedMagnification() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60)); first.doubleTap()
+        let state = app.staticTexts["zoom-state"]
+        XCTAssertTrue(state.waitForExistence(timeout: 10))
+        let canvas = app.descendants(matching: .any)["photo-canvas"].firstMatch
+        app.buttons["zoom-options"].tap(); app.buttons["200%"].tap()
+        XCTAssertEqual(state.label,"Fit")
+        canvas.doubleTap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "200%",timeout: 10))
+        canvas.doubleTap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "Fit",timeout: 10))
+        app.buttons["zoom-options"].tap(); app.buttons["50%"].tap()
+        canvas.doubleTap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "50%",timeout: 10))
+        canvas.doubleTap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "Fit",timeout: 10))
+        app.buttons["zoom-options"].tap(); app.buttons["Custom…"].tap()
+        let input = app.textFields["zoom-custom-input"]
+        input.tap(); input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,count: 3) + "150")
+        XCTAssertEqual(input.value as? String,"150")
+        app.buttons["zoom-custom-apply"].tap()
+        XCTAssertTrue(input.waitForNonExistence(timeout: 5))
+        canvas.doubleTap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "150%",timeout: 10))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Custom 150 percent magnification"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["zoom-fit"].tap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "Fit",timeout: 10))
     }
     @MainActor
     func testGridInspectorToggleDeselectsPhoto() throws {

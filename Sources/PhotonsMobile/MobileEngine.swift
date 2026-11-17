@@ -22,6 +22,7 @@ struct MobilePhoto: Identifiable, Sendable {
 struct MobileFrame: @unchecked Sendable {
     var image: CGImage
     var histogram: Histogram?
+    var fullSize: ImageSize? = nil
 }
 struct MobileExportSettings: Sendable {
     var format = "heic"
@@ -103,7 +104,8 @@ actor MobileEngine {
         let pixels = try render(photo.url, edit: edit, edge: edge, hdr: hdr, histogram: true, linear: true)
         guard let display = pixels.display else { throw MobileError.message("The renderer returned no image.") }
         let image = try displayImage(display, hdr: hdr)
-        let frame = MobileFrame(image: image, histogram: pixels.histogram)
+        let fullSize = CropGeometry(geometry: edit.geometry,source: try sourceSizes[photo.url] ?? ImageSourceDecoder.size(at: photo.url)).canvas
+        let frame = MobileFrame(image: image, histogram: pixels.histogram, fullSize: fullSize)
         cachedFrames[key] = frame; cacheOrder.append(key)
         while cacheOrder.count > 8 { cachedFrames.removeValue(forKey: cacheOrder.removeFirst()) }
         return frame
@@ -127,7 +129,7 @@ actor MobileEngine {
         return frame
     }
     private func render(_ url: URL, edit: EditModel, edge: Int, hdr: Bool, histogram: Bool,
-                        linear: Bool = false) throws -> RenderResult {
+                        linear: Bool = false, detail: MobileDetailRequest? = nil) throws -> RenderResult {
         let size = try sourceSizes[url] ?? ImageSourceDecoder.size(at: url)
         sourceSizes[url] = size
         let scale = edge > 0 ? min(1, Float(edge) / Float(max(size.width, size.height))) : 1
@@ -152,10 +154,55 @@ actor MobileEngine {
             graphKey = key
         }
         try Task.checkCancellation()
+        let outputSize = CropGeometry(geometry: edit.geometry,source: graphSize).canvas
+        let window = detail.map { request in
+            // Neighbourhood operators need pixels beyond the visible rectangle. The halo is
+            // outside the viewport, so its own edge clamp cannot become a visible seam.
+            let bounds = CGRect(x: 0,y: 0,width: outputSize.width,height: outputSize.height)
+            let visible = CGRect(x: request.rect.minX * bounds.width,y: request.rect.minY * bounds.height,
+                                 width: request.rect.width * bounds.width,height: request.rect.height * bounds.height)
+            let padded = visible.insetBy(dx: -64,dy: -64).integral.intersection(bounds)
+            return ImageRect(x: Int(padded.minX),y: Int(padded.minY),width: max(1,Int(padded.width)),height: max(1,Int(padded.height)))
+        }
         return try graph!.render(edit, options: RenderOptions(
+            outputWindow: window,
             display: .init(primaries: .displayP3, bitDepth: 16, headroom: hdr ? 16 : 1,
                            linearOutput: linear, sdrProof: !hdr),
             wantsPixels: true, collectHistogram: histogram, histogramSampleLongEdge: 192))
+    }
+    func detail(_ photo: MobilePhoto, edit: EditModel, hdr: Bool, request: MobileDetailRequest) throws -> MobileDetailFrame {
+        try Task.checkCancellation()
+        let size = try ImageSourceDecoder.size(at: photo.url)
+        let scale = min(1,max(0.1,request.scale))
+        #if targetEnvironment(simulator)
+        let available = Double(ProcessInfo.processInfo.physicalMemory) * 0.45
+        #else
+        let available = Double(os_proc_available_memory()) * 0.65
+        #endif
+        guard Double(size.pixelCount) * scale * scale * 24 < available else {
+            throw MobileError.message("Not enough memory for this magnification. Choose a smaller percentage.")
+        }
+        let result = try render(photo.url,edit: edit,edge: max(1,Int(Double(max(size.width,size.height))*scale)),
+                                hdr: hdr,histogram: false,linear: true,detail: request)
+        try Task.checkCancellation()
+        guard let pixels = result.display else { throw MobileError.message("No detail pixels returned.") }
+        let full = CropGeometry(geometry: edit.geometry,source: graphSize).canvas
+        let rect = CGRect(x: Double(result.window.x)/Double(full.width),y: Double(result.window.y)/Double(full.height),
+                          width: Double(result.window.width)/Double(full.width),height: Double(result.window.height)/Double(full.height))
+        return MobileDetailFrame(image: try displayImage(pixels,hdr: hdr),rect: rect)
+    }
+    func detail(_ plan: PanoramaPlan,hdr: Bool,request: MobileDetailRequest) throws -> MobileDetailFrame {
+        try Task.checkCancellation()
+        let edge = max(1,Int(max(plan.outputSize.width,plan.outputSize.height)*min(1,max(0.1,request.scale))))
+        let scene = try PanoramaEngine().renderComposite(plan,outputLongEdge: edge)
+        try Task.checkCancellation()
+        let r = request.rect
+        // Core Image uses bottom-left coordinates; the viewport uses top-left.
+        let crop = CGRect(x: r.minX*scene.extent.width,y: (1-r.maxY)*scene.extent.height,
+                          width: r.width*scene.extent.width,height: r.height*scene.extent.height).integral.intersection(scene.extent)
+        guard !crop.isEmpty else { throw MobileError.message("The detail viewport is empty.") }
+        let image = scene.cropped(to: crop).transformed(by: .init(translationX: -crop.minX,y: -crop.minY))
+        return MobileDetailFrame(image: try previewImage(image,hdr: hdr),rect: CGRect(x: crop.minX/scene.extent.width,y: 1-crop.maxY/scene.extent.height,width: crop.width/scene.extent.width,height: crop.height/scene.extent.height))
     }
     private func displayImage(_ display: DisplayImage, hdr: Bool) throws -> CGImage {
         let space = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!
@@ -200,7 +247,7 @@ actor MobileEngine {
                        format: .RGBAh,colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearITUR_2020))
         let snapshot = HistogramSnapshot(sample: LinearSample(width: w,height: h,rgba: pixels),
                                          canvas: ImageSize(width: Int(plan.outputSize.width),height: Int(plan.outputSize.height)))
-        return MobileFrame(image: image,histogram: snapshot.histogram(hdr: hdr,headroom: hdr ? 16 : 1))
+        return MobileFrame(image: image,histogram: snapshot.histogram(hdr: hdr,headroom: hdr ? 16 : 1),fullSize: ImageSize(width: Int(plan.outputSize.width),height: Int(plan.outputSize.height)))
     }
     func profiles() throws -> [LCCProfileSummary] {
         let store = LCCProfileStore(); try store.installBundledProfile(); return store.catalog().profiles

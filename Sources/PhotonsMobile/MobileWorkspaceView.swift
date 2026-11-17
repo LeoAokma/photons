@@ -264,8 +264,10 @@ public struct MobileWorkspaceView: View {
             Color(white: 0.055)
             if let image = model.frame?.image {
                 MobilePhotoCanvas(image: image, hdr: model.hdr, identity: model.plan == nil ? (model.active?.id ?? "") : "panorama",
+                                  fullSize: model.canvasSize,detail: model.detailFrame,detailStatus: model.detailStatus,
+                                  onViewportChange: { model.requestDetail($0) },
                                   onNavigate: { model.movePhoto(by: $0, among: visiblePhotos) })
-                    .padding(20).accessibilityIdentifier("photo-canvas")
+                    .padding(20)
             } else { ContentUnavailableView("Select a photograph", systemImage: "photo") }
             if model.rendering { ProgressView().padding(16).background(.ultraThinMaterial, in: Capsule()).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).padding() }
             if model.plan == nil, let photo = model.active {
@@ -282,49 +284,6 @@ public struct MobileWorkspaceView: View {
 }
 
 private enum MobileSheet: String, Identifiable { case lcc, profiles, export, capabilities; var id: String { rawValue } }
-
-/// UIScrollView provides pinch-to-zoom and panning without changing the shared render geometry.
-struct MobilePhotoCanvas: UIViewRepresentable {
-    let image: CGImage
-    let hdr: Bool
-    let identity: String
-    var onNavigate: (Int) -> Void = { _ in }
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeUIView(context: Context) -> MobilePhotoScrollView {
-        let scroll = MobilePhotoScrollView(); scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 6
-        scroll.delegate = context.coordinator; scroll.backgroundColor = .clear
-        for direction: UISwipeGestureRecognizer.Direction in [.left, .right] {
-            let swipe = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.swipe(_:)))
-            swipe.direction = direction; swipe.delegate = context.coordinator
-            scroll.addGestureRecognizer(swipe); scroll.panGestureRecognizer.require(toFail: swipe)
-        }
-        let view = context.coordinator.imageView; view.backgroundColor = .clear
-        scroll.addSubview(view); return scroll
-    }
-    func updateUIView(_ scroll: MobilePhotoScrollView, context: Context) {
-        let view = context.coordinator.imageView
-        context.coordinator.onNavigate = onNavigate
-        if context.coordinator.identity != identity {
-            scroll.setZoomScale(1, animated: false); context.coordinator.identity = identity
-        }
-        view.present(image,hdr: hdr)
-        scroll.hdr = hdr; scroll.updateDisplayNotice()
-        if scroll.zoomScale == 1 { view.frame = scroll.bounds; scroll.contentSize = scroll.bounds.size }
-        // Bounds can be zero on the first SwiftUI update; the view resizes with the scroll surface.
-        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    }
-    final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
-        let imageView = MobilePreviewSurface()
-        var identity = ""
-        var onNavigate: (Int) -> Void = { _ in }
-        @objc func swipe(_ gesture: UISwipeGestureRecognizer) { onNavigate(gesture.direction == .left ? 1 : -1) }
-        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard let scroll = gestureRecognizer.view as? UIScrollView else { return false }
-            return abs(scroll.zoomScale - scroll.minimumZoomScale) < 0.01
-        }
-        func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
-    }
-}
 
 struct MobileThumbnail: UIViewRepresentable {
     let image: CGImage
@@ -351,6 +310,8 @@ final class MobilePreviewSurface: UIView {
 /// Keep the display limitation visible without baking a simulated HDR look into the image data.
 final class MobilePhotoScrollView: UIScrollView {
     var hdr = false
+    var onLayout: (() -> Void)?
+    override func layoutSubviews() { super.layoutSubviews(); onLayout?() }
     private let notice = UILabel()
     override init(frame: CGRect) {
         super.init(frame: frame)

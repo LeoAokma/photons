@@ -17,6 +17,38 @@ final class IPadEngineTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
 
+    func testZoomDetailMatchesEditedFullResolutionPixels() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("detail-samples"))
+        let photo = MobilePhoto(id: "detail",name: "detail",url: urls[0],rating: 0,width: 768,height: 512)
+        var edit = EditModel.neutral
+        edit.light.exposure = 0.6; edit.geometry.quarterTurns = 1
+        edit.geometry.crop = .init(x: 0.125,y: 0.125,width: 0.75,height: 0.75)
+        let full = try await engine.frame(photo,edit: edit,hdr: true,edge: 0)
+        let request = MobileDetailRequest(rect: CGRect(x: 0.25,y: 0.25,width: 0.5,height: 0.5),scale: 1)
+        let detail = try await engine.detail(photo,edit: edit,hdr: true,request: request)
+        let rect = CGRect(x: detail.rect.minX*Double(full.image.width),y: detail.rect.minY*Double(full.image.height),width: Double(detail.image.width),height: Double(detail.image.height))
+        let expected = try XCTUnwrap(full.image.cropping(to: rect))
+        let actualData = try XCTUnwrap(detail.image.dataProvider?.data) as Data
+        let expectedData = try XCTUnwrap(expected.dataProvider?.data) as Data
+        var largest = 0.0
+        let x0 = Int(request.rect.minX * Double(full.image.width) - rect.minX)
+        let y0 = Int(request.rect.minY * Double(full.image.height) - rect.minY)
+        let x1 = min(detail.image.width,Int(request.rect.maxX * Double(full.image.width) - rect.minX))
+        let y1 = min(detail.image.height,Int(request.rect.maxY * Double(full.image.height) - rect.minY))
+        for y in y0..<y1 {
+            for x in (x0*4)..<(x1*4) {
+                let a = actualData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: y*detail.image.bytesPerRow+x*2,as: UInt16.self) }
+                let b = expectedData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: y*expected.bytesPerRow+x*2,as: UInt16.self) }
+                largest = max(largest,abs(Double(Float16(bitPattern: a))-Double(Float16(bitPattern: b))))
+            }
+        }
+        XCTAssertLessThan(largest,0.015,"Zoom must render the same edited pixels, including crop and rotation, not rescale the fit preview")
+        XCTAssertLessThan(detail.image.width,full.image.width)
+        XCTAssertEqual(MobileZoomGeometry.fit(pixels: CGSize(width: 4000,height: 3000),viewport: CGSize(width: 1000,height: 750),screenScale: 2),0.5)
+        XCTAssertNil(MobileZoomGeometry.validPercent("nan")); XCTAssertNil(MobileZoomGeometry.validPercent("0"))
+        XCTAssertEqual(MobileZoomGeometry.validPercent("150"),1.5)
+    }
+
     @MainActor
     func testClosingPanoramaDiscardsTransientPreviewAndRestoresView() async throws {
         let model = MobileWorkspaceModel()
