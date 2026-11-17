@@ -149,3 +149,9 @@
 - 文件：MobileHistogram.swift、IPadEngineTests.swift；依赖 IPAD-06 与 main merge `835e1dd`。
 - 验证：轴/显示削顶、叠加色带/窄峰覆盖两项引擎测试，英文触摸直方图及中文浏览/设置/镜头详情两项 UI 测试通过，4 项 / 0 失败；iPad Pro 11-inch M5 / iOS27.2，`09-histogram-main.log`。检查完整中文网格/直方图截图，白色重叠与坐标显示正确，截图在 `main-chinese-screenshots/`。
 - 限制：实体 EDR 面板仍待 beta；回退视图与对应测试可一起进行，不改库数据。
+
+## IPAD-09-NOTICES — 同步新增共享依赖的分发说明
+
+- 新 main 把 NonlocalMatchFilter 1.0.0 和模型资源加入 PhotonsExtensions，iPad 静态 notices 原先只列 GRDB，且宣称没有模型。更新 Apps/iPad/ThirdPartyNotices.txt 的依赖 pin 和资源范围，纳入锁定 Swift 包 LICENSE 以及仓库模型 MIT notice 的完整原文。未新增移动端 AI 功能入口。
+- 来源：上游 `737f92d` THIRD_PARTY_NOTICES.md 和锁定 `52a6e4f` 包 LICENSE。依赖 IPAD-09-MAIN；文档/打包资源修改，不改变运行逻辑。
+- 验证：脚本确认两份许可原文逐字包含，过时无模型说明已移除。后续 build 4 归档检查会验证资源实际被打包；不为文案复制增加同构测试。回退必须同时考虑新增包与模型是否仍在发布包中。
