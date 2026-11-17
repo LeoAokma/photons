@@ -8,6 +8,23 @@ import PhotonsPanorama
 @MainActor
 final class MobileWorkspaceModel: ObservableObject {
     @Published var photos: [MobilePhoto] = []
+    @Published var folders = MobileFolderIndex()
+    @Published var folderScope = MobileFolderScope.all
+    var folderPhotos: [MobilePhoto] { photos.filter { folders.contains($0.id,in: folderScope) } }
+    func chooseFolder(_ scope: MobileFolderScope) { guard !busy else { return }; clearSelection(); folderScope = scope; showGrid = true }
+    func moveSelection(to folder: UUID?) {
+        let ids = selected
+        run("Moving photographs") {
+            try await self.engine.movePhotos(ids,to: folder); try await self.reload(); self.clearSelection()
+        }
+    }
+    func removeFolder(_ id: UUID) {
+        run("Removing folder") {
+            try await self.engine.removeFolder(id)
+            if self.folderScope == .folder(id) { self.folderScope = .unfiled }
+            try await self.reload(); self.clearSelection()
+        }
+    }
     @Published var selected: Set<String> = []
     @Published var active: MobilePhoto?
     @Published var edit = EditModel.neutral
@@ -104,7 +121,7 @@ final class MobileWorkspaceModel: ObservableObject {
     var canExport: Bool { plan != nil || active != nil }
     func start() async {
         do {
-            photos = try await engine.photos(); profiles = try await engine.profiles()
+            try await reload()
             if ProcessInfo.processInfo.arguments.contains("--boston"), !MobileSamples.boston.isEmpty {
                 importPhotos(MobileSamples.boston)
             } else if ProcessInfo.processInfo.arguments.contains("--demo"), photos.isEmpty {
@@ -113,7 +130,9 @@ final class MobileWorkspaceModel: ObservableObject {
             } else { warmThumbnails() }
         } catch { self.error = error.localizedDescription }
     }
-    func reload() async throws { photos = try await engine.photos(); profiles = try await engine.profiles() }
+    func reload() async throws {
+        photos = try await engine.photos(); profiles = try await engine.profiles(); folders = try await engine.folderIndex()
+    }
     func warmThumbnails() {
         thumbnailTask?.cancel()
         let list = photos, hdr = hdr
@@ -254,8 +273,10 @@ final class MobileWorkspaceModel: ObservableObject {
     }
     func cancel() { cancellation.cancel(); job?.cancel(); status = "Cancelling…" }
     func importPhotos(_ urls: [URL]) {
+        let destination: UUID?
+        if case .folder(let id) = folderScope { destination = id } else { destination = nil }
         run("Importing") {
-            let summary = try await self.engine.importPhotos(urls, skipDuplicates: UserDefaults.standard.object(forKey: "photons.mobile.skipDuplicates") as? Bool ?? true, progress: self.report)
+            let summary = try await self.engine.importPhotos(urls, skipDuplicates: UserDefaults.standard.object(forKey: "photons.mobile.skipDuplicates") as? Bool ?? true, folder: destination,progress: self.report)
             try await self.reload()
             if summary.failed > 0 { self.error = "\(summary.failed) file(s) could not be imported. Imported photos have been retained." }
             self.warmThumbnails()

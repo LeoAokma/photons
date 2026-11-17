@@ -72,14 +72,21 @@ actor MobileEngine {
                         width: a.width ?? 0, height: a.height ?? 0)
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
-    func importPhotos(_ urls: [URL], skipDuplicates: Bool,
+    func importPhotos(_ urls: [URL], skipDuplicates: Bool, folder: UUID? = nil,
                       progress: @Sendable @escaping (String, Double?) -> Void) throws -> ImportSummary {
         let grants = urls.map(FileAccess.init)
         defer { withExtendedLifetime(grants) {} }
+        guard !urls.contains(where: { $0.pathExtension.lowercased() == "photonslibrary" }) else {
+            throw MobileError.message("iPad uses one library. Import photographs or folders of photographs, not another library package.")
+        }
+        if let folder, !(try folderIndex()).folders.contains(where: { $0.id == folder }) { throw MobileError.message("Folder not found.") }
+        let previous = folder == nil ? Set<String>() : Set(try photos().map(\.id))
         let service = ImportService(catalog: try database())
         service.shouldCancel = { Task.isCancelled }
-        return try service.run(sources: urls, options: .init(mode: .copy, skipDuplicates: skipDuplicates),
+        let summary = try service.run(sources: urls, options: .init(mode: .copy, skipDuplicates: skipDuplicates),
                                onFile: { n,total in progress("Importing \(n) of \(total)", Double(n) / Double(max(1,total))) })
+        if let folder { try movePhotos(Set(try photos().map(\.id)).subtracting(previous),to: folder) }
+        return summary
     }
     func edit(_ id: String) throws -> EditModel { try database().develop(forAsset: id) }
     func history(_ id: String) throws -> EditHistory {

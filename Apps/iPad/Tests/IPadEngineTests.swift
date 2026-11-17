@@ -17,6 +17,29 @@ final class IPadEngineTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
 
+    func testSingleLibraryFoldersPersistWithoutChangingOriginalsOrEdits() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("folder-samples"))
+        let first = try await engine.createFolder("Travel"), second = try await engine.createFolder("Studio")
+        _ = try await engine.importPhotos(urls,skipDuplicates: true,folder: first.id,progress: { _,_ in })
+        let photos = try await engine.photos(), photo = try XCTUnwrap(photos.first)
+        let original = try Data(contentsOf: photo.url)
+        var edit = EditModel.neutral; edit.light.exposure = 0.7
+        try await engine.save(edit,history: .init(baseline: edit),id: photo.id)
+        try await engine.movePhotos([photo.id],to: second.id)
+        try await engine.renameFolder(second.id,to: "Portraits")
+        let reopened = self.engine(), index = try await reopened.folderIndex()
+        XCTAssertEqual(index.assignments[photo.id],second.id)
+        XCTAssertEqual(index.folders.first { $0.id == second.id }?.name,"Portraits")
+        XCTAssertEqual(index.assignments.count,3)
+        try await reopened.removeFolder(second.id)
+        let removed = try await reopened.folderIndex(), saved = try await reopened.edit(photo.id)
+        XCTAssertNil(removed.assignments[photo.id]); XCTAssertEqual(saved.light.exposure,0.7)
+        XCTAssertEqual(try Data(contentsOf: photo.url),original)
+        do { _ = try await engine.createFolder(" travel "); XCTFail("Duplicate names must be rejected") } catch { }
+        do { _ = try await engine.importPhotos([folder.appendingPathComponent("Other.photonslibrary")],skipDuplicates: true,progress: { _,_ in }); XCTFail("Must not import another library") } catch { }
+        let remaining = try await reopened.photos(); XCTAssertEqual(remaining.count,3)
+    }
+
     func testZoomDetailMatchesEditedFullResolutionPixels() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("detail-samples"))
         let photo = MobilePhoto(id: "detail",name: "detail",url: urls[0],rating: 0,width: 768,height: 512)

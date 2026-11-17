@@ -20,7 +20,7 @@ public struct MobileWorkspaceView: View {
     @State private var tool: MobileSheet?
     @AppStorage("photons.mobile.thumbnailSize") private var thumbnailSize = 180.0
     @State private var search = ""
-    private var visiblePhotos: [MobilePhoto] { model.photos.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) } }
+    private var visiblePhotos: [MobilePhoto] { model.folderPhotos.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) } }
     public init() {}
     public var body: some View {
         NavigationStack {
@@ -52,6 +52,7 @@ public struct MobileWorkspaceView: View {
         .preferredColorScheme(.dark).tint(.orange)
         .task { await model.start() }
         .onChange(of: model.showGrid) { _,grid in if !grid && model.plan != nil { inspectorVisible = true } }
+        .onChange(of: model.folderScope) { _,_ in selectMode = false }
         .onChange(of: inspectorSheet) { _,visible in
             if !visible && model.showGrid && !selectMode { model.clearSelection() }
         }
@@ -151,7 +152,7 @@ public struct MobileWorkspaceView: View {
     private var libraryRail: some View {
         VStack(alignment: .leading, spacing: 20) {
             Label("LIBRARY", systemImage: "photo.stack").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Button { model.showGrid = true } label: { Label("All photographs", systemImage: "square.grid.2x2") }
+            ScrollView { MobileFolderList(model: model) }.frame(maxHeight: 300)
             Text("\(model.photos.count) photographs").font(.caption).foregroundStyle(.secondary)
             Divider()
             Label("WORKFLOW", systemImage: "slider.horizontal.3").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -193,6 +194,12 @@ public struct MobileWorkspaceView: View {
                 TextField("Search photographs", text: $search).textFieldStyle(.roundedBorder).frame(maxWidth: 260)
                 Spacer()
                 Text("\(model.selected.count) selected").font(.caption).foregroundStyle(.secondary)
+                if !model.selected.isEmpty {
+                    Menu("Move to folder") {
+                        Button("Unfiled") { model.moveSelection(to: nil) }
+                        ForEach(model.folders.folders) { folder in Button(folder.name) { model.moveSelection(to: folder.id) }.accessibilityLabel("Move to \(folder.name)") }
+                    }.disabled(model.busy).accessibilityIdentifier("move-to-folder")
+                }
                 if selectMode {
                     Button("Done") { selectMode = false; model.selected = model.active.map { [$0.id] } ?? [] }.accessibilityIdentifier("finish-selection")
                 }
@@ -211,6 +218,8 @@ public struct MobileWorkspaceView: View {
                         Task { do { let urls = try await Task.detached { try MobileSamples.create() }.value; model.importPhotos(urls) } catch { model.error = error.localizedDescription } }
                     }.accessibilityIdentifier("load-samples")
                 }
+            } else if visiblePhotos.isEmpty {
+                ContentUnavailableView("No photographs in this view",systemImage: "folder",description: Text("Import photographs into this folder, move a selection here, or change the search."))
             } else {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSize), spacing: 12)], spacing: 14) {

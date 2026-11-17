@@ -2,6 +2,25 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testFoldersFilterMoveAndPersist() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60))
+        app.buttons["toggle-sidebar"].tap(); app.buttons["new-library-folder"].tap()
+        let name = app.textFields["library-folder-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Travel")
+        app.buttons["save-library-folder"].tap(); XCTAssertTrue(name.waitForNonExistence(timeout: 5))
+        first.press(forDuration: 0.7)
+        app.buttons["move-to-folder"].tap(); app.buttons["Move to Travel"].tap()
+        app.buttons["Travel"].firstMatch.tap()
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["photo-Sample-02.tiff"].exists)
+        app.buttons["Unfiled"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["photo-Sample-02.tiff"].waitForExistence(timeout: 5))
+        XCTAssertFalse(first.exists)
+    }
+    @MainActor
     func testDoubleTapOpensPhotoAndSwipesNavigate() throws {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft

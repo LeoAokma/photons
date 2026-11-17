@@ -52,3 +52,11 @@
 - IPAD-10：iPad 简体中文界面，独立 commit，与其余功能同一 PR/build。
 - IPAD-11：Lens profiles 详情（相机/光圈/标定机身/备注、方向与覆盖范围、各标定帧参数），独立 commit，与其余功能同一 PR/build。
 - IPAD-09 的最终交付还依赖 IPAD-10、IPAD-11。
+
+## IPAD-05
+
+- 变更：固定单一 iPad 图片库，明确拒绝把另一 `.photonslibrary` 当照片导入。库内增加 All photographs / Unfiled / 自建文件夹、计数、创建/重命名/移除、移动选中照片及当前文件夹导入。大图翻页使用当前文件夹与搜索结果。
+- 数据：文件夹是库内的归类目录，一张照片最多属于一个文件夹；索引原子保存在该库的 MobileFolders.json。整理文件夹不搬动或复制原片，移除文件夹只使成员返回 Unfiled，保留编辑历史。已有图库自动以未归类方式兼容，不创建第二用户库。
+- 文件：MobileLibraryFolders.swift、MobileEngine/WorkspaceModel/WorkspaceView、engine/UI 测试。
+- 验证：`testSingleLibraryFoldersPersistWithoutChangingOriginalsOrEdits` 和 `testFoldersFilterMoveAndPersist` 通过，2 项 / 0 失败；验证重开持久化、原片字节/编辑不变、名称冲突、跨库导入拒绝、UI 创建/移动/筛选。日志 `05-folders.log`。
+- 依赖：IPAD-03；提交标题含 IPAD-05。限制：本轮为库内单层归类，不把 Files 中的物理文件夹变成第二库；移除文件夹有明确保留照片的确认。无移植。回退代码不会删除索引或原片。
