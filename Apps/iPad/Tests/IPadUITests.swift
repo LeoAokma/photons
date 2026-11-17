@@ -2,6 +2,69 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testPanoramaGuideHighlightsModulesWithoutChangingAlignment() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60)); first.press(forDuration: 0.7)
+        app.buttons["photo-Sample-02.tiff"].tap(); app.buttons["panorama-tool"].tap()
+        app.buttons["choose-panorama-shift"].tap()
+        let help = app.buttons["panorama-guide"], export = app.buttons["panorama-export"]
+        XCTAssertTrue(export.wait(for: \.isEnabled,toEqual: true,timeout: 60))
+        let hdr = app.buttons["panorama-display-mode"].frame
+        help.tap()
+        var titles = Set<String>()
+        for _ in 0..<20 {
+            let title = app.staticTexts["guide-step-title"].label
+            titles.insert(title)
+            let highlight = app.otherElements["guide-highlight"]
+            XCTAssertTrue(highlight.exists,title)
+            if title == "HDR / SDR panorama preview" {
+                XCTAssertEqual(highlight.frame.minX,hdr.minX,accuracy: 4)
+                XCTAssertEqual(highlight.frame.minY,hdr.minY,accuracy: 4)
+            }
+            if title == "Drag relative positions" {
+                let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Panorama draggable position tutorial"; shot.lifetime = .keepAlways; add(shot)
+            }
+            if title == "Render and export" {
+                XCTAssertLessThan(highlight.frame.maxY,app.buttons["guide-close"].frame.minY)
+            }
+            if !app.buttons["guide-next"].isEnabled { break }
+            app.buttons["guide-next"].tap()
+        }
+        XCTAssertTrue(titles.isSuperset(of: ["Panorama preview","Histogram","HDR / SDR panorama preview","Panorama controls","Camera and orientation","Drag relative positions","Select a frame and enter X / Y","Automatic or manually guided positions","Alignment options stay visible","Re-align to apply changes","Lens profile and LCC","Exposure and highlight brightness","Render and export"]))
+        app.buttons["guide-close"].tap(); XCTAssertTrue(export.isEnabled)
+        app.buttons["close-panorama"].tap(); XCTAssertTrue(app.scrollViews["photo-grid"].exists)
+    }
+
+    @MainActor
+    func testChinesePerspectiveGuideInPortrait() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "zh-Hans"; app.launch()
+        XCUIDevice.shared.orientation = .portrait
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60)); first.press(forDuration: 0.7)
+        app.buttons["photo-Sample-02.tiff"].tap(); app.buttons["panorama-tool"].tap()
+        app.buttons["choose-panorama-perspective"].tap()
+        XCTAssertTrue(app.buttons["panorama-guide"].wait(for: \.isEnabled,toEqual: true,timeout: 60))
+        app.buttons["panorama-guide"].tap()
+        var titles = Set<String>()
+        for _ in 0..<16 {
+            titles.insert(app.staticTexts["guide-step-title"].label)
+            XCTAssertTrue(app.otherElements["guide-highlight"].exists)
+            if !app.buttons["guide-next"].isEnabled { break }
+            app.buttons["guide-next"].tap()
+        }
+        XCTAssertTrue(titles.contains("透视接片布局")); XCTAssertTrue(titles.contains("透视模式中的 LCC"))
+        XCTAssertFalse(titles.contains("自动或手动约束解算"))
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Chinese portrait panorama export guide"; shot.lifetime = .keepAlways; add(shot)
+        XCTAssertEqual(app.buttons["guide-close"].label,"关闭")
+        app.buttons["guide-close"].tap(); app.buttons["close-panorama"].tap()
+    }
+    @MainActor
     func testWorkspaceGuidesCoverToolbarAndSinglePhotoGestures() throws {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]

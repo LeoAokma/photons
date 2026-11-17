@@ -78,9 +78,9 @@ extension View {
     }
     func mobileGuideOverlay(_ guide: MobileGuideController) -> some View {
         // Reserve a separate footer so Close never covers the real panorama Export button.
-        safeAreaInset(edge: .bottom,spacing: 0) {
-            if guide.active { Color(white: 0.075).frame(height: 64) }
-        }
+        // Padding also constrains NavigationStack's hosted content. An outer
+        // safeAreaInset alone can leave its bottom export row behind the guide footer.
+        padding(.bottom,guide.active ? 64 : 0)
         .accessibilityHidden(guide.active)
         .overlay { if guide.active { MobileGuideOverlay(guide: guide).ignoresSafeArea() } }
     }
@@ -155,6 +155,16 @@ private struct MobileGuideOverlay: View {
 }
 
 enum MobileGuideSteps {
+    static let panoramaControlTargets: Set<String> = ["panorama.camera","panorama.positions","panorama.coordinates","panorama.guidance","panorama.perspective","panorama.alignment","panorama.solve","panorama.lcc"]
+    static func panorama(shift: Bool) -> [MobileGuideStep] {
+        var steps: [MobileGuideStep] = [.init("panorama.preview"),.init("panorama.histogram",fallback: "panorama.preview"),.init("panorama.hdr"),.init("panorama.controls")]
+        steps += (shift ? ["camera","positions","coordinates","guidance"] : ["perspective"])
+            .map { .init("panorama.\($0)",fallback: "panorama.controls") }
+        steps += [.init("panorama.alignment",fallback: "panorama.controls"),.init("panorama.solve",fallback: "panorama.controls"),
+                  .init(shift ? "panorama.lcc" : "panorama.perspectiveLCC",target: "panorama.lcc",fallback: "panorama.controls"),
+                  .init("panorama.tone",fallback: "panorama.preview"),.init("panorama.export")]
+        return steps
+    }
     static func workspace(grid: Bool) -> [MobileGuideStep] {
         var steps: [MobileGuideStep] = [.init(grid ? "workspace.grid" : "workspace.canvas")]
         if !grid {

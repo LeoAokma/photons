@@ -60,6 +60,7 @@ struct MobilePanoramaFlow: View {
 
 struct MobilePanoramaWorkspace: View {
     @ObservedObject var model: MobileWorkspaceModel
+    @StateObject private var guide = MobileGuideController()
     @Environment(\.dismiss) private var dismiss
     private let photos: [MobilePhoto]
     private let mode: PanoramaRegistrationMode
@@ -113,6 +114,7 @@ struct MobilePanoramaWorkspace: View {
                         Button(L10n.tr("ipad.157f52f85cb4")) { export = true }
                             .buttonStyle(.borderedProminent).disabled(model.plan == nil || dirty || model.busy || model.rendering || cropNeedsUpdate)
                             .accessibilityIdentifier("panorama-export")
+                            .mobileGuideTarget("panorama.export",in: guide)
                     }.padding(14)
                 }.background(Color(white: 0.075))
             }
@@ -122,7 +124,12 @@ struct MobilePanoramaWorkspace: View {
                     Button(L10n.tr("3fd47edce45b")) { if model.busy { model.cancel() }; dismiss() }.accessibilityIdentifier("close-panorama")
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button(model.hdr ? "HDR" : "SDR") { model.toggleHDR() }.disabled(model.busy).accessibilityIdentifier("panorama-display-mode")
+                    HStack(spacing: 8) {
+                        Button(model.hdr ? "HDR" : "SDR") { model.toggleHDR() }.disabled(model.busy).accessibilityIdentifier("panorama-display-mode")
+                            .mobileGuideTarget("panorama.hdr",in: guide)
+                        MobileGuideButton { guide.start(MobileGuideSteps.panorama(shift: mode == .shift)) }
+                            .disabled(model.busy).accessibilityIdentifier("panorama-guide")
+                    }
                 }
             }
         }.preferredColorScheme(.dark).tint(.orange)
@@ -158,6 +165,7 @@ struct MobilePanoramaWorkspace: View {
         .alert(L10n.tr("ipad.2be61912014b"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L10n.tr("slices.ok")) { model.error = nil }
         } message: { Text(model.error ?? "") }
+        .mobileGuideOverlay(guide)
     }
     private var preview: some View {
         VStack(spacing: 0) {
@@ -174,9 +182,11 @@ struct MobilePanoramaWorkspace: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .bottomLeading) {
                 if let histogram=model.frame?.histogram,model.plan != nil {
-                    MobilePanoramaHistogram(histogram:histogram,hdr:model.hdr).padding(12)
+                    MobilePanoramaHistogram(histogram:histogram,hdr:model.hdr)
+                        .mobileGuideTarget("panorama.histogram",in: guide).padding(12)
                 }
             }
+            .mobileGuideTarget("panorama.preview",in: guide)
             if model.plan?.isRegistered == true {
                 Divider()
                 VStack(spacing: 6) {
@@ -195,6 +205,7 @@ struct MobilePanoramaWorkspace: View {
                     Text(L10n.tr("panorama.tone.hint"))
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(12).background(.thinMaterial).disabled(model.busy)
+                    .mobileGuideTarget("panorama.tone",in: guide)
             }
         }
     }
@@ -205,13 +216,17 @@ struct MobilePanoramaWorkspace: View {
         })
     }
     private var controls: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if mode == .shift {
+                VStack(alignment: .leading,spacing: 12) {
                 Text(L10n.tr("ipad.1d5e10d2cfa8")).font(.headline)
                 Picker(L10n.tr("ee38b80c37d9"), selection: $bodyType) { ForEach(PanoramaCameraBody.allCases) { Text($0.name).tag($0) } }
                 MobileBodyOrientationPicker(cameraBody: bodyType, selection: $orientation)
                 Text(bodyType.travel(at: orientation).summary).font(.caption).foregroundStyle(.secondary)
+                }.id("panorama.camera").mobileGuideTarget("panorama.camera",in: guide)
+                VStack(alignment: .leading,spacing: 12) {
                 HStack {
                     Text(L10n.tr("ipad.a511909161e1")).font(.caption.weight(.semibold))
                     Spacer()
@@ -227,6 +242,8 @@ struct MobilePanoramaWorkspace: View {
                 }
                 Text(L10n.tr("ipad.e8b944b7ea4c"))
                     .font(.caption).foregroundStyle(.secondary)
+                }.id("panorama.positions").mobileGuideTarget("panorama.positions",in: guide)
+                VStack(alignment: .leading,spacing: 12) {
                 ForEach(Array(photos.enumerated()), id: \.offset) { i,photo in
                     Button { selectedFrame = i } label: {
                         HStack {
@@ -244,12 +261,17 @@ struct MobilePanoramaWorkspace: View {
                     Text(L10n.tr("ipad.03ccf7f28574")).font(.caption.weight(.semibold))
                     MobilePositionFields(position: Binding(get: { positions[selectedFrame] ?? .zero }, set: { positions[selectedFrame] = $0; guided = true }))
                 }
+                }.id("panorama.coordinates").mobileGuideTarget("panorama.coordinates",in: guide)
+                VStack(alignment: .leading,spacing: 12) {
                 Toggle(L10n.tr("ipad.1451cd3ff100"), isOn: $guided).accessibilityIdentifier("position-guidance")
                 Text(guided ? L10n.tr("ipad.1e6c54d4cfc9") : L10n.tr("ipad.eb13eb208f76")).font(.caption).foregroundStyle(.secondary)
+                }.id("panorama.guidance").mobileGuideTarget("panorama.guidance",in: guide)
                 } else {
+                    VStack(alignment: .leading,spacing: 12) {
                     Text(L10n.tr("ipad.8fc486edfaf6")).font(.headline)
                     if let plan = model.plan { MobilePositionDiagram(plan: plan).frame(height: 280) }
                     Text(L10n.tr("ipad.6bd1217be525")).font(.caption).foregroundStyle(.secondary)
+                    }.id("panorama.perspective").mobileGuideTarget("panorama.perspective",in: guide)
                 }
                 VStack(alignment: .leading, spacing: 12) {
                     Text(L10n.tr("ipad.a38fa6d1cdc0")).font(.headline)
@@ -266,9 +288,12 @@ struct MobilePanoramaWorkspace: View {
                     Toggle(L10n.tr("ipad.a55dd8a88660"), isOn: $options.avoidMotion)
                     Slider(value: $options.seamSoftness, in: 0...20) { Text(L10n.tr("ipad.11b8fec683fe")) }
                 }.accessibilityIdentifier("panorama-alignment-options")
+                    .id("panorama.alignment").mobileGuideTarget("panorama.alignment",in: guide)
                 Button(L10n.tr("ipad.602ad77cd80f"), action: align).buttonStyle(.borderedProminent)
                     .disabled(model.busy || !validSensor || sources.count < 2).accessibilityIdentifier("align-panorama")
+                    .id("panorama.solve").mobileGuideTarget("panorama.solve",in: guide)
                 Divider()
+                VStack(alignment: .leading,spacing: 12) {
                 if mode == .shift {
                 Text(L10n.tr("ipad.6f427ab8e70e")).font(.caption.weight(.semibold))
                 Picker(L10n.tr("5c30b533510f"), selection: $profileID) {
@@ -290,8 +315,16 @@ struct MobilePanoramaWorkspace: View {
                 if let lcc = model.plan?.lccState { Label(lcc.profileName, systemImage: "checkmark.seal"); Text(String(format: L10n.tr("ipad.0858f5e8bf0a"), lcc.coveredFraction * 100)).font(.caption) }
                 if let note = model.lccPositionNote { Text(note).font(.caption).foregroundStyle(.orange) }
                 } else { Text(PanoramaRegistrationMode.perspectiveLCCNotice).font(.caption).foregroundStyle(.secondary) }
+                }.id("panorama.lcc").mobileGuideTarget("panorama.lcc",in: guide)
             }.padding(18).disabled(model.busy)
         }.background(Color(white: 0.105)).accessibilityIdentifier("panorama-controls")
+            .mobileGuideTarget("panorama.controls",in: guide)
+            .onChange(of: guide.step?.id) { _,_ in
+                guard let target = guide.step?.target,
+                      MobileGuideSteps.panoramaControlTargets.contains(target) else { return }
+                proxy.scrollTo(target,anchor: .center)
+            }
+        }
     }
     private func align() {
         guard validSensor, !model.busy else { return }
