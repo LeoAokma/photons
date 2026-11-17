@@ -26,10 +26,12 @@ struct MobilePanoramaLayout: Equatable {
 
 /// Choosing a capture model is required before registration starts.
 struct MobilePanoramaFlow: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
     @Environment(\.dismiss) private var dismiss
     @State private var mode: PanoramaRegistrationMode?
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Group {
             if let mode { MobilePanoramaWorkspace(model: model, mode: mode) }
             else {
@@ -59,6 +61,7 @@ struct MobilePanoramaFlow: View {
 }
 
 struct MobilePanoramaWorkspace: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
     @StateObject private var guide = MobileGuideController()
     @Environment(\.dismiss) private var dismiss
@@ -92,6 +95,7 @@ struct MobilePanoramaWorkspace: View {
 
     init(model: MobileWorkspaceModel, mode: PanoramaRegistrationMode) { self.model = model; self.mode = mode; photos = model.selectedPhotos }
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         NavigationStack {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
@@ -314,7 +318,7 @@ struct MobilePanoramaWorkspace: View {
                 }.disabled(model.busy || dirty || model.plan == nil || profileID == nil).accessibilityIdentifier("panorama-lcc")
                 if let lcc = model.plan?.lccState { Label(lcc.profileName, systemImage: "checkmark.seal"); Text(String(format: L10n.tr("ipad.0858f5e8bf0a"), lcc.coveredFraction * 100)).font(.caption) }
                 if let note = model.lccPositionNote { Text(note).font(.caption).foregroundStyle(.orange) }
-                } else { Text(PanoramaRegistrationMode.perspectiveLCCNotice).font(.caption).foregroundStyle(.secondary) }
+                } else { Text(L10n.tr("ipad.panorama.perspectiveLCCNotice")).font(.caption).foregroundStyle(.secondary) }
                 }.id("panorama.lcc").mobileGuideTarget("panorama.lcc",in: guide)
             }.padding(18).disabled(model.busy)
         }.background(Color(white: 0.105)).accessibilityIdentifier("panorama-controls")
@@ -360,6 +364,7 @@ struct MobilePanoramaWorkspace: View {
 }
 
 struct MobileDraggablePositions: View {
+    @Environment(\.locale) private var interfaceLocale
     let names: [String]
     let sensor: SensorSize
     let travel: PanoramaShiftRange
@@ -368,6 +373,7 @@ struct MobileDraggablePositions: View {
     let changed: () -> Void
     @Namespace private var canvasSpace
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         GeometryReader { geometry in
             let bounds = travel.coverage(sensor: sensor, centered: false).insetBy(dx: -4, dy: -4)
             let scale = min(geometry.size.width / bounds.width, geometry.size.height / bounds.height)
@@ -397,6 +403,7 @@ struct MobileDraggablePositions: View {
 }
 /// Keep the stored center fixed during a drag. GestureState resets on completion AND cancellation.
 private struct MobileDraggableFrame: View {
+    @Environment(\.locale) private var interfaceLocale
     let name: String
     let index: Int
     let sensor: SensorSize
@@ -410,6 +417,7 @@ private struct MobileDraggableFrame: View {
     @GestureState private var translation = CGSize.zero
 
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         let center = translation == .zero ? position : MobileShiftGeometry.dragged(position, translation: translation, pointsPerMM: scale, travel: travel)
         let color = travel.contains(center, tolerance: 0.1) ? [Color.cyan, .purple, .green, .pink][index % 4] : .orange
         Rectangle().fill(color.opacity(selected == index ? 0.25 : 0.1))

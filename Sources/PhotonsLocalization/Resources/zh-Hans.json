@@ -1652,7 +1652,7 @@
   "ipad.bf930788929a": "导出图像",
   "ipad.bf994aee8e7e": "在图片库中选择标定照片，然后在此输入各帧的实测移轴位置。",
   "ipad.bfe2eca40179": "高度",
-  "ipad.c13332b27e49": "语言更改将在重新启动 Photons 后生效。",
+  "ipad.c13332b27e49": "语言更改立即生效。",
   "ipad.c162e32895fb": "请先选择照片。",
   "ipad.c1ba68c57d4c": "从“文件”导入并保存在本地图片库",
   "ipad.c1f6f488ea89": "预览缓存统计与清理",
@@ -1772,7 +1772,7 @@
   "guide.workspace.export.title": "导出与分享",
   "guide.workspace.export.body": "导出当前照片或全景图。选择格式、HDR/SDR 和输出尺寸，导出时会进行正式渲染。再保存或分享新文件，原图仍保留在图库中。",
   "guide.workspace.settings.title": "设置与缓存",
-  "guide.workspace.settings.body": "可切换语言、管理镜头配置、查看或清理预览缓存。清理缓存不会删除原图与编辑。语言修改在重启应用后生效。",
+  "guide.workspace.settings.body": "随时切换界面语言或跟随设备语言，查看镜头配置与标定照片，统计和清理预览缓存。",
   "guide.panorama.preview.title": "全景预览",
   "guide.panorama.preview.body": "在这里检查构图与接缝。可以放大查看布局，但这仍是低分辨率拼接预览；导出时才会按所选尺寸正式渲染。",
   "guide.panorama.histogram.title": "直方图",
@@ -1812,5 +1812,7 @@
   "guide.quickstart.stitch.title": "多选照片开始拼接",
   "guide.quickstart.stitch.body": "长按一张照片，再点击其他有重叠的照片进行勾选。选中至少两张后，使用顶部拼接按钮。移轴模式下可拖动布局或输入实测位置，再重新对齐。",
   "guide.quickstart.help.title": "随时打开操作提示",
-  "guide.quickstart.help.body": "导入左侧的灯泡会介绍各工具栏按钮与浏览手势。拼接窗口 HDR 旁也有灯泡，重点介绍相对位置解算、各模块与导出。"
+  "guide.quickstart.help.body": "导入左侧的灯泡会介绍各工具栏按钮与浏览手势。拼接窗口 HDR 旁也有灯泡，重点介绍相对位置解算、各模块与导出。",
+  "ipad.language.system": "跟随系统",
+  "ipad.panorama.perspectiveLCCNotice": "透视拼接前，请先对单张照片应用 LCC。相机转向后的布局并不代表物理移轴位置。"
 }

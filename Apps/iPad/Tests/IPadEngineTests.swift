@@ -4,6 +4,7 @@ import ImageIO
 import CryptoKit
 import UIKit
 import Metal
+import PhotonsLocalization
 import PhotonsCore
 import PhotonsCatalog
 import PhotonsPanorama
@@ -11,6 +12,15 @@ import PhotonsPanorama
 @testable import PhotonsExtensions
 
 final class IPadEngineTests: XCTestCase {
+    func testInterfaceLanguageRespectsPreferenceAndDeviceOrder() {
+        XCTAssertEqual(L10n.resolveLanguage(preference: nil,preferredLanguages: ["zh-Hans-US","en-US"]),"zh-Hans")
+        XCTAssertEqual(L10n.resolveLanguage(preference: "system",preferredLanguages: ["fr-FR","zh-Hant-TW","en"]),"zh-Hans")
+        XCTAssertEqual(L10n.resolveLanguage(preference: "system",preferredLanguages: ["en-GB","zh-Hans"]),"en")
+        XCTAssertEqual(L10n.resolveLanguage(preference: "en",preferredLanguages: ["zh-Hans"]),"en")
+        XCTAssertEqual(L10n.resolveLanguage(preference: "zh-Hans",preferredLanguages: ["en"]),"zh-Hans")
+        XCTAssertEqual(L10n.resolveLanguage(preference: nil,preferredLanguages: ["fr","de"]),"en")
+        XCTAssertEqual(L10n.resolveLanguage(preference: nil,preferredLanguages: []),"en")
+    }
     func testQuickStartCompletionIsPerBuildAndSurvivesRelaunch() {
         let suite = "guide-test-\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

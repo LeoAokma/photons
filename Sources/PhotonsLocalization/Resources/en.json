@@ -1652,7 +1652,7 @@
   "ipad.bf930788929a": "Export image",
   "ipad.bf994aee8e7e": "Select calibration photographs in the library, then enter their measured shift positions here.",
   "ipad.bfe2eca40179": "Height",
-  "ipad.c13332b27e49": "Language changes apply after restarting Photons.",
+  "ipad.c13332b27e49": "Language changes apply immediately.",
   "ipad.c162e32895fb": "Select a photo first.",
   "ipad.c1ba68c57d4c": "Files import and persistent local library",
   "ipad.c1f6f488ea89": "Preview cache size and cleanup",
@@ -1772,7 +1772,7 @@
   "guide.workspace.export.title": "Export and share",
   "guide.workspace.export.body": "Export the current photo or panorama. Choose format, HDR/SDR and output size; export performs the final render. Save or share the new file while keeping the original in your library.",
   "guide.workspace.settings.title": "Settings and cache",
-  "guide.workspace.settings.body": "Change language, manage lens profiles and inspect or clear the preview cache. Clearing the cache keeps your original photos and edits. Language changes apply after restarting the app.",
+  "guide.workspace.settings.body": "Change the interface language at any time, follow the device language, inspect lens profiles and captures, or check and clear the preview cache.",
   "guide.panorama.preview.title": "Panorama preview",
   "guide.panorama.preview.body": "Check framing and seams here. You may zoom to inspect composition, but this is a low-resolution stitch preview. Export performs the final render at the size you choose.",
   "guide.panorama.histogram.title": "Histogram",
@@ -1812,5 +1812,7 @@
   "guide.quickstart.stitch.title": "Select several photos to stitch",
   "guide.quickstart.stitch.body": "Long-press a photo, then tap other overlapping photos to check them. With at least two selected, use the panorama toolbar button. In Shift mode you can drag the layout or enter measured positions before re-aligning.",
   "guide.quickstart.help.title": "Help is always nearby",
-  "guide.quickstart.help.body": "Use the light bulb left of Import for a tour of every toolbar button and browsing gesture. The panorama window has its own light bulb beside HDR, including relative-position solving and export tips."
+  "guide.quickstart.help.body": "Use the light bulb left of Import for a tour of every toolbar button and browsing gesture. The panorama window has its own light bulb beside HDR, including relative-position solving and export tips.",
+  "ipad.language.system": "System default",
+  "ipad.panorama.perspectiveLCCNotice": "Apply LCC to individual photos before perspective stitching. A rotated-camera layout does not describe physical lens shift."
 }

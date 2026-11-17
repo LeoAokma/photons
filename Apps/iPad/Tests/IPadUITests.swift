@@ -303,21 +303,35 @@ final class IPadUITests: XCTestCase {
         app.buttons["close-panorama"].tap()
     }
     @MainActor
-    func testLanguagePreferenceAppliesOnRestartAndCanReturnToEnglish() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]
-        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+    func testLanguageChangesImmediatelyAndSystemDefaultLocalizesQuickStart() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo","-AppleLanguages","(en)"]
+        app.launch(); XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
+        app.buttons["settings-button"].tap(); app.buttons["interface-language"].tap(); app.buttons["English"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Language changes apply immediately."].waitForExistence(timeout: 5))
+        app.buttons["close-settings"].tap(); app.buttons["photo-Sample-01.tiff"].tap()
+        XCTAssertTrue(app.sliders["adjust-light.exposure"].waitForExistence(timeout: 30))
         app.buttons["settings-button"].tap(); app.buttons["interface-language"].tap(); app.buttons["简体中文"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Language changes apply after restarting Photons."].exists)
-        app.terminate(); app.launchEnvironment.removeValue(forKey: "PHOTONS_LANGUAGE"); app.launch()
-        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
-        app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.staticTexts["语言更改将在重新启动 Photons 后生效。"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["语言更改立即生效。"].waitForExistence(timeout: 5))
+        app.buttons["close-settings"].tap()
+        XCTAssertTrue(app.sliders["adjust-light.exposure"].exists,"Changing language must retain the inspector tab")
+        XCTAssertTrue(app.staticTexts["曝光"].exists,"Cached adjustment titles must change too")
+        app.buttons["workspace-guide"].tap(); XCTAssertEqual(app.staticTexts["guide-step-title"].label,"浏览与多选照片")
+        app.buttons["guide-close"].tap(); app.buttons["settings-button"].tap()
         app.buttons["interface-language"].tap(); app.buttons["English"].firstMatch.tap()
-        app.terminate(); app.launch()
-        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
-        app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.staticTexts["Language changes apply after restarting Photons."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Language changes apply immediately."].waitForExistence(timeout: 5))
+        app.buttons["interface-language"].tap(); app.buttons["System default"].firstMatch.tap()
+        app.buttons["close-settings"].tap(); app.terminate()
+        app.launchArguments = ["--demo","--test-onboarding","-AppleLanguages","(zh-Hans)"]
+        app.launchEnvironment["PHOTONS_GUIDE_TEST_BUILD"] = "system-language-" + UUID().uuidString
+        app.launch()
+        XCTAssertTrue(app.staticTexts["guide-step-title"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["guide-step-title"].label,"欢迎使用 Photons")
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Device language Chinese quick start"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["guide-close"].tap()
+        app.buttons["settings-button"].tap(); app.buttons["interface-language"].tap(); app.buttons["English"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Language changes apply immediately."].waitForExistence(timeout: 5))
     }
     @MainActor
     func testChineseInterfaceCoversBrowsingSettingsAndLensDetails() throws {
@@ -334,7 +348,7 @@ final class IPadUITests: XCTestCase {
         app.buttons["取消"].firstMatch.tap()
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.buttons["interface-language"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["语言更改将在重新启动 Photons 后生效。"].exists)
+        XCTAssertTrue(app.staticTexts["语言更改立即生效。"].exists)
         let settings = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); settings.name = "Chinese settings"; settings.lifetime = .keepAlways; add(settings)
         app.buttons["镜头配置"].firstMatch.tap()
         app.buttons["lens-profile-43A1CC00-1115-4000-8000-000000000001"].tap()

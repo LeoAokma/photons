@@ -61,6 +61,7 @@ enum MobileHistogramReading {
     }
 }
 struct MobileHistogram: View {
+    @Environment(\.locale) private var interfaceLocale
     let histogram: Histogram
     var hdr = true
     @Environment(\.displayScale) private var displayScale
@@ -68,6 +69,7 @@ struct MobileHistogram: View {
     @State private var pointer: Double?
     private var measured: Histogram { histogram.withDisplayHeadroom(hdr ? headroom : 1) }
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         VStack(alignment: .leading,spacing: 7) {
             HStack {
                 Text(hdr ? "HDR · Rec.2020" : "SDR · Display P3").font(.caption.weight(.semibold))

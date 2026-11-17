@@ -87,8 +87,10 @@ extension View {
 }
 
 struct MobileGuideButton: View {
+    @Environment(\.locale) private var interfaceLocale
     let action: () -> Void
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Button(action: action) {
             Text("💡").font(.system(size: 20)).frame(width: 32,height: 32)
                 .background(Color(white: 0.18),in: Circle())
@@ -99,8 +101,10 @@ struct MobileGuideButton: View {
 }
 
 private struct MobileGuideOverlay: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var guide: MobileGuideController
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         GeometryReader { geometry in
             let frame = geometry.frame(in: .global)
             let highlight = guide.highlight(in: frame)

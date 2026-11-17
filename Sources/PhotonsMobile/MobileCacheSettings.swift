@@ -3,6 +3,7 @@ import PhotonsLocalization
 import SwiftUI
 
 struct MobileCacheSettings: View {
+    @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
     @State private var usage: MobileEngine.CacheUsage?
     @State private var clearing = false
@@ -10,6 +11,7 @@ struct MobileCacheSettings: View {
     @State private var error: String?
     private func size(_ value: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(value),countStyle: .file) }
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Section {
             if let usage {
                 LabeledContent(L10n.tr("ipad.00ca4dac69af"),value: size(usage.diskBytes)).accessibilityIdentifier("cache-disk-size")

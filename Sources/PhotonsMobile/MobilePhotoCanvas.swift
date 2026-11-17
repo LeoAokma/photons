@@ -29,6 +29,7 @@ enum MobileZoomGeometry {
 }
 
 struct MobilePhotoCanvas: View {
+    @Environment(\.locale) private var interfaceLocale
     let image: CGImage
     let hdr: Bool
     let identity: String
@@ -46,6 +47,7 @@ struct MobilePhotoCanvas: View {
     @State private var custom = false
     @State private var customText = "100"
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         ZStack(alignment: .topTrailing) {
             MobilePhotoViewport(image: image,hdr: hdr,identity: identity,
                 pixels: fullSize ?? CGSize(width: image.width,height: image.height), detail: detail,

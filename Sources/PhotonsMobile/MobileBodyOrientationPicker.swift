@@ -5,10 +5,12 @@ import PhotonsLocalization
 
 /// Touch-sized versions of the Mac body-placement diagrams, using the same travel geometry.
 struct MobileBodyOrientationPicker: View {
+    @Environment(\.locale) private var interfaceLocale
     let cameraBody: PanoramaCameraBody
     @Binding var selection: PanoramaBodyOrientation
 
     var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 5) {
                 ForEach(PanoramaBodyOrientation.allCases) { angle in

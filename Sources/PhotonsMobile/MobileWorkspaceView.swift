@@ -7,9 +7,13 @@ import PhotonsCore
 import PhotonsPanorama
 
 public struct MobileWorkspaceView: View {
+    @Environment(\.locale) private var interfaceLocale
     @StateObject private var model = MobileWorkspaceModel()
     @StateObject private var guide = MobileGuideController()
     @State private var checkedBuildGuide = false
+    @AppStorage("photons.language") private var languagePreference = "system"
+    @State private var preferredLanguages = Locale.preferredLanguages
+    @Environment(\.scenePhase) private var scenePhase
     @State private var importer = false
     @State private var panoramaWorkspace = false
     @State private var settingsWorkspace = false
@@ -28,6 +32,7 @@ public struct MobileWorkspaceView: View {
     private var visiblePhotos: [MobilePhoto] { model.folderPhotos.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) } }
     public init() {}
     public var body: some View {
+        let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         NavigationStack {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
@@ -106,7 +111,13 @@ public struct MobileWorkspaceView: View {
             Button(L10n.tr("slices.ok"), role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
         .mobileGuideOverlay(guide)
-        .environment(\.locale,Locale(identifier: L10n.language))
+        .environment(\.locale,Locale(identifier: L10n.resolveLanguage(
+            preference: ProcessInfo.processInfo.environment["PHOTONS_LANGUAGE"] ?? languagePreference,
+            preferredLanguages: preferredLanguages)))
+        .onChange(of: scenePhase) { _,phase in if phase == .active { preferredLanguages = Locale.preferredLanguages } }
+        .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
+            preferredLanguages = Locale.preferredLanguages
+        }
     }
     private var workspaceToolbar: some View {
         HStack(spacing: 16) {
