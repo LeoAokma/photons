@@ -2,6 +2,43 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testOptionalLargeRAWZoomAt100PercentDoesNotCrash() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo","--boston"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(app.buttons["toggle-sidebar"].waitForExistence(timeout: 15))
+        app.buttons["toggle-sidebar"].tap()
+        guard app.buttons["load-boston"].exists else { throw XCTSkip("Optional locally bundled 100 MP RAW fixture") }
+        app.buttons["toggle-sidebar"].tap()
+        let photo = app.buttons["photo-B0000628.3FR"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 120)); photo.doubleTap()
+        let canvas = app.otherElements["photo-canvas-container"]
+        XCTAssertTrue(canvas.waitForExistence(timeout: 30))
+        let viewport = canvas.descendants(matching: .any)["photo-canvas"].firstMatch
+        let state = canvas.staticTexts["zoom-state"], notice = canvas.staticTexts["detail-status"]
+        canvas.buttons["zoom-options"].tap(); app.buttons["100%"].tap()
+        viewport.doubleTap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "100%",timeout: 10))
+        XCTAssertTrue(notice.wait(for: \.label,toEqual: "Detail preview limited to 50% resolution",timeout: 60))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "100 percent RAW zoom with bounded detail"; shot.lifetime = .keepAlways; add(shot)
+        viewport.swipeLeft()
+        canvas.buttons["zoom-options"].tap(); app.buttons["200%"].tap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "200%",timeout: 10))
+        XCTAssertTrue(notice.wait(for: \.label,toEqual: "Detail preview limited to 50% resolution",timeout: 60))
+        app.buttons["display-mode"].tap()
+        XCTAssertTrue(notice.wait(for: \.label,toEqual: "Detail preview limited to 50% resolution",timeout: 60))
+        XCTAssertEqual(app.state,.runningForeground)
+        canvas.buttons["zoom-fit"].tap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "Fit",timeout: 10))
+        XCTAssertTrue(notice.waitForNonExistence(timeout: 10))
+        canvas.buttons["zoom-options"].tap(); app.buttons["100%"].tap()
+        viewport.doubleTap()
+        XCTAssertTrue(state.wait(for: \.label,toEqual: "100%",timeout: 10))
+        XCTAssertTrue(notice.wait(for: \.label,toEqual: "Detail preview limited to 50% resolution",timeout: 60))
+        XCTAssertEqual(app.state,.runningForeground)
+    }
+    @MainActor
     func testMultiSelectionTapsToggleWithoutOpeningPhotos() throws {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]

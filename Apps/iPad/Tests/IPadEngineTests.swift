@@ -19,6 +19,122 @@ final class IPadEngineTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
 
+    func testDetailSizingAccountsForSourceTextureAndMemory() throws {
+        let request = MobileDetailRequest(rect: CGRect(x: 0.4,y: 0.4,width: 0.15,height: 0.15),scale: 1)
+        let large = ImageSize(width: 11664,height: 8750)
+        let bounded = try MobileDetailSizing.plan(source: large,output: large,request: request,
+            textureLimit: 8192,availableBytes: 64 * 1024 * 1024 * 1024)
+        XCTAssertLessThan(bounded.scale,1); XCTAssertLessThan(bounded.longEdge,8192)
+        XCTAssertEqual(bounded.request.rect.minX,request.rect.minX,accuracy: 1e-12)
+        XCTAssertEqual(bounded.request.rect.minY,request.rect.minY,accuracy: 1e-12)
+        XCTAssertEqual(bounded.request.rect.width,request.rect.width,accuracy: 1e-12)
+        XCTAssertEqual(bounded.request.rect.height,request.rect.height,accuracy: 1e-12)
+        let ordinary = ImageSize(width: 4000,height: 3000)
+        let native = try MobileDetailSizing.plan(source: ordinary,output: ordinary,request: request,
+            textureLimit: 16384,availableBytes: 8 * 1024 * 1024 * 1024)
+        XCTAssertEqual(native.scale,1,"Normal-size photos still receive real 1:1 detail")
+        let constrained = try MobileDetailSizing.plan(source: ordinary,output: ordinary,request: request,
+            textureLimit: 16384,availableBytes: 512 * 1024 * 1024)
+        XCTAssertLessThan(constrained.scale,native.scale)
+        XCTAssertThrowsError(try MobileDetailSizing.plan(source: large,output: large,request: request,
+            textureLimit: 8192,availableBytes: 32 * 1024 * 1024))
+        for bad in [MobileDetailRequest(rect: .zero,scale: 1),
+                    MobileDetailRequest(rect: request.rect,scale: .nan),
+                    MobileDetailRequest(rect: CGRect(x: 2,y: 2,width: 1,height: 1),scale: 1),
+                    MobileDetailRequest(rect: CGRect(x: CGFloat.nan,y: 0,width: 1,height: 1),scale: 1)] {
+            XCTAssertThrowsError(try MobileDetailSizing.plan(source: ordinary,output: ordinary,request: bad,
+                textureLimit: 8192,availableBytes: 8 * 1024 * 1024 * 1024))
+        }
+    }
+
+    func testBoundedDetailMatchesEditedPixelsAtItsDeclaredResolution() async throws {
+        let engine = MobileEngine(libraryURL: folder.appendingPathComponent("Bounded.photonslibrary"),
+                                  detailAvailableMemory: { 300 * 1024 * 1024 })
+        let urls = try MobileSamples.create(in: folder.appendingPathComponent("bounded-pixels"))
+        let photo = MobilePhoto(id: "bounded",name: "bounded",url: urls[0],rating: 0,width: 768,height: 512)
+        var edit = EditModel.neutral
+        edit.light.exposure = 0.6; edit.geometry.quarterTurns = 1
+        edit.geometry.crop = .init(x: 0.125,y: 0.125,width: 0.75,height: 0.75)
+        let request = MobileDetailRequest(rect: CGRect(x: 0.25,y: 0.25,width: 0.5,height: 0.5),scale: 1)
+        let detail = try await engine.detail(photo,edit: edit,hdr: true,request: request)
+        XCTAssertLessThan(detail.resolutionScale,1)
+        let full = try await engine.frame(photo,edit: edit,hdr: true,edge: Int(768 * detail.resolutionScale))
+        let crop = CGRect(x: Int((detail.rect.minX * Double(full.image.width)).rounded()),
+                          y: Int((detail.rect.minY * Double(full.image.height)).rounded()),
+                          width: detail.image.width,height: detail.image.height)
+        let expected = try XCTUnwrap(full.image.cropping(to: crop))
+        let actualData = try XCTUnwrap(detail.image.dataProvider?.data) as Data
+        let expectedData = try XCTUnwrap(expected.dataProvider?.data) as Data
+        // The padded halo is intentionally outside the viewport. Compare the visible
+        // pixels, not the halo's own neighbourhood-clamped outer border.
+        let x0 = max(0,Int(request.rect.minX * Double(full.image.width) - crop.minX))
+        let y0 = max(0,Int(request.rect.minY * Double(full.image.height) - crop.minY))
+        let x1 = min(detail.image.width,Int(request.rect.maxX * Double(full.image.width) - crop.minX))
+        let y1 = min(detail.image.height,Int(request.rect.maxY * Double(full.image.height) - crop.minY))
+        var delta = 0.0
+        for y in y0..<y1 { for x in (x0 * 4)..<(x1 * 4) {
+            let a = actualData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: y * detail.image.bytesPerRow + x * 2,as: UInt16.self) }
+            let b = expectedData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: y * expected.bytesPerRow + x * 2,as: UInt16.self) }
+            delta = max(delta,abs(Double(Float16(bitPattern: a)) - Double(Float16(bitPattern: b))))
+        } }
+        XCTAssertLessThan(delta,0.015,"Reduced-resolution details must preserve edits, crop, rotation and HDR pixels")
+    }
+
+    func testLowMemoryDetailDoesNotDecodeAndKeepsCachedPreview() async throws {
+        let engine = MobileEngine(libraryURL: folder.appendingPathComponent("LowMemory.photonslibrary"),
+                                  detailAvailableMemory: { 32 * 1024 * 1024 })
+        let urls = try MobileSamples.create(in: folder.appendingPathComponent("low-memory"))
+        let photo = MobilePhoto(id: "low",name: "low",url: urls[0],rating: 0,width: 768,height: 512)
+        let preview = try await engine.frame(photo,edit: .neutral,hdr: true,edge: 320)
+        let count = await engine.renderCount
+        do {
+            _ = try await engine.detail(photo,edit: .neutral,hdr: true,
+                request: .init(rect: CGRect(x: 0.25,y: 0.25,width: 0.5,height: 0.5),scale: 1))
+            XCTFail("Low memory should leave the existing preview in place")
+        } catch { XCTAssertFalse(error.localizedDescription.isEmpty) }
+        let after = await engine.renderCount; XCTAssertEqual(count,after)
+        let retained = try await engine.frame(photo,edit: .neutral,hdr: true,edge: 320)
+        XCTAssertTrue(retained.image === preview.image)
+    }
+
+    @MainActor
+    func testOptionalLargeRAWZoomRendersBoundedDetailsAndReusesDecode() async throws {
+        let input = FileManager.default.urls(for: .documentDirectory,in: .userDomainMask)[0]
+            .appendingPathComponent("ValidationInputs/628-633/B0000628.3FR")
+        guard FileManager.default.fileExists(atPath: input.path) else { throw XCTSkip("Optional local 100 MP RAW fixture") }
+        let engine = engine(), size = try ImageSourceDecoder.size(at: input)
+        let photo = MobilePhoto(id: "large-raw",name: input.lastPathComponent,url: input,rating: 0,width: size.width,height: size.height)
+        let preview = try await engine.frame(photo,edit: .neutral,hdr: true,edge: 1200)
+        let request = MobileDetailRequest(rect: CGRect(x: 0.4,y: 0.4,width: 0.15,height: 0.15),scale: 1)
+        let detail = try await engine.detail(photo,edit: .neutral,hdr: true,request: request)
+        XCTAssertGreaterThan(detail.image.width,Int(Double(preview.image.width) * request.rect.width))
+        XCTAssertLessThan(detail.resolutionScale,1)
+        XCTAssertGreaterThan(detail.resolutionScale,0.1)
+        XCTAssertTrue(detail.rect.contains(request.rect))
+        let before = await engine.renderCount
+        let decodeScale = Float(Int(Double(max(size.width,size.height)) * detail.resolutionScale)) / Float(max(size.width,size.height))
+        let decodes = RAWDecoder.decodeCounts()[decodeScale,default: 0]
+        let sdr = try await engine.detail(photo,edit: .neutral,hdr: false,request: request)
+        let again = try await engine.detail(photo,edit: .neutral,hdr: true,request: request)
+        XCTAssertTrue(detail.image === again.image); XCTAssertEqual(sdr.rect,detail.rect)
+        let after = await engine.renderCount; XCTAssertEqual(after,before)
+        let moved = MobileDetailRequest(rect: CGRect(x: 0.45,y: 0.4,width: 0.15,height: 0.15),scale: 1)
+        _ = try await engine.detail(photo,edit: .neutral,hdr: true,request: moved)
+        // The host app may warm small thumbnails concurrently; only this detail rung
+        // belongs to the full-detail decode whose reuse is being checked.
+        XCTAssertEqual(RAWDecoder.decodeCounts()[decodeScale,default: 0],decodes,"Panning should reuse the bounded source decode")
+        let model = MobileWorkspaceModel(engine: engine)
+        model.hdr = true; model.active = photo; model.frame = preview
+        model.requestDetail(request)
+        for _ in 0..<300 where model.detailFrame == nil { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertNotNil(model.detailFrame)
+        XCTAssertTrue(model.detailStatus.contains("50%"),model.detailStatus)
+        XCTAssertNil(model.error); XCTAssertTrue(model.frame?.image === preview.image)
+        model.requestDetail(nil)
+        XCTAssertNil(model.detailFrame); XCTAssertTrue(model.detailStatus.isEmpty)
+        print("100 MP RAW detail: scale \(detail.resolutionScale), patch \(detail.image.width) × \(detail.image.height), HDR/SDR and pan checked")
+    }
+
     func testOptionalOversizedRAWThrowsBeforeMetalAllocation() throws {
         let input = FileManager.default.urls(for: .documentDirectory,in: .userDomainMask)[0]
             .appendingPathComponent("ValidationInputs/628-633/B0000628.3FR")

@@ -12,6 +12,8 @@ struct MobileDetailRequest: Equatable, Sendable {
 struct MobileDetailFrame: @unchecked Sendable {
     var image: CGImage
     var rect: CGRect
+    /// Decoded pixels per original source pixel, independent of the canvas zoom factor.
+    var resolutionScale: Double = 1
 }
 
 /// Percentages refer to image pixels per physical display pixel. Fit is a separate mode,

@@ -104,7 +104,9 @@ final class MobileWorkspaceModel: ObservableObject {
                 detailStatus = L10n.tr("ipad.02b3d04c1ad2")
                 let result = try await engine.detail(photo,edit: values,hdr: mode,request: request)
                 guard !Task.isCancelled, ticket == detailRevision else { return }
-                detailFrame = result; detailStatus = ""
+                detailFrame = result
+                detailStatus = result.resolutionScale + 0.001 < min(1,request.scale)
+                    ? L10n.tr("ipad.zoom.detailLimited",String(format: "%.0f",result.resolutionScale * 100)) : ""
             } catch is CancellationError { }
             catch { if ticket == detailRevision { detailStatus = error.localizedDescription } }
         }

@@ -1736,5 +1736,7 @@
   "a0dc4ea6b223": "Auto tone: exposure, highlights, whites, blacks and contrast, arranged by texture loss",
   "187f2e7d1e49": "Light · Auto",
   "panorama.histogram.title": "Histogram",
-  "panorama.preview.lowResolution": "Previewing low-res stitch"
+  "panorama.preview.lowResolution": "Previewing low-res stitch",
+  "ipad.zoom.detailLimited": "Detail preview limited to {0}% resolution",
+  "ipad.zoom.detailUnavailable": "Detail preview is unavailable right now. The existing preview remains visible."
 }
