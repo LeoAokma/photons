@@ -50,6 +50,8 @@ public struct PanoramaSnapshot: Codable {
         }
     }
     var warps:[PanoramaTransform]?
+    // Optional for v1/v2 snapshots written before the capture mode was recorded.
+    var registrationMode:PanoramaRegistrationMode?
     var version=1
     var sources:[PanoramaSource],origins:[CGPoint],size:CGSize,whiteBalance:[Float]?
     var gains:[Double],ownership:[Int16],masks:[Data],maskWidth:Int,maskHeight:Int
@@ -60,6 +62,7 @@ public struct PanoramaSnapshot: Codable {
         defer {context.clearCaches()}
         version=plan.warps == nil ? 1:2
         warps=plan.warps
+        registrationMode=plan.registrationMode
         sources=plan.sources;origins=plan.origins;size=plan.size;whiteBalance=plan.whiteBalance.map {[$0.0,$0.1]}
         gains=plan.gains;ownership=plan.ownership;masks=plan.blendMasks;maskWidth=plan.maskWidth;maskHeight=plan.maskHeight
         photometry=plan.photometricGains.map {Image($0,width:64,height:64,context:context)}
@@ -77,6 +80,7 @@ public struct PanoramaSnapshot: Codable {
         var plan=PanoramaPlan(sources:sources,origins:origins,size:size,registrationScores:[],whiteBalance:wb,gains:gains,
             ownership:ownership,blendMasks:masks,photometricGains:try photometry.map {try $0.image()},maskWidth:maskWidth,maskHeight:maskHeight,
             optical:OpticalEstimate(center:nil,confidence:0,explanation:"",occludedEdges:[]),options:options,previewScale:1,previewImages:[],preview:nil)
+        plan.registrationMode=registrationMode ?? .shift
         plan.warps=warps;plan.lccState=try lcc?.state();return plan
     }
     public var sourceURLs:[URL] {sources.map(\.url)}
