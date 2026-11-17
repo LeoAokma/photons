@@ -1,6 +1,7 @@
 import XCTest
 import CoreImage
 import ImageIO
+import CryptoKit
 import UIKit
 import PhotonsCore
 import PhotonsCatalog
@@ -96,6 +97,35 @@ final class IPadEngineTests: XCTestCase {
         let corruptReader = self.engine()
         _ = try await corruptReader.frame(photo,edit: edit,hdr: false)
         let fallbackCount = await corruptReader.renderCount; XCTAssertEqual(fallbackCount,1)
+    }
+
+    func testLegacyPreviewIsRegeneratedAfterEngineUpgrade() async throws {
+        let producer = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("upgrade"))
+        let photo = MobilePhoto(id: "upgrade",name: "upgrade",url: urls[0],rating: 0,width: 768,height: 512)
+        let edit = EditModel.neutral
+        _ = try await producer.frame(photo,edit: edit,hdr: true)
+        let directory = folder.appendingPathComponent("Test.photonslibrary/MobilePreviews")
+        let records = try FileManager.default.contentsOfDirectory(at: directory,includingPropertiesForKeys: nil)
+        XCTAssertEqual(records.count,1)
+        let record = try XCTUnwrap(records.first)
+        // Re-create the actual pre-upgrade disk filename, with a valid pair payload. An app
+        // upgrade must miss this entry rather than accept obsolete but decodable pixels.
+        let attributes = try FileManager.default.attributesOfItem(atPath: photo.url.path)
+        let source = "\(photo.url.path):\((attributes[.size] as? NSNumber)?.int64Value ?? 0):\((attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)"
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        let legacy = SHA256.hash(data: Data("ipad-v3-pair:\(photo.id):\(source):1600:".utf8) + (try encoder.encode(edit)))
+            .map { String(format: "%02x",$0) }.joined()
+        let oldURL = directory.appendingPathComponent(legacy + ".pair")
+        try FileManager.default.moveItem(at: record,to: oldURL)
+        let upgraded = engine()
+        _ = try await upgraded.frame(photo,edit: edit,hdr: false)
+        let renders = await upgraded.renderCount
+        XCTAssertEqual(renders,1,"An old algorithm's preview must be regenerated")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: oldURL.path),"Disposable old entries remain under normal size pruning")
+        let reopened = engine()
+        _ = try await reopened.frame(photo,edit: edit,hdr: true)
+        let reused = await reopened.renderCount
+        XCTAssertEqual(reused,0,"Current-generation pairs remain reusable across launches and HDR/SDR")
     }
 
     func testPanoramaDisplayModeReusesCompositePreview() async throws {

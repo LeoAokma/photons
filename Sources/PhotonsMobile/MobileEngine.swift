@@ -142,7 +142,10 @@ actor MobileEngine {
     private func renderKey(_ photo: MobilePhoto, _ edit: EditModel, edge: Int) throws -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         let data = try encoder.encode(edit), source = try sourceSignature(photo.url)
-        return SHA256.hash(data: Data("ipad-v3-pair:\(photo.id):\(source):\(edge):".utf8) + data)
+        // Persisted display pixels must follow shared decoder and render algorithm upgrades,
+        // even when the source file and the user's edit values are unchanged.
+        let generation = "\(DecodeRecipe.current):\(StageAlgorithmVersion.graphVersion)"
+        return SHA256.hash(data: Data("ipad-v3-pair:\(generation):\(photo.id):\(source):\(edge):".utf8) + data)
             .map { String(format: "%02x", $0) }.joined()
     }
     func frame(_ photo: MobilePhoto, edit: EditModel, hdr: Bool, edge: Int = 1600) throws -> MobileFrame {

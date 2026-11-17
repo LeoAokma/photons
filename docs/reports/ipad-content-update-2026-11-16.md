@@ -134,3 +134,10 @@
 - 验证：合并后的 Debug app 与测试目标已编译成功，正在运行完整引擎/UI 回归；首批 Close、HDR、直方图、导入持久化、LCC、镜头详情测试已通过。最初固定依赖解析因新 package 缺少 iPad pin 而失败，重新解析后构建通过。最终完整结果在后续验收记录中追加，不将运行中测试记为通过。日志 `09-main-resolve.log`、`09-main-full-suite.log`。
 - build 3 已上传，但不加入测试组；它使用旧 main。最终发布改为合并后 build 4。需要追加预览缓存算法版本失效修正，并同步最新 Mac 直方图绘制规则，各自单独提交。
 - 依赖：IPAD-09-BASE (`5644147`)；无历史改写。回退此 merge 需要明确第一父提交并评估依赖新引擎的后续修正，不自动删除分支。
+
+## IPAD-07-UPGRADE — 引擎升级时刷新预览缓存
+
+- 新 main 的 RAW/去雾算法改变了同参数对应的像素。磁盘配对预览键现在同时包含共享 `DecodeRecipe.current` 和 `StageAlgorithmVersion.graphVersion`，以后引擎版本变化自动失效，不需要用户手工清缓存。原片/编辑不变；旧预览由既有大小预算淘汰。
+- 文件：MobileEngine.swift、IPadEngineTests.swift。依赖 IPAD-07、IPAD-09-MAIN (`835e1dd`)，沿用共享版本标识，无移植实现。
+- 验证：iPad Pro 11-inch (M5) / iOS 27.2，`testLegacyPreviewIsRegeneratedAfterEngineUpgrade` 与原配对缓存切换/重启/失效测试均通过（2 项 / 0 失败），日志 `09-cache-generation.log`。升级测试将有效旧记录放在真实旧版键名下，验证重渲染一次、后续重开/HDR 切换复用新缓存。
+- 限制：算法维护者仍需按共享引擎既有契约更新版本标识；这不是源文件内容 hash。回退会恢复旧键规则，可能命中旧像素，不宜单独回退并保留新引擎。
