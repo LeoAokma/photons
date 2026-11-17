@@ -72,6 +72,20 @@ final class PanoramaProvenanceTests:XCTestCase {
         }
     }
 
+    func testRejectsUnsafeRestoredAndDirectPlanGeometry() throws {
+        let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+        defer {try? FileManager.default.removeItem(at:folder)}
+        var plan=try fixture(folder)
+        plan.registrationMode = .perspective
+        plan.warps=[.identity,PanoramaTransform([1,0,0,0,1,0,-0.03,0,1])]
+        let snapshot=try JSONDecoder().decode(PanoramaSnapshot.self,from:JSONEncoder().encode(PanoramaSnapshot(plan:plan)))
+        XCTAssertThrowsError(try snapshot.plan())
+        XCTAssertThrowsError(try PanoramaEngine().update(plan,options:plan.options))
+        XCTAssertThrowsError(try PanoramaEngine().renderComposite(plan))
+        XCTAssertThrowsError(try PanoramaManifest(plan:plan).validate())
+    }
+
     func testDNGThumbnailManifestAndSnapshotRoundTrip() throws {
         let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true);defer {try? FileManager.default.removeItem(at:folder)}

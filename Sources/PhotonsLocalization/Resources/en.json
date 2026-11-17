@@ -1458,5 +1458,6 @@
   "lcc.profile.bodyProvenance": "The body records calibration provenance and coordinate orientation; it does not restrict which bodies can use this profile.",
   "886fc2719d25": "Auto tone",
   "a0dc4ea6b223": "Auto tone: exposure, highlights, whites, blacks and contrast, arranged by texture loss",
-  "187f2e7d1e49": "Light · Auto"
+  "187f2e7d1e49": "Light · Auto",
+  "panorama.invalidPerspectiveGeometry": "The perspective transforms cross the image horizon. Use a smaller camera rotation or more overlapping photographs."
 }

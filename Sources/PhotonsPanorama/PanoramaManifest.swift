@@ -149,7 +149,7 @@ public struct PanoramaManifest: Codable {
               weights.count==frames.count,weights.allSatisfy({$0.count==maskWidth*maskHeight}),
               frames.allSatisfy({frame in
                   guard let warp=frame.imageToCanvas else {return projection=="translation"}
-                  guard warp.isValid,let sensor=frame.sensorRect,sensor.width.isFinite,sensor.height.isFinite,sensor.width>0,sensor.height>0 else {return false}
+                  guard warp.isValid(for:CGSize(width:1,height:1)),let sensor=frame.sensorRect,sensor.width.isFinite,sensor.height.isFinite,sensor.width>0,sensor.height>0 else {return false}
                   return warp.corners(CGSize(width:1,height:1)).allSatisfy {$0.x.isFinite && $0.y.isFinite && (-0.001...1.001).contains($0.x) && (-0.001...1.001).contains($0.y)}
               }),
               frames.allSatisfy({$0.rect.width>0 && $0.rect.height>0 && $0.rect.minX>=0 && $0.rect.minY>=0 && $0.rect.maxX<=1.001 && $0.rect.maxY<=1.001}) else {

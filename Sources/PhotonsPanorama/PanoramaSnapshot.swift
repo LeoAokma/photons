@@ -70,7 +70,7 @@ public struct PanoramaSnapshot: Codable {
     }
     public func plan() throws->PanoramaPlan {
         guard (version==1 && warps==nil || version==2 && warps != nil),(1...16).contains(sources.count),origins.count==sources.count,gains.count==sources.count,
-              warps == nil || (warps!.count==sources.count && warps!.allSatisfy(\.isValid)),
+              warps == nil || (warps!.count==sources.count && warps!.enumerated().allSatisfy({$0.element.isValid(for:sources[$0.offset].size)})),
               maskWidth>0,maskHeight>0,maskWidth<=8192,maskHeight<=8192,
               ownership.count==maskWidth*maskHeight,masks.isEmpty || (masks.count==sources.count && masks.allSatisfy({$0.count==maskWidth*maskHeight*4})),
               lcc == nil || (lcc!.gains.count==sources.count && lcc!.fixed.count==sources.count),

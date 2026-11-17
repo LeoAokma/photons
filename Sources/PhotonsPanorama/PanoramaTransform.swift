@@ -9,6 +9,17 @@ public struct PanoramaTransform: Codable, Equatable, Sendable {
     public static func translation(_ p: CGPoint) -> Self { Self([1,0,p.x,0,1,p.y,0,0,1]) }
     public static func scale(_ x: Double, _ y: Double) -> Self { Self([x,0,0,0,y,0,0,0,1]) }
     public var isValid: Bool { values.count == 9 && values.allSatisfy(\.isFinite) && inverse != nil }
+    /// An invertible matrix can still put its projective horizon through an image.
+    /// The denominator is affine, so its extrema occur at the rectangle's corners.
+    /// Require a consistent sign over the whole source before using corner-only bounds.
+    public func isValid(for size:CGSize)->Bool {
+        guard isValid,size.width.isFinite,size.height.isFinite,size.width>0,size.height>0 else {return false}
+        let z=[values[8],values[6]*size.width+values[8],
+               values[6]*size.width+values[7]*size.height+values[8],values[7]*size.height+values[8]]
+        guard z.allSatisfy(\.isFinite),let scale=z.map({abs($0)}).max(),scale>0,
+              z.allSatisfy({$0>scale*1e-8}) || z.allSatisfy({$0 < -scale*1e-8}) else {return false}
+        return corners(size).allSatisfy {$0.x.isFinite && $0.y.isFinite}
+    }
     public func point(_ p: CGPoint) -> CGPoint {
         let m=values, z=m[6]*p.x+m[7]*p.y+m[8]
         guard abs(z)>1e-12 else { return CGPoint(x:Double.nan,y:Double.nan) }
