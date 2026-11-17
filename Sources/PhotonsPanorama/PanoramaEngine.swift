@@ -154,20 +154,9 @@ public final class PanoramaEngine {
 
     func renderPreview(_ plan:inout PanoramaPlan) {
         let scale=min(1,1800/max(plan.size.width,plan.size.height))
+        // Highlight protection is a pixel-local shoulder in composite(), not an exposure chosen
+        // from the brightest 0.5% of the scene. Bright windows must not darken the foreground.
         plan.lccState?.highlightEV=0
-        if plan.lccState?.protectHighlights == true {
-            var measuring=plan;measuring.lccState?.exposureEV=0
-            let scene=composite(measuring,images:plan.previewImages,imageScale:plan.previewScale,outputScale:plan.previewScale)
-            let raster=PanoramaRaster(image:scene,context:context,width:900,height:max(2,Int(900*scene.extent.height/scene.extent.width)))
-            let peaks=stride(from:0,to:raster.rgba.count,by:4).compactMap {i->Float? in
-                let v=max(raster.rgba[i],raster.rgba[i+1],raster.rgba[i+2])
-                return v.isFinite && raster.rgba[i+3]>0.5 ? v:nil
-            }.sorted()
-            // A hot pixel or specular glint must not underexpose the entire panorama.
-            // The remaining brightest 0.5% retain their floating-point HDR headroom.
-            let peak=peaks.isEmpty ? 0:Double(peaks[Int(Double(peaks.count-1)*0.995)])
-            if peak.isFinite,peak>0.9 {plan.lccState?.highlightEV=log2(0.9/peak)}
-        }
         let scene=composite(plan,images:plan.previewImages,imageScale:plan.previewScale,outputScale:scale)
         // Match the application's EDR surfaces: half-float, extended linear Display P3.
         // SDR projection belongs to the chosen export format, never to the working preview.
@@ -175,9 +164,19 @@ public final class PanoramaEngine {
             colorSpace:CGColorSpace(name:CGColorSpace.extendedLinearDisplayP3)!)
     }
 
-    // One continuous, hue-preserving shoulder for the legacy SDR TIFF writer. The global exposure
-    // normally keeps samples below the knee; this catches fine highlights absent at proxy
-    // resolution. Linear DNG keeps the original floating-point headroom instead.
+    /// Adjust cached preview pixels without decoding RAWs, rebuilding seams or solving LCC again.
+    public func applyingTone(_ original: PanoramaPlan, settings: PanoramaToneSettings,
+                             cancellation: PanoramaCancellation = .init()) throws -> PanoramaPlan {
+        guard settings.isValid else { throw PanoramaFailure("Invalid panorama brightness settings.") }
+        try cancellation.check()
+        var plan = original; plan.tone = settings
+        renderPreview(&plan)
+        try cancellation.check()
+        return plan
+    }
+
+    // Additional hue-preserving SDR shoulder for the legacy TIFF writer. Linear DNG retains
+    // HDR headroom after the explicitly chosen panorama brightness adjustments.
     private static let highlightKernel=CIColorKernel(source:"""
         kernel vec4 protectHighlights(__sample s) {
             float peak=max(s.r,max(s.g,s.b));
@@ -235,6 +234,7 @@ public final class PanoramaEngine {
             result=result.applyingFilter("CIExposureAdjust",parameters:["inputEV":lcc.highlightEV+lcc.exposureEV])
         }
         result = Self.normalizedCoverage(result)
+        result = PanoramaToneMapping.image(result,settings: plan.tone,lccProtection: plan.lccState?.protectHighlights == true)
         if let crop=plan.lccState?.cropRect {
             let rect=CGRect(x:crop.minX*outputScale,y:(plan.size.height-crop.maxY)*outputScale,width:crop.width*outputScale,height:crop.height*outputScale)
             return result.cropped(to:rect).transformed(by:CGAffineTransform(translationX:-rect.minX,y:-rect.minY))
@@ -248,6 +248,7 @@ public final class PanoramaEngine {
                                 outputLongEdge: Int? = nil,
                                 progress: Progress = { _ in }) throws -> CIImage {
         guard plan.isRegistered else {throw PanoramaFailure(L10n.tr("57119ed82d7a"))}
+        guard plan.tone.isValid else { throw PanoramaFailure("Invalid panorama brightness settings.") }
         if let edge = outputLongEdge, edge <= 0 { throw PanoramaFailure("Output long edge must be positive.") }
         let scale = outputLongEdge.map { min(1, Double($0) / max(plan.outputSize.width, plan.outputSize.height)) } ?? 1
         // Materialize one decode per source, rather than re-decoding a 100 MP RAW for every tile.

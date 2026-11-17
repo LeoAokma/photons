@@ -151,6 +151,7 @@ public struct OpticalEstimate {
 /// renderers. Export cannot call registration. Stored coordinates use an upper-left origin;
 /// only the Core Image compositor converts them to lower-left coordinates.
 public struct PanoramaPlan {
+    public var tone = PanoramaToneSettings()
     public var registrationMode: PanoramaRegistrationMode = .shift
     public var isRegistered = true
     public var warps: [PanoramaTransform]? = nil

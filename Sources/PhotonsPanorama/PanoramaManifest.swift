@@ -41,6 +41,8 @@ public struct PanoramaManifest: Codable {
         public var sensorRect: CGRect? = nil
     }
     public var version = 1
+    /// Already applied to the exported pixels; provenance, not an instruction to apply twice.
+    public var tone: PanoramaToneSettings?
     public var projection = "translation"
     /// Missing in legacy manifests, whose physical model remains the shift workflow.
     public var registrationMode: PanoramaRegistrationMode? = nil
@@ -69,6 +71,7 @@ public struct PanoramaManifest: Codable {
                 offsetMM: CGPoint? = nil, sensor: SensorSize? = nil,
                 bodyOrientation: PanoramaBodyOrientation = .degrees0, cameraBody: PanoramaCameraBody? = nil) {
         canvas=plan.size
+        tone = plan.tone
         registrationMode=plan.registrationMode
         version=plan.warps == nil ? 1:2
         projection=plan.warps == nil ? "translation":"projective"
@@ -139,6 +142,7 @@ public struct PanoramaManifest: Codable {
         try result.validate();return result
     }
     public func validate() throws {
+        guard tone?.isValid ?? true else { throw PanoramaFailure("Invalid panorama brightness settings.") }
         guard (version==1 && projection=="translation" || version==2 && projection=="projective"),(1...16).contains(frames.count),
               canvas.width.isFinite,canvas.height.isFinite,canvas.width>0,canvas.height>0,
               crop.width>0,crop.height>0,crop.minX>=0,crop.minY>=0,crop.maxX<=1.001,crop.maxY<=1.001,
