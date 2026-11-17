@@ -32,8 +32,26 @@ Memory warnings previously erased every grid thumbnail and cancelled its loader;
 
 Validation: iPad simulator build; 3 engine tests passed (pressure retention, disk-backed recovery after a cancelling job, idempotent restart, HDR/SDR cached reuse, missing-load recovery without panorama, transient panorama close). Two existing UI tests passed: full grid/inspector/panorama/tone/export/close workflow and cache measurement/clearing. Recovery assertions verified unchanged renderCount and retained CGImage identities. `git diff --check` passed. Tests inject memory warnings with generated fixtures; the reported physical-iPad memory-pressure event was not directly captured. Revert independently; no library/original/edit deletion.
 
-## PANO-UI-05
+## PANO-UI-05 — `55faa84`
 
 The Mac panorama overlay now uses `HistogramCardView.contentHeight` (90 pt) instead of a fixed 126 pt. Width and padding are unchanged; the plot, clipping statistics and readout row retain their existing geometry. The background loses 36 pt of unused bottom space. File: Sources/PhotonsUI/PanoramaHDRPreview.swift. No behavioral dependencies and no histogram/HDR arithmetic changes.
 
 Validation: `swift test --skip-update --filter 'HistogramCardHeightTests|PanoramaHDRTests'` built the Mac package and passed all 10 tests, 0 skipped, including drawn content bounds, readout visibility, EDR surface pixels and HDR export. Existing pinned dependency checkouts were reused locally. `git diff --check` passed. No new tests for the one-line layout change; existing measured layout tests cover its sizing source. Revert independently.
+
+## Commit index and delivery
+
+| Tracking | Commit | Acceptance result |
+| --- | --- | --- |
+| PANO-UI-01 | `2eb2bf0` | Histogram inside the iPad preview, with fold/unfold button |
+| PANO-UI-02 | `ca4c5c4` | Low-res stitch notice at zoom, no panorama detail jobs |
+| PANO-UI-03 | `ec5a6a7` | Direct multi-selection feedback without editor reloads |
+| PANO-UI-04 | `09cf2a1` | Retain/recover thumbnails through panorama and memory pressure |
+| PANO-UI-05 | `55faa84` | Mac histogram background fits actual content |
+
+Per-change verification totals: 11 iPad tests (6 engine, 5 UI) and 10 Mac tests passed. The early failures in two UI tests were ambiguous selectors and are documented above; scoped foreground queries passed. This is targeted verification, not a claim that the complete repository suite or physical-device TestFlight testing ran.
+
+The deghost checkbox is separate: [PR #5](https://github.com/chemharuka/photons/pull/5), single commit `a77cddb`. This branch contains none of that commit and none of PR #4's Mac perspective changes.
+
+PR #3 was still open at completion. Per the owner's explicit choice, do not open this follow-up PR until #3 merges. Then fetch upstream, transplant only the five functional commits and this tracking update onto the resulting main (including the case where #3 is squash-merged), resolve integration changes, revalidate affected paths, and open one PR titled **Fix iPad panorama previews and grid responsiveness**. Preserve this source branch and the other existing worktrees. A prepared PR body is retained locally in `local/release/panorama-ui-performance-pr.md`.
+
+No TestFlight upload or source-library cleanup is included in this request. Generated simulator fixtures were used for validation; private photographs and local build artifacts are excluded from Git.
