@@ -65,3 +65,16 @@ iPad mini (A20 Pro) 竖屏中文透视教程 1 项 UI 测试通过，均为 iOS 
 
 范围：MobilePanoramaWorkspace、MobileGuide、翻译及 UI 测试。教程只滚动控件，不修改参数、布局解算或图像数据。
 依赖 01/02；可单独回退拼接教程，但底部避让修复也服务于其他教程。物理设备尚未验证。
+
+## IPAD-GUIDE-04
+
+首次启动按 `CFBundleShortVersionString + CFBundleVersion` 判断当前 build，自动展示五步快速上手。
+右下角 Close 记录该 build 已查看；同 build 重启不再自动弹出，新 build 会弹出，回到曾看过的旧 build 不重复。
+记录属于应用偏好，不属于照片库；手动灯泡教程始终可重看。卸载后重新安装的偏好存储从空状态开始。
+DEBUG UI 测试使用独立 suite 和模拟 build 标识，不影响真实使用记录；Release 不包含这些测试覆盖入口。
+
+本次验证：iPad Pro 13-inch (M5) / iOS 27.2，1 项跨实例/跨 build 的持久化测试、
+1 项真实启动→关闭→重启→手动重看→换 build 再启动的 UI 测试通过，0 跳过。
+日志/结果：忽略目录 `local/validation/guide-04.*`。`git diff --check` 通过。
+范围：MobileGuideHistory、主界面启动、10 项中英文键和测试；依赖 02 的共用组件。
+回退不会删除照片或已保存偏好。测试使用 Debug 的 build 标识注入；最终 Release 将另行核验实际版本字段。

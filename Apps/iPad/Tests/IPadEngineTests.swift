@@ -11,6 +11,18 @@ import PhotonsPanorama
 @testable import PhotonsExtensions
 
 final class IPadEngineTests: XCTestCase {
+    func testQuickStartCompletionIsPerBuildAndSurvivesRelaunch() {
+        let suite = "guide-test-\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = MobileGuideHistory(defaults: defaults)
+        XCTAssertFalse(first.hasSeen("0.1.0 (5)"))
+        first.markSeen("0.1.0 (5)"); first.markSeen("0.1.0 (5)")
+        let reopened = MobileGuideHistory(defaults: UserDefaults(suiteName: suite)!)
+        XCTAssertTrue(reopened.hasSeen("0.1.0 (5)")); XCTAssertFalse(reopened.hasSeen("0.1.0 (6)"))
+        reopened.markSeen("0.1.0 (6)")
+        XCTAssertTrue(reopened.hasSeen("0.1.0 (5)"),"Returning to a previously seen build should not replay automatically")
+        XCTAssertFalse(reopened.hasSeen("0.2.0 (5)"),"Marketing versions distinguish reused build numbers")
+    }
     @MainActor
     func testGuideGeometryFallbackNavigationAndDismissal() {
         let guide = MobileGuideController()

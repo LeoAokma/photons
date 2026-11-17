@@ -1802,5 +1802,15 @@
   "guide.panorama.export.title": "Render and export",
   "guide.panorama.export.body": "When alignment and corrections are ready, open Export. Choose format, HDR/SDR and long-edge size or full resolution. The low-resolution preview is replaced by a final render for the exported file.",
   "guide.panorama.tone.title": "Exposure and highlight brightness",
-  "guide.panorama.tone.body": "Exposure changes the whole image; HDR highlight brightness controls bright highlights. These settings affect both preview and export. Reset restores the panorama defaults."
+  "guide.panorama.tone.body": "Exposure changes the whole image; HDR highlight brightness controls bright highlights. These settings affect both preview and export. Reset restores the panorama defaults.",
+  "guide.quickstart.welcome.title": "Welcome to Photons",
+  "guide.quickstart.welcome.body": "A short introduction for this build: import photos, browse and edit, then stitch and export. Use Next to look around, or Close at the lower right to start immediately.",
+  "guide.quickstart.import.title": "Bring in your photos",
+  "guide.quickstart.import.body": "Tap + to choose photos or folders from Files. Photons keeps one local library on this iPad; organize different shoots with folders inside that library.",
+  "guide.quickstart.browse.title": "Tap, double-tap and swipe",
+  "guide.quickstart.browse.body": "Tap a thumbnail to select it, or tap again to deselect. Double-tap opens a single photo. At Fit, swipe left/right to browse; double-tap switches to your chosen zoom level.",
+  "guide.quickstart.stitch.title": "Select several photos to stitch",
+  "guide.quickstart.stitch.body": "Long-press a photo, then tap other overlapping photos to check them. With at least two selected, use the panorama toolbar button. In Shift mode you can drag the layout or enter measured positions before re-aligning.",
+  "guide.quickstart.help.title": "Help is always nearby",
+  "guide.quickstart.help.body": "Use the light bulb left of Import for a tour of every toolbar button and browsing gesture. The panorama window has its own light bulb beside HDR, including relative-position solving and export tips."
 }

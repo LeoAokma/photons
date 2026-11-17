@@ -9,6 +9,7 @@ import PhotonsPanorama
 public struct MobileWorkspaceView: View {
     @StateObject private var model = MobileWorkspaceModel()
     @StateObject private var guide = MobileGuideController()
+    @State private var checkedBuildGuide = false
     @State private var importer = false
     @State private var panoramaWorkspace = false
     @State private var settingsWorkspace = false
@@ -60,7 +61,16 @@ public struct MobileWorkspaceView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark).tint(.orange)
-        .task { await model.start() }
+        .task {
+            if !checkedBuildGuide {
+                checkedBuildGuide = true
+                let history = MobileGuideHistory.launchHistory, build = MobileGuideHistory.currentBuild
+                if MobileGuideHistory.automaticPresentationEnabled, !history.hasSeen(build) {
+                    guide.start(MobileGuideSteps.quickStart) { history.markSeen(build) }
+                }
+            }
+            await model.start()
+        }
         .onChange(of: model.showGrid) { _,grid in if !grid && model.plan != nil { inspectorVisible = true } }
         .onChange(of: model.folderScope) { _,_ in selectMode = false; gridTapSequence = .init() }
         .onChange(of: inspectorSheet) { _,visible in

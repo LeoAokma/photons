@@ -1802,5 +1802,15 @@
   "guide.panorama.export.title": "正式渲染与导出",
   "guide.panorama.export.body": "对齐与校正准备完成后打开导出，选择格式、HDR/SDR、长边尺寸或完整分辨率。导出文件会经过正式渲染，不会直接保存低分辨率预览。",
   "guide.panorama.tone.title": "曝光与高光亮度",
-  "guide.panorama.tone.body": "曝光调整整张图像，高光亮度控制 HDR 高光的显示亮度；两者同时影响预览与导出。重置可恢复全景默认值。"
+  "guide.panorama.tone.body": "曝光调整整张图像，高光亮度控制 HDR 高光的显示亮度；两者同时影响预览与导出。重置可恢复全景默认值。",
+  "guide.quickstart.welcome.title": "欢迎使用 Photons",
+  "guide.quickstart.welcome.body": "这个版本首次启动时，我们会简要介绍导入、浏览、编辑、拼接与导出。点击下一步了解操作，也可以随时点击右下角关闭，直接开始使用。",
+  "guide.quickstart.import.title": "导入你的照片",
+  "guide.quickstart.import.body": "点击 + 从“文件”选择照片或文件夹。Photons 在 iPad 上使用一个本地图片库，可以用库内不同文件夹区分项目与拍摄批次。",
+  "guide.quickstart.browse.title": "单击、双击与滑动",
+  "guide.quickstart.browse.body": "单击缩略图选中，再点一次取消；双击进入单张模式。在 Fit 状态左右滑动可翻页，双击可切换到指定的放大倍率。",
+  "guide.quickstart.stitch.title": "多选照片开始拼接",
+  "guide.quickstart.stitch.body": "长按一张照片，再点击其他有重叠的照片进行勾选。选中至少两张后，使用顶部拼接按钮。移轴模式下可拖动布局或输入实测位置，再重新对齐。",
+  "guide.quickstart.help.title": "随时打开操作提示",
+  "guide.quickstart.help.body": "导入左侧的灯泡会介绍各工具栏按钮与浏览手势。拼接窗口 HDR 旁也有灯泡，重点介绍相对位置解算、各模块与导出。"
 }

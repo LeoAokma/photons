@@ -2,6 +2,29 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testQuickStartAppearsOnceForEachBuildAndHelpCanReplay() throws {
+        continueAfterFailure = false
+        let token = UUID().uuidString
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo","--test-onboarding"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"
+        app.launchEnvironment["PHOTONS_GUIDE_TEST_BUILD"] = token + "-A"; app.launch()
+        XCTAssertTrue(app.staticTexts["guide-step-title"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["guide-step-title"].label,"Welcome to Photons")
+        for _ in 0..<4 { app.buttons["guide-next"].tap() }
+        XCTAssertEqual(app.staticTexts["guide-step-title"].label,"Help is always nearby")
+        app.buttons["guide-close"].tap()
+        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
+        app.terminate(); app.launchArguments = ["--demo","--test-onboarding"]; app.launch()
+        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 30))
+        XCTAssertFalse(app.buttons["guide-close"].exists)
+        app.buttons["workspace-guide"].tap(); XCTAssertTrue(app.buttons["guide-close"].exists)
+        app.buttons["guide-close"].tap(); app.terminate()
+        app.launchEnvironment["PHOTONS_GUIDE_TEST_BUILD"] = token + "-B"; app.launch()
+        XCTAssertTrue(app.staticTexts["guide-step-title"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["guide-step-title"].label,"Welcome to Photons")
+        app.buttons["guide-close"].tap()
+    }
+    @MainActor
     func testPanoramaGuideHighlightsModulesWithoutChangingAlignment() throws {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]

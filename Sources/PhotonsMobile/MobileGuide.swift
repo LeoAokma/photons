@@ -155,6 +155,13 @@ private struct MobileGuideOverlay: View {
 }
 
 enum MobileGuideSteps {
+    static let quickStart: [MobileGuideStep] = [
+        .init("quickstart.welcome",target: "workspace.toolbar"),
+        .init("quickstart.import",target: "workspace.import"),
+        .init("quickstart.browse",target: "workspace.grid"),
+        .init("quickstart.stitch",target: "workspace.grid"),
+        .init("quickstart.help",target: "workspace.help")
+    ]
     static let panoramaControlTargets: Set<String> = ["panorama.camera","panorama.positions","panorama.coordinates","panorama.guidance","panorama.perspective","panorama.alignment","panorama.solve","panorama.lcc"]
     static func panorama(shift: Bool) -> [MobileGuideStep] {
         var steps: [MobileGuideStep] = [.init("panorama.preview"),.init("panorama.histogram",fallback: "panorama.preview"),.init("panorama.hdr"),.init("panorama.controls")]
