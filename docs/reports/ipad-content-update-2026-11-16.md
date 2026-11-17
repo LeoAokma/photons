@@ -1,6 +1,6 @@
 # iPad 内容更新：逐项追踪
 
-一个主题 PR，各独立验收项分别 commit。基线为 `1db8fe3`；应用基线等同 PR 2 的 `a5cf5eb`，PR 2 当前未合并。本分支保留原有分支，不改写已发布历史。
+一个主题 PR，各独立验收项分别 commit。基线为 `1db8fe3`；应用基线等同 PR 2 的 `a5cf5eb`，PR 2 当前未合并。本分支保留原有分支，不改写已发布历史。现已合入上游 main `737f92d`；统一 PR： https://github.com/chemharuka/photons/pull/3 。
 
 | 编号 | 独立验收项 | 依赖 |
 |---|---|---|
@@ -12,7 +12,7 @@
 | IPAD-06 | 对齐 Mac 信息结构的直方图 | 基线 |
 | IPAD-07 | 有界、可复用的 HDR/SDR 预览缓存 | IPAD-04 |
 | IPAD-08 | 设置中的缓存大小与清理 | IPAD-07 |
-| IPAD-09 | 综合验证、PR 更新日志、iPad Developer Beta build 3 | 以上各项 |
+| IPAD-09 | 综合验证、PR 更新日志、iPad Developer Beta build 4 | 以上各项 |
 
 ## IPAD-01
 
@@ -124,7 +124,7 @@
 - 全量 UI 10 项初次为 9 通过、1 失败：旧完整流程在单击后即时断言侧栏消失，没有等待新增双击识别的失败窗口。仅将该断言改为等待实际关闭，`testGridInspectorSelectionAndPanoramaWorkflow` 复测通过（74.532 秒），包含移轴、透视、曝光/高光、机身方向、拖动/Revert、LCC 裁剪开关、完整分辨率导出、自动回导和设置。应用代码未因这个测试调整改变。
 - 结果：本轮 30 个不同测试最终覆盖 **29 通过、1 明确跳过**。不把初次失败的全量命令记成成功；证据分别为 `09-full-suite.log`、`09-workflow-recheck.log`。
 - 分发归档：0.1.0 (3) Release archive 成功，应用源码 `f2176a1599771306f76eb71837a57c8ab25dd812`，构建时应用文件无未提交修改，只有文档在整理。严格签名、仅 iPad、en/zh-Hans、App Store profile、dSYM UUID、隐私/许可/标定资源及私有 RAW 排除均通过。源码图标 1024×1024、无 alpha。归档验证 JSON：`09-archive-validation.json`。
-- 当前归档不代表已经上传或分发，发布结果另行记录。实体 iPad 的 HDR、可用内存、持续温度/耗电尚待 beta 验证。
+- 本节记录当时的归档验收，后续上传和最终 build 4 分发见发布记录。实体 iPad 的 HDR、可用内存、持续温度/耗电尚待 beta 验证。
 - 本项修改完整流程的手势等待断言、更新 `docs/ipad-preview.md` 与本追踪记录；不修改应用逻辑。依赖 IPAD-01…08、10、11。提交标题含 IPAD-09-QA。
 
 ## IPAD-09-MAIN — 同步新上游 main
@@ -155,3 +155,31 @@
 - 新 main 把 NonlocalMatchFilter 1.0.0 和模型资源加入 PhotonsExtensions，iPad 静态 notices 原先只列 GRDB，且宣称没有模型。更新 Apps/iPad/ThirdPartyNotices.txt 的依赖 pin 和资源范围，纳入锁定 Swift 包 LICENSE 以及仓库模型 MIT notice 的完整原文。未新增移动端 AI 功能入口。
 - 来源：上游 `737f92d` THIRD_PARTY_NOTICES.md 和锁定 `52a6e4f` 包 LICENSE。依赖 IPAD-09-MAIN；文档/打包资源修改，不改变运行逻辑。
 - 验证：脚本确认两份许可原文逐字包含，过时无模型说明已移除。后续 build 4 归档检查会验证资源实际被打包；不为文案复制增加同构测试。回退必须同时考虑新增包与模型是否仍在发布包中。
+
+## 最终综合验收 — 最新 main 上的结果
+
+- `09-main-full-suite.log`：iPad Pro 13-inch M5 / iOS27.2，完整引擎 20 项，19 通过、1 缺少可选顶层 RAW fixture 跳过；UI 10 项全部通过，命令结果 TEST SUCCEEDED。六张 100 MP Boston RAW 流程通过（85.956 秒），没有被跳过。
+- 后续独立修正：`09-cache-generation.log` 2/2 通过；`09-histogram-main.log` 4/4 通过（包括最新中文浏览/设置/镜头详情）。去重后共 32 项：**31 通过、1 明确跳过**。完整测试在 merge 版本运行，之后仅缓存版本键与直方图有行为修改，并以相应定向回归验证。
+- 双语检查：移动界面引用 348 个 key，中英文都有值且格式参数一致；合并保留上游每种语言全部 1460 个词条及其值，最终各 1736 个词条。中文布局还在 11-inch 模拟器检查。
+- Release build 4 从应用源码 `dfebb54e0db4c3de9630b9f34212afeada31fb96` 归档成功；112.5 MiB 未压缩 app。严格签名、App Store profile、iPad-only、en/zh-Hans、dSYM UUID、隐私声明、许可、43XL 标定、NLMF 模型与私有 RAW 排除验证通过。上游新增共享模型占 64,386,304 字节；移动端尚无该降噪入口。验证 JSON 为 `09-archive-4-validation.json`。
+- 实体机 HDR 表现、长时间内存/温度和实际耗电不在模拟器证明范围，列为 Developer Beta 验证项。
+
+## 集成与交付提交索引
+
+| 编号 | Commit | 用途 |
+|---|---|---|
+| IPAD-09-QA | `9951100` | 综合验收、旧单击测试等待、说明文档 |
+| IPAD-09-BASE | `5644147` | 核对应用树等价后记录原 PR 2 祖先；树内容不变 |
+| IPAD-09-MAIN | `835e1dd` | 合入上游 737f92d，翻译合并、iPad 依赖 pin |
+| IPAD-07-UPGRADE | `074d036` | 缓存随共享解码/渲染算法升级失效 |
+| IPAD-06-MAIN | `be73c42` | 最新 Mac 固定直方图轴、叠加色与窄峰绘制 |
+| IPAD-09-NOTICES | `dfebb54` | 新增共享模型/包的完整分发许可说明 |
+
+IPAD-09-BASE 的依据：`git diff a5cf5eb 1db8fe3` 只有 AGENTS.md 和 5 份文档，应用/测试/构建输入等价；合并 `a5cf5eb` 的提交树与第一父提交完全相同。原 PR 2 保留并仍应先合并，以便 PR 3 自动排除前置功能。完整来源、验证和回退说明在 `5644147` 正文中。
+
+## IPAD-09-RELEASE — PR 与 Developer Beta 完成
+
+- [PR 3](https://github.com/chemharuka/photons/pull/3) 已创建并更新详细日志；分支 `codex/ipad-content-update`，最新应用源码 `dfebb54`，上游 main `737f92d` 已合入。GitHub 显示可合并，未配置状态检查；原 PR 2 仍开放且作为前置合并。
+- 0.1.0 (4) 上传成功，Apple 处理完成，2384 字符测试说明已保存。通过 Codex 内置浏览器加入现有 Developer Beta，00:35 EST 验证 **Testing / 4 testers / 3 builds**。build 3 保留未分发；外部 build 1 仍 Waiting for Review。没有新增测试者、发送邀请或改动 Mac 分发。
+- 本项仅更新发布与验收文档，依赖所有功能/集成提交，未修改已归档应用源码。所有独立 commit 保留，原 Photons 2 工作区在 `a5cf5eb` 且干净，旧分支未删除或改写。
+- 完整构建来源、签名/资源验证、hash、服务器状态、测试说明及回退限制见 [build 4 发布记录](developer-beta-ipad-4-2026-11-17.md)。本提交标题含 `IPAD-09-RELEASE`，可用 `git log --grep=IPAD-09-RELEASE` 定位。

@@ -5,8 +5,8 @@ The iPad preview uses a separate App Store Connect record from the Mac app. It d
 - App: **Photons Studio Preview**, Apple ID `6835653664`.
 - Bundle ID: `com.leoaokma.photons.ipad-preview`.
 - Initial beta: `0.1.0 (1)`, iPadOS 18+, iPad only, English startup.
-- Latest internal beta: **0.1.0 (2)**, source `e5364464338660305b25ff6a6d705131316b4789`. Verified **Testing** in the existing **Developer Beta** group (3 testers, 2 builds) at 23:15 EST on 2026-11-16. Build-specific English test notes are saved. The external build `0.1.0 (1)` remains **Waiting for Review**; this update did not add testers or submit another external review. See [TF-IPAD-02 release record](reports/developer-beta-ipad-2-2026-11-16.md).
-- Release bundles include the app icon, privacy manifests, MIT/GRDB notices and the developer-created 43XL calibration. Private Boston RAW samples are explicitly excluded.
+- Latest internal beta: **0.1.0 (4)**, source `dfebb54e0db4c3de9630b9f34212afeada31fb96`, includes the iPad content update and upstream main `737f92d`. Verified **Testing** in the existing **Developer Beta** group (4 testers, 3 builds) at 00:35 EST on 2026-11-17. Build-specific English test notes are saved. Build 3 was uploaded before main changed and remains unassigned; build 1 remains **Waiting for Review** externally. This update added no testers or external review submission. See [IPAD-09-RELEASE record](reports/developer-beta-ipad-4-2026-11-17.md).
+- Release bundles include the app icon, privacy manifests, MIT/GRDB/NonlocalMatchFilter notices, the shared NLMF model and the developer-created 43XL calibration. Private Boston RAW samples are explicitly excluded.
 - Use a private external TestFlight group with public links disabled. Apple must approve the first external build through Beta App Review. Add only explicitly selected testers; creating a group does not send invitations.
 
 ## Initial build 0.1.0 (1) distribution history — 2026-11-16
@@ -25,13 +25,13 @@ Install an App Store Connect provisioning profile matching this Bundle ID and a 
 xcodebuild -project Apps/iPad/PhotonsIPad.xcodeproj \
   -scheme 'Photons iPad Preview' -configuration Release \
   -destination 'generic/platform=iOS' -derivedDataPath .build/ipad-device \
-  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-2.xcarchive' \
+  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-4.xcarchive' \
   -disableAutomaticPackageResolution -skipPackageUpdates archive \
   PHOTONS_INCLUDE_BOSTON_SAMPLES=NO \
   PHOTONS_IPAD_SIGN_STYLE=Manual \
   PHOTONS_IPAD_SIGN_IDENTITY='Apple Distribution' \
   PHOTONS_IPAD_PROFILE='YOUR INSTALLED APP STORE PROFILE' \
-  CURRENT_PROJECT_VERSION=2 MARKETING_VERSION=0.1.0
+  CURRENT_PROJECT_VERSION=4 MARKETING_VERSION=0.1.0
 ```
 
 The custom signing variables apply only to the app's Release configuration. Passing `PROVISIONING_PROFILE_SPECIFIER` globally would incorrectly assign the app profile to SwiftPM resource bundles. Debug keeps automatic development signing.
@@ -40,9 +40,9 @@ Use a local, ignored export-options plist with `method=app-store-connect`, `dest
 
 ```sh
 xcodebuild -exportArchive \
-  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-2.xcarchive' \
+  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-4.xcarchive' \
   -exportOptionsPlist .build/ipad-testflight/ExportOptions.plist \
-  -exportPath .build/ipad-testflight/upload -allowProvisioningUpdates
+  -exportPath .build/ipad-testflight/upload-4 -allowProvisioningUpdates
 ```
 
 Increment `CURRENT_PROJECT_VERSION` for each subsequent upload. Before uploading, verify the archive's version, iPad-only device family, distribution entitlements, opaque 1024 px icon, licenses/profile resource and absence of bundled `.3FR` files. Signing material and account contacts must stay outside Git. Check Apple's processing status separately from the upload result.
@@ -52,6 +52,8 @@ Increment `CURRENT_PROJECT_VERSION` for each subsequent upload. Before uploading
 Photons Studio Preview brings local RAW photo editing, HDR/SDR preview and export, panorama stitching, and lens cast correction (LCC) to iPad. This early private beta uses the same processing engines as the Mac version with a touch interface. Import photos from Files, edit in a local library, stitch overlapping images, and export or share results. A developer-created 43XL lens profile is included. No app account or subscription is required. iPadOS 18 or later is required.
 
 ## What to Test — English
+
+The latest build-specific notes, including Chinese, lens details, browsing, folders and caches, are preserved in the [build 4 release record](reports/developer-beta-ipad-4-2026-11-17.md). The original baseline checklist follows.
 
 - Import RAW, DNG, TIFF and HEIF images from Files; check thumbnails, orientation, preview generation and duplicate handling.
 - Pinch the photo grid, tap to toggle the inspector, and long-press to select multiple images.
