@@ -12,6 +12,7 @@
 | IPAD-GUIDE-03 | 拼接窗口 💡 引导，包含各侧栏模块、拖拽与自动/手动解算 | 01、02 |
 | IPAD-GUIDE-04 | 每个应用 build 首次启动的快速教程与完成记录 | 02 |
 | IPAD-GUIDE-05 | 默认跟随设备语言，可在设置中切换，中英文提示同步 | 02/03/04 |
+| IPAD-GUIDE-06 | 所有教程支持左右滑动翻页，保留按钮与 Close | 02/03/04/05 |
 | IPAD-GUIDE-RELEASE | 汇总 PR、0.1.0 (5) 签名构建和 DB/PB 分发 | 所有功能验证完成 |
 
 ## IPAD-GUIDE-01
@@ -95,3 +96,16 @@ Mac `swift test --disable-automatic-resolution --skip-update --filter DevelopTes
 证据：忽略目录 `guide-05.*`、`guide-05-live-2.*`、`guide-05-mac.log`、`guide-05-review.png`。
 `git diff --check` 通过；无跳过，物理设备尚未验证。历史编辑记录及用户命名保持原内容，不当作界面文字重译。
 范围：Localization、DevelopControls、Mobile 视图、翻译与测试；依赖 02/03/04。回退恢复原语言行为，不改变照片数据。
+
+## IPAD-GUIDE-06
+
+共用教程支持左滑下一页、右滑上一页，首次上手、网格、单张和拼接教程全部生效。
+单次滑动最多翻一页，首尾不循环；小幅拖动与主要为纵向的滚动不翻页，长说明仍可上下阅读。
+底部按钮及右下角 Close 保留，并增加中英文滑动提示。手势由教程遮罩接收，不传递到底层照片或拼接图。
+
+本次验证：滑动方向/阈值/首尾/关闭边界引擎测试通过；四类教程真实触摸往返翻页、纵向不翻页、按钮保留、
+关闭后照片仍为原图、未改变选择和拼接导出状态的 UI 测试通过，0 跳过。
+测试初次英文预期标题写错，修正后又遇到 XCTest 对横屏右侧 ScrollView 可见范围的误判；
+改用从实际控件位置取得的屏幕坐标拖动后全流程通过。已查看截图，确认卡片、滑动提示与 Close 正常显示。
+证据：`local/validation/guide-06.*`、`guide-06-ui-3.*`、`guide-06-review.png`（均忽略）。
+`git diff --check` 通过；物理设备/VoiceOver 手工操作未验证。此项依赖共用教程，可独立回退滑动行为。

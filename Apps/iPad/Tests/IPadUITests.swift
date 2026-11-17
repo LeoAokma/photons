@@ -2,6 +2,49 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testAllGuidesSupportSwipingWithoutChangingPhotosOrPanorama() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo","--test-onboarding"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"
+        app.launchEnvironment["PHOTONS_GUIDE_TEST_BUILD"] = "swipe-" + UUID().uuidString
+        app.launch(); XCUIDevice.shared.orientation = .landscapeLeft
+        let title = app.staticTexts["guide-step-title"]
+        func checkPages(_ first: String,_ second: String) {
+            XCTAssertTrue(title.waitForExistence(timeout: 10)); XCTAssertEqual(title.label,first)
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Swipe guide: \(first)"; shot.lifetime = .keepAlways; add(shot)
+            func swipe(_ dx: CGFloat,_ dy: CGFloat = 0) {
+                // Use actual screen coordinates: XCTest's ScrollView.swipe can incorrectly
+                // clip a landscape callout in the right-hand inspector to portrait width.
+                let frame = app.scrollViews["guide-step-detail"].frame
+                let origin = app.coordinate(withNormalizedOffset: .zero)
+                let start = origin.withOffset(CGVector(dx: frame.midX-dx/2,dy: frame.midY-dy/2))
+                let end = origin.withOffset(CGVector(dx: frame.midX+dx/2,dy: frame.midY+dy/2))
+                start.press(forDuration: 0.05,thenDragTo: end)
+            }
+            swipe(140); XCTAssertEqual(title.label,first,"First page must not wrap")
+            swipe(-140); XCTAssertEqual(title.label,second)
+            swipe(0,-80); XCTAssertEqual(title.label,second,"Vertical reading scroll must not turn the page")
+            swipe(140); XCTAssertEqual(title.label,first)
+            app.buttons["guide-next"].tap(); XCTAssertEqual(title.label,second,"Buttons remain available")
+            app.buttons["guide-close"].tap()
+        }
+        checkPages("Welcome to Photons","Bring in your photos")
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60))
+        app.buttons["workspace-guide"].tap(); checkPages("Browse and select photos","Library and folders")
+        XCTAssertEqual(first.value as? String,"Not selected")
+        first.doubleTap(); XCTAssertTrue(app.otherElements["photo-canvas-container"].waitForExistence(timeout: 10))
+        app.buttons["workspace-guide"].tap(); checkPages("View one photo","Choose a zoom level")
+        XCTAssertEqual(app.staticTexts["current-photo-name"].label,"Sample-01.tiff","Guide swipes must not navigate the underlying photo")
+        app.buttons["grid-view"].tap(); XCTAssertEqual(first.value as? String,"Selected")
+        first.press(forDuration: 0.7); app.buttons["photo-Sample-02.tiff"].tap()
+        app.buttons["panorama-tool"].tap(); app.buttons["choose-panorama-shift"].tap()
+        let export = app.buttons["panorama-export"]
+        XCTAssertTrue(export.wait(for: \.isEnabled,toEqual: true,timeout: 60))
+        app.buttons["panorama-guide"].tap(); checkPages("Panorama preview","Histogram")
+        XCTAssertTrue(export.isEnabled); app.buttons["close-panorama"].tap()
+    }
+    @MainActor
     func testQuickStartAppearsOnceForEachBuildAndHelpCanReplay() throws {
         continueAfterFailure = false
         let token = UUID().uuidString

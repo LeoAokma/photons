@@ -12,6 +12,18 @@ import PhotonsPanorama
 @testable import PhotonsExtensions
 
 final class IPadEngineTests: XCTestCase {
+    @MainActor
+    func testGuideSwipesRespectDirectionThresholdAndPageBounds() {
+        let guide = MobileGuideController(); guide.start([.init("one"),.init("two"),.init("three")])
+        guide.swipe(translation: CGSize(width: 180,height: 0)); XCTAssertEqual(guide.index,0)
+        guide.swipe(translation: CGSize(width: -30,height: 0)); XCTAssertEqual(guide.index,0)
+        guide.swipe(translation: CGSize(width: -60,height: 80)); XCTAssertEqual(guide.index,0)
+        guide.swipe(translation: CGSize(width: -180,height: 30)); XCTAssertEqual(guide.index,1)
+        guide.swipe(translation: CGSize(width: -800,height: 0)); XCTAssertEqual(guide.index,2)
+        guide.swipe(translation: CGSize(width: -180,height: 0)); XCTAssertEqual(guide.index,2)
+        guide.swipe(translation: CGSize(width: 180,height: 20)); XCTAssertEqual(guide.index,1)
+        guide.close(); guide.swipe(translation: CGSize(width: -180,height: 0)); XCTAssertFalse(guide.active)
+    }
     func testInterfaceLanguageRespectsPreferenceAndDeviceOrder() {
         XCTAssertEqual(L10n.resolveLanguage(preference: nil,preferredLanguages: ["zh-Hans-US","en-US"]),"zh-Hans")
         XCTAssertEqual(L10n.resolveLanguage(preference: "system",preferredLanguages: ["fr-FR","zh-Hant-TW","en"]),"zh-Hans")

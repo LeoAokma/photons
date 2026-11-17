@@ -26,6 +26,11 @@ final class MobileGuideController: ObservableObject {
     }
     func next() { if index + 1 < steps.count { index += 1 } }
     func previous() { if index > 0 { index -= 1 } }
+    func swipe(translation: CGSize) {
+        // Ignore taps, small drags and vertical reading scrolls. One gesture changes one page.
+        guard abs(translation.width) >= 44, abs(translation.width) > abs(translation.height) * 1.4 else { return }
+        if translation.width < 0 { next() } else { previous() }
+    }
     func close() {
         let finished = completion
         completion = nil; steps = []; index = 0
@@ -134,6 +139,7 @@ private struct MobileGuideOverlay: View {
                         Text(step.title).font(.title3.weight(.semibold)).accessibilityIdentifier("guide-step-title")
                         ScrollView { Text(step.detail).frame(maxWidth: .infinity,alignment: .leading) }
                             .font(.body).accessibilityIdentifier("guide-step-detail")
+                        Text(L10n.tr("guide.swipe")).font(.caption).foregroundStyle(.secondary)
                     }.padding(18).frame(width: min(400,area.width),height: min(260,area.height))
                         .background(Color(white: 0.12),in: RoundedRectangle(cornerRadius: 16))
                         .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.2)))
@@ -152,6 +158,7 @@ private struct MobileGuideOverlay: View {
                     }.buttonStyle(.bordered).padding(.horizontal,20).padding(.bottom,bottom)
                 }
             }.foregroundStyle(.white).tint(.orange)
+                .simultaneousGesture(DragGesture(minimumDistance: 20).onEnded { guide.swipe(translation: $0.translation) })
         }.accessibilityElement(children: .contain).accessibilityAddTraits(.isModal)
             .accessibilityIdentifier("quick-guide")
             .accessibilityAction(.escape) { guide.close() }

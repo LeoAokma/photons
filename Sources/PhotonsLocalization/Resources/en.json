@@ -1814,5 +1814,6 @@
   "guide.quickstart.help.title": "Help is always nearby",
   "guide.quickstart.help.body": "Use the light bulb left of Import for a tour of every toolbar button and browsing gesture. The panorama window has its own light bulb beside HDR, including relative-position solving and export tips.",
   "ipad.language.system": "System default",
-  "ipad.panorama.perspectiveLCCNotice": "Apply LCC to individual photos before perspective stitching. A rotated-camera layout does not describe physical lens shift."
+  "ipad.panorama.perspectiveLCCNotice": "Apply LCC to individual photos before perspective stitching. A rotated-camera layout does not describe physical lens shift.",
+  "guide.swipe": "Swipe left for next · right for previous"
 }

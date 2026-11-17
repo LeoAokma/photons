@@ -1814,5 +1814,6 @@
   "guide.quickstart.help.title": "随时打开操作提示",
   "guide.quickstart.help.body": "导入左侧的灯泡会介绍各工具栏按钮与浏览手势。拼接窗口 HDR 旁也有灯泡，重点介绍相对位置解算、各模块与导出。",
   "ipad.language.system": "跟随系统",
-  "ipad.panorama.perspectiveLCCNotice": "透视拼接前，请先对单张照片应用 LCC。相机转向后的布局并不代表物理移轴位置。"
+  "ipad.panorama.perspectiveLCCNotice": "透视拼接前，请先对单张照片应用 LCC。相机转向后的布局并不代表物理移轴位置。",
+  "guide.swipe": "向左滑动下一页 · 向右滑动上一页"
 }
