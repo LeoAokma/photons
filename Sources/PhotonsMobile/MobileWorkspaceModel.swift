@@ -244,7 +244,19 @@ final class MobileWorkspaceModel: ObservableObject {
     func toggleHDR() {
         hdr.toggle(); UserDefaults.standard.set(hdr, forKey: "photons.mobile.hdr")
         if let plan {
-            setPanoramaTone(plan.tone)
+            // A display-mode switch does not change panorama tone or recomposite sources.
+            // Let an in-flight tone update finish with the current display mode.
+            if !rendering {
+                invalidateDetail(); generation += 1
+                let ticket = generation, mode = hdr
+                previewTask = Task {
+                    do {
+                        let result = try await engine.frame(plan,hdr: mode)
+                        guard !Task.isCancelled, ticket == generation else { return }
+                        frame = result; requestDetail(viewport)
+                    } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+                }
+            }
         } else { render() }
         warmThumbnails()
     }
@@ -268,7 +280,7 @@ final class MobileWorkspaceModel: ObservableObject {
             catch is CancellationError { status = "Cancelled" }
             catch { self.error = error.localizedDescription }
             busy = false; progress = nil
-            status = ""
+            status = ""; requestDetail(viewport)
         }
     }
     func cancel() { cancellation.cancel(); job?.cancel(); status = "Cancelling…" }
@@ -302,12 +314,12 @@ final class MobileWorkspaceModel: ObservableObject {
         // export and a subsequent LCC/alignment job still see the latest requested settings.
         plan.tone = tone; self.plan = plan; manifest?.tone = tone
         previewTask?.cancel(); generation += 1; rendering = true
-        let ticket = generation, hdr = hdr
+        let ticket = generation
         previewTask = Task {
             do {
                 try await Task.sleep(for: .milliseconds(100))
                 let updated = try await engine.adjustPanoramaTone(plan,settings: tone)
-                let rendered = try await engine.frame(updated,hdr: hdr)
+                let rendered = try await engine.frame(updated,hdr: self.hdr)
                 guard !Task.isCancelled,ticket == generation else { return }
                 self.plan = updated; frame = rendered; rendering = false
                 requestDetail(viewport)
@@ -366,7 +378,7 @@ final class MobileWorkspaceModel: ObservableObject {
     }
     func memoryWarning() {
         invalidateDetail(clearViewport: true)
-        previewTask?.cancel(); thumbnailTask?.cancel(); thumbnails.removeAll()
+        previewTask?.cancel(); generation += 1; rendering = false; thumbnailTask?.cancel(); thumbnails.removeAll()
         Task { await engine.releaseWorkingMemory() }
     }
 }

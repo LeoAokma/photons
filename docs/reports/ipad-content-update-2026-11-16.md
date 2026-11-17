@@ -68,3 +68,11 @@
 - 来源：参考当前基线的 Sources/PhotonsUI/HistogramPlot.swift、HistogramCard.swift；测量仍来自共享 Histogram/HistogramSnapshot。未改 Mac 行为。
 - 验证：`testHistogramAxisAndDisplayClippingMatchMacSemantics`、`testHistogramShowsClippingAndTouchReadout` 通过，2 项 / 0 失败；显示上限改变不改变 bins，触摸读数和统计行可见。日志 `06-histogram.log`，UI 测试保留截图。
 - 依赖：共享直方图基线；提交标题含 IPAD-06。限制：触摸直方图显示 bin 计数，不是照片上触点的逐像素 RGB；真实 HDR 显示仍需设备验证。回退新视图和 Inspector 调用即可。
+
+## IPAD-07
+
+- 变更：一次场景线性渲染生成 HDR/SDR 配对预览与直方图；切换模式复用大图、缩略图、局部细节和全景预览。全景切换不再调用调色/重新合成入口。照片预览持久化为半浮点 LZFSE 无损配对记录，重启可复用，损坏记录自动重新生成。
+- 预算：大图 96 MiB、缩略图 16 MiB、局部细节 48 MiB 独立 LRU；磁盘预览最多 512 MiB。缓存键包含源文件路径/大小/修改时间、编辑参数、尺寸和视口；磁盘解压使用固定尺寸缓冲，避免无界解压。收到内存警告释放工作缓存。
+- 文件：MobilePreviewCache.swift、MobileEngine.swift、MobileWorkspaceModel.swift、IPadEngineTests.swift。依赖 IPAD-04；无移植代码。
+- 验证：HDR 高光/持久化、局部像素一致性、全景切换复用均通过；配对缓存测试覆盖切换与缩略图隔离、重启零渲染、编辑/源文件失效、局部复用、LRU 和损坏回退。初次测试发现 URL 元数据缓存使修改时间失效未触发，改为实时文件属性后重测通过。日志 `07-cache.log`、`07-cache-recheck.log`；4 个测试最终通过。
+- 限制：为首次渲染增加一次轻量显示投影，以换取首个 HDR/SDR 切换也无需重跑开发流程；尚未测实体机耗电。内存预算指引擎预览缓存，不包含解码器、UI 当前图像和系统 GPU。提交标题含 IPAD-07；IPAD-08 依赖此缓存目录/结构。

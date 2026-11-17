@@ -17,6 +17,60 @@ final class IPadEngineTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
 
+    func testPairedPreviewCacheSurvivesToggleRestartAndInvalidatesEdits() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("cache"))
+        let photo = MobilePhoto(id: "cache",name: "cache",url: urls[0],rating: 0,width: 768,height: 512)
+        var edit = EditModel.neutral; edit.light.exposure = 2
+        let hdr = try await engine.frame(photo,edit: edit,hdr: true)
+        let count = await engine.renderCount
+        let sdr = try await engine.frame(photo,edit: edit,hdr: false)
+        let again = try await engine.frame(photo,edit: edit,hdr: true)
+        let afterToggle = await engine.renderCount
+        XCTAssertEqual(count,afterToggle); XCTAssertTrue(again.image === hdr.image)
+        XCTAssertNotEqual(hdr.histogram?.binsDigest(),sdr.histogram?.binsDigest())
+        for i in 0..<8 { var e = edit; e.light.exposure = Double(i)/10; _ = try await engine.frame(photo,edit: e,hdr: false,edge: 320) }
+        let afterWarming = await engine.renderCount
+        _ = try await engine.frame(photo,edit: edit,hdr: false)
+        let afterFull = await engine.renderCount; XCTAssertEqual(afterWarming,afterFull)
+        let reopened = self.engine()
+        let disk = try await reopened.frame(photo,edit: edit,hdr: true)
+        let diskCount = await reopened.renderCount
+        XCTAssertEqual(diskCount,0); XCTAssertEqual(disk.histogram,hdr.histogram)
+        XCTAssertEqual(disk.image.dataProvider?.data,hdr.image.dataProvider?.data)
+        edit.light.exposure = 2.5
+        _ = try await reopened.frame(photo,edit: edit,hdr: false)
+        let editedCount = await reopened.renderCount; XCTAssertEqual(editedCount,1)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 10)],ofItemAtPath: photo.url.path)
+        _ = try await reopened.frame(photo,edit: edit,hdr: true)
+        let replacedCount = await reopened.renderCount; XCTAssertEqual(replacedCount,2)
+        let request = MobileDetailRequest(rect: CGRect(x: 0.2,y: 0.2,width: 0.4,height: 0.4),scale: 1)
+        let detail = try await reopened.detail(photo,edit: edit,hdr: true,request: request)
+        let beforeDetailToggle = await reopened.renderCount
+        let detailSDR = try await reopened.detail(photo,edit: edit,hdr: false,request: request)
+        let afterDetailToggle = await reopened.renderCount
+        XCTAssertEqual(beforeDetailToggle,afterDetailToggle); XCTAssertEqual(detail.rect,detailSDR.rect)
+        var memory = MobilePreviewMemoryCache(budget: 2*(hdr.image.bytesPerRow*hdr.image.height+sdr.image.bytesPerRow*sdr.image.height))
+        let pair = MobilePreviewPair(hdr: hdr,sdr: sdr)
+        memory.put(pair,key: "a"); memory.put(pair,key: "b"); _ = memory.get("a"); memory.put(pair,key: "c")
+        XCTAssertNil(memory.get("b")); XCTAssertNotNil(memory.get("a")); XCTAssertLessThanOrEqual(memory.bytes,memory.budget)
+        let directory = folder.appendingPathComponent("Test.photonslibrary/MobilePreviews")
+        for url in try FileManager.default.contentsOfDirectory(at: directory,includingPropertiesForKeys: nil) { try Data("broken".utf8).write(to: url) }
+        let corruptReader = self.engine()
+        _ = try await corruptReader.frame(photo,edit: edit,hdr: false)
+        let fallbackCount = await corruptReader.renderCount; XCTAssertEqual(fallbackCount,1)
+    }
+
+    func testPanoramaDisplayModeReusesCompositePreview() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("pano-cache"))
+        let photos = urls.map { MobilePhoto(id: $0.lastPathComponent,name: $0.lastPathComponent,url: $0,rating: 0,width: 768,height: 512) }
+        let plan = try await engine.analyze(photos,options: .init(),positions: [:],sensor: nil,cancellation: .init(),progress: { _,_ in })
+        let first = try await engine.frame(plan,hdr: true)
+        _ = try await engine.frame(plan,hdr: false)
+        let again = try await engine.frame(plan,hdr: true)
+        let count = await engine.panoramaPreviewCount
+        XCTAssertEqual(count,1); XCTAssertTrue(first.image === again.image)
+    }
+
     func testHistogramAxisAndDisplayClippingMatchMacSemantics() throws {
         XCTAssertEqual(MobileHistogramReading.bin(at: 0.25,hdr: true).index,128)
         XCTAssertTrue(MobileHistogramReading.bin(at: 0.5,hdr: true).tail)
@@ -402,7 +456,7 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertGreaterThan(maximum(cached.image),1.2,"Persisted thumbnails must keep HDR samples")
         XCTAssertEqual(cached.histogram,thumb.histogram)
         let cacheURLs = try FileManager.default.contentsOfDirectory(at: folder.appendingPathComponent("Test.photonslibrary/MobilePreviews"),includingPropertiesForKeys: nil)
-        XCTAssertTrue(cacheURLs.contains { $0.pathExtension == "preview" })
+        XCTAssertTrue(cacheURLs.contains { $0.pathExtension == "pair" })
     }
 
     func testPanoramaToneUpdatesPreviewHistogramAndExport() async throws {
