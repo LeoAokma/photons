@@ -316,6 +316,49 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertTrue(cacheURLs.contains { $0.pathExtension == "preview" })
     }
 
+    func testPanoramaToneUpdatesPreviewHistogramAndExport() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("tone"))
+        let photos = urls.enumerated().map { MobilePhoto(id: "tone-\($0.offset)",name: $0.element.lastPathComponent,url: $0.element,rating: 0,width: 0,height: 0) }
+        let plan = try await engine.analyze(photos,options: .init(),positions: [:],sensor: nil,cancellation: .init(),progress: { _,_ in })
+        let baseline = try await engine.frame(plan,hdr: true)
+        let tone = PanoramaToneSettings(exposureEV: 2,highlightHeadroom: 2)
+        let adjusted = try await engine.adjustPanoramaTone(plan,settings: tone)
+        let hdr = try await engine.frame(adjusted,hdr: true), sdr = try await engine.frame(adjusted,hdr: false)
+        XCTAssertNotEqual(hdr.histogram?.binsDigest(),baseline.histogram?.binsDigest())
+        XCTAssertNotEqual(hdr.histogram?.binsDigest(),sdr.histogram?.binsDigest())
+        XCTAssertGreaterThan(hdr.image.contentHeadroom,1)
+        XCTAssertLessThanOrEqual(hdr.image.contentHeadroom,2.01)
+        XCTAssertEqual(adjusted.origins,plan.origins); XCTAssertEqual(adjusted.gains,plan.gains)
+        var settings = MobileExportSettings(); settings.format = "dng"; settings.longEdge = 604
+        let output = try await engine.export(photo: nil,edit: .neutral,plan: adjusted,manifest: nil,settings: settings,cancellation: .init(),progress: { _,_ in })
+        XCTAssertEqual(try XCTUnwrap(PanoramaManifest.read(from: output)).tone,tone)
+        let reset = try await engine.adjustPanoramaTone(adjusted,settings: .panoramaDefault)
+        let resetFrame = try await engine.frame(reset,hdr: true)
+        XCTAssertEqual(resetFrame.histogram?.binsDigest(),baseline.histogram?.binsDigest())
+    }
+
+    func testOptionalBostonSixFrameTone() async throws {
+        let inputs = FileManager.default.urls(for: .documentDirectory,in: .userDomainMask)[0].appendingPathComponent("ValidationInputs/628-633")
+        let urls = (628...633).map { inputs.appendingPathComponent(String(format: "B%07d.3FR",$0)) }
+        guard urls.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else { throw XCTSkip("Optional local six-frame Boston fixture") }
+        let engine = engine(), photos = urls.enumerated().map { MobilePhoto(id: "six-\($0.offset)",name: $0.element.lastPathComponent,url: $0.element,rating: 0,width: 0,height: 0) }
+        let plan = try await engine.analyze(photos,options: .init(),positions: [:],sensor: nil,tone: .init(),cancellation: .init(),progress: { text,_ in print("BOSTON SIX",text) })
+        let before = try await engine.frame(plan,hdr: true)
+        let tone = PanoramaToneSettings(exposureEV: 1,highlightHeadroom: 2)
+        let adjusted = try await engine.adjustPanoramaTone(plan,settings: tone)
+        let after = try await engine.frame(adjusted,hdr: true)
+        XCTAssertEqual(plan.sources.count,6); XCTAssertEqual(adjusted.origins,plan.origins)
+        XCTAssertNotEqual(before.histogram?.binsDigest(),after.histogram?.binsDigest())
+        XCTAssertGreaterThan(after.image.contentHeadroom,1); XCTAssertLessThan(after.image.contentHeadroom,2.01)
+        let outputs = inputs.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("ValidationOutputs")
+        try FileManager.default.createDirectory(at: outputs,withIntermediateDirectories: true)
+        for (name,frame) in [("628-before",before),("628-brighter",after)] {
+            let destination = try XCTUnwrap(CGImageDestinationCreateWithURL(outputs.appendingPathComponent("\(name).png") as CFURL,"public.png" as CFString,1,nil))
+            CGImageDestinationAddImage(destination,frame.image,nil); XCTAssertTrue(CGImageDestinationFinalize(destination))
+        }
+        print("BOSTON SIX TONE",plan.size,before.image.contentHeadroom,after.image.contentHeadroom)
+    }
+
     func testCancellationDoesNotCreateOutput() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("samples"))
         _ = try await engine.importPhotos(urls, skipDuplicates: true, progress: { _,_ in })

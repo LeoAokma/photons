@@ -110,7 +110,7 @@ struct MobilePanoramaWorkspace: View {
                         if let plan = model.plan { Text("\(Int(plan.outputSize.width)) × \(Int(plan.outputSize.height)) · \(photos.count) photographs").font(.caption) }
                         Spacer()
                         Button("Stitch / Export") { export = true }
-                            .buttonStyle(.borderedProminent).disabled(model.plan == nil || dirty || model.busy || cropNeedsUpdate)
+                            .buttonStyle(.borderedProminent).disabled(model.plan == nil || dirty || model.busy || model.rendering || cropNeedsUpdate)
                             .accessibilityIdentifier("panorama-export")
                     }.padding(14)
                 }.background(Color(white: 0.075))
@@ -158,16 +158,43 @@ struct MobilePanoramaWorkspace: View {
         } message: { Text(model.error ?? "") }
     }
     private var preview: some View {
-        ZStack {
-            Color(white: 0.055)
-            if model.plan != nil, let image = model.frame?.image {
-                MobilePhotoCanvas(image: image, hdr: model.hdr, identity: "panorama-workspace")
-                    .padding(20).accessibilityIdentifier("panorama-preview")
-                if dirty { Text("Positions changed · update alignment to refresh this preview").font(.caption).padding(12).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding() }
-            } else {
-                ContentUnavailableView("Panorama preview", systemImage: "pano", description: Text(model.busy ? "Aligning the selected photographs…" : "Drag the source frames or enter measured positions, then update alignment."))
+        VStack(spacing: 0) {
+            ZStack {
+                Color(white: 0.055)
+                if model.plan != nil, let image = model.frame?.image {
+                    MobilePhotoCanvas(image: image, hdr: model.hdr, identity: "panorama-workspace")
+                        .padding(20).accessibilityIdentifier("panorama-preview")
+                    if dirty { Text("Positions changed · update alignment to refresh this preview").font(.caption).padding(12).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding() }
+                } else {
+                    ContentUnavailableView("Panorama preview", systemImage: "pano", description: Text(model.busy ? "Aligning the selected photographs…" : "Drag the source frames or enter measured positions, then update alignment."))
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if model.plan?.isRegistered == true {
+                Divider()
+                VStack(spacing: 6) {
+                    HStack(alignment: .center,spacing: 20) {
+                        MobileSlider(title: "Exposure (EV)",value: toneBinding(\.exposureEV),range: -4...4,step: 0.05,commit: {})
+                            .accessibilityIdentifier("panorama-exposure")
+                        MobileSlider(title: "HDR highlight brightness (stops)",value: Binding(get: {
+                            log2(model.plan?.tone.highlightHeadroom ?? 4)
+                        },set: { value in
+                            var tone = model.plan?.tone ?? .panoramaDefault
+                            tone.highlightHeadroom = pow(2,min(4,max(0,value.isFinite ? value : 2))); model.setPanoramaTone(tone)
+                        }),range: 0...4,step: 0.1,commit: {}).accessibilityIdentifier("panorama-hdr-brightness")
+                        Button("Reset") { model.setPanoramaTone(.panoramaDefault) }
+                            .disabled(model.plan?.tone == .panoramaDefault).accessibilityIdentifier("reset-panorama-brightness")
+                    }
+                    Text("Exposure adjusts the whole image. HDR brightness limits highlights. These settings are included in exports.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.padding(12).background(.thinMaterial).disabled(model.busy)
             }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+    private func toneBinding(_ path: WritableKeyPath<PanoramaToneSettings,Double>) -> Binding<Double> {
+        Binding(get: { (model.plan?.tone ?? .panoramaDefault)[keyPath: path] },set: { value in
+            var tone = model.plan?.tone ?? .panoramaDefault
+            tone[keyPath: path] = min(4,max(-4,value.isFinite ? value : 0)); model.setPanoramaTone(tone)
+        })
     }
     private var controls: some View {
         ScrollView {
