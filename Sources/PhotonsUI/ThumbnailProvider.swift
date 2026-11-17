@@ -47,11 +47,11 @@ public final class ThumbnailRequest {
 
     /// Idempotent, safe from any thread. Cancelling unsubscribes this caller from the service job;
     /// when it was the last subscriber the job is dequeued (or, if the producer already started,
-    /// its bytes are dropped — §5).
-    public func cancel() {
+    /// its bytes are cached for the next visit).
+    public func cancel(preservingStartedWork: Bool = true) {
         guard state.markCancelled() else { return }
         provider?.note { $0.cancelled += 1 }
-        ticket?.cancel()
+        ticket?.cancel(preservingStartedWork: preservingStartedWork)
     }
 }
 
@@ -195,11 +195,28 @@ public final class ThumbnailProvider: @unchecked Sendable {
     public static var defaultConcurrency: Int { ProcessingPreferences.thumbnailConcurrency }
 
     public let cache: ThumbnailCache
+    public let histograms: PreviewHistogramService
     /// The one scheduler. Public so a probe can read `stats()`/`pendingCount`; no view should
     /// enqueue into it directly (they go through `request`, which also feeds the memory layer).
     public let service: ThumbnailService
 
+    private var cacheObserver: NSObjectProtocol?
     private let memory = NSCache<NSString, ImageBox>()
+    private var memoryGeneration: UInt64 = 0
+
+    private func synchronizeCacheMemory() {
+        let generation = cache.generation
+        lock.lock(); defer { lock.unlock() }
+        guard generation != memoryGeneration else { return }
+        memoryGeneration = generation
+        memory.removeAllObjects(); recent.removeAllObjects()
+        warmInFlight = nil
+        placeholderImages.removeAll(); placeholderOrder.removeAll()
+        displaySizesByDigest.removeAll(); displaySizeOrder.removeAll()
+    }
+
+    deinit { if let cacheObserver { NotificationCenter.default.removeObserver(cacheObserver) } }
+
     /// 218 — the last HD image delivered per content hash. A commit changes the key, so the new key
     /// is a miss by definition; this is what the cell draws while the rebuild runs ("先显示旧缩略图").
     /// Deliberately small: it is a placeholder cache, not a second thumbnail LRU.
@@ -214,11 +231,6 @@ public final class ThumbnailProvider: @unchecked Sendable {
     /// **not** a set of "already asked" digests: the cache keeps only the newest HD file per photo
     /// (308's retention), so undoing to an earlier document must be able to re-render it.
     private var warmInFlight: (digest: String, ticket: ThumbTicket)?
-    /// 344 — digests whose bytes are already on disk because a warm wrote them. The in-flight pair
-    /// above only covers the concurrent case; this is the **key**-scoped dedupe the 311 contract asks
-    /// for ("同一个 key 只发一次"), and it survives the request completing.
-    private var warmedHDDigests: Set<String> = []
-    private var warmedHDOrder: [String] = []
     /// 311 — the last warm's split: how long it sat in the queue, and how long the producer ran.
     /// Two numbers, because they answer different questions ("did the commit queue behind
     /// something?" vs "what does one HD render cost?").
@@ -301,6 +313,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
     public init(cache: ThumbnailCache, maxConcurrent: Int? = nil) {
         let adapter = ProducerAdapter()
         self.cache = cache
+        self.histograms = PreviewHistogramService(thumbnails: cache)
         self.adapter = adapter
         self.followsProcessingPolicy = maxConcurrent == nil
         self.service = ThumbnailService(cache: cache,
@@ -311,6 +324,10 @@ public final class ThumbnailProvider: @unchecked Sendable {
         recent.countLimit = 64
         recent.totalCostLimit = 32 * 1024 * 1024
         adapter.provider = self
+        histograms.provider = self
+        cacheObserver = NotificationCenter.default.addObserver(forName: .photonsPreviewCacheCleared, object: nil, queue: nil) { [weak self] _ in
+            self?.synchronizeCacheMemory()
+        }
     }
 
     // MARK: - one instance per cache
@@ -399,6 +416,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
     }
 
     public func memoryImage(for key: ThumbKey, display: ImageSize? = nil) -> CGImage? {
+        synchronizeCacheMemory()
         if let display {
             return memory.object(forKey: ThumbnailProvider.memoryKey(key, display: display))?.image
         }
@@ -415,6 +433,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
     /// 218 — the previous rendering of a photo, for the one frame between a commit's cache miss and
     /// the rebuilt file. Never counted as a cache hit: it is explicitly *not* the requested key.
     public func placeholderImage(contentHash: String, display: ImageSize? = nil) -> CGImage? {
+        synchronizeCacheMemory()
         let pixels = display ?? ImageSize(width: 256, height: 256)
         return recent.object(forKey: ThumbnailProvider.recentKey(contentHash, display: pixels))?.image
     }
@@ -531,6 +550,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
                         display: ImageSize? = nil,
                         priority: ThumbPriority = .onScreen,
                         completion: @escaping @MainActor (Int, ThumbKey, CGImage?) -> Void) -> ThumbnailRequest {
+        let generation = cache.generation
         let pixels = display ?? ImageSize(width: 512, height: 512)
         let key: ThumbKey
         if spec.isHDFamily {
@@ -558,12 +578,14 @@ public final class ThumbnailProvider: @unchecked Sendable {
             note { $0.requests += 1; $0.memoryHits += 1; $0.applied += 1 }
             let token = ThumbnailRequest(index: index, key: key, ticket: nil, provider: self)
             token.state.markFinished()
-            DispatchQueue.main.async { completion(index, key, hit) }
+            DispatchQueue.main.async { completion(index, key, self.cache.generation == generation ? hit : nil) }
             return token
         }
 
         note { $0.requests += 1 }
-        guard let fileURL else {
+        // An offline original can still use the on-disk preview.
+        let cachedSource = fileURL ?? (cache.exists(key) ? cache.url(for: key) : nil)
+        guard let fileURL = cachedSource else {
             // Offline root / missing file: a definitive "no image", not a hang.
             note { $0.failures += 1 }
             let token = ThumbnailRequest(index: index, key: key, ticket: nil, provider: self)
@@ -576,7 +598,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
         let state = RequestState()
         let spec = ThumbRequestSpec(key: key, source: fileURL)
         let ticket = service.request(spec, priority: priority) { [weak self] result in
-            self?.deliver(result, index: index, state: state, display: pixels, completion: completion)
+            self?.deliver(result, index: index, state: state, display: pixels, generation: generation, completion: completion)
         }
         return ThumbnailRequest(index: index, key: key, ticket: ticket, provider: self, state: state)
     }
@@ -678,6 +700,8 @@ public final class ThumbnailProvider: @unchecked Sendable {
     @discardableResult
     public func warmHDPreview(for asset: Asset, fileURL: URL?, document: EditModel,
                               onLanded: (@MainActor () -> Void)? = nil) -> Bool {
+        synchronizeCacheMemory()
+        let generation = cache.generation
         let key = ThumbnailProvider.hdJPEGKey(for: asset, document: document)
         // The file is the product. If it is already there (a re-render of a document the user came
         // back to) there is nothing to ask for; a stat is cheaper than a queue round trip.
@@ -687,11 +711,6 @@ public final class ThumbnailProvider: @unchecked Sendable {
         }
         lock.lock()
         if let inFlight = warmInFlight, inFlight.digest == key.digest {
-            counters.warmCoalesced += 1
-            lock.unlock()
-            return false
-        }
-        if warmedHDDigests.contains(key.digest) {
             counters.warmCoalesced += 1
             lock.unlock()
             return false
@@ -715,21 +734,13 @@ public final class ThumbnailProvider: @unchecked Sendable {
                                                       isBackgroundWarm: true),
                                      priority: .prefetch) {
             [weak self] result in
-            guard let self else { return }
+            guard let self, self.cache.generation == generation else { return }
             self.lock.lock()
             // `waitedMilliseconds` is enqueue→finish, i.e. it **contains** the producer. The two
             // numbers the report needs are: time spent behind other work, and the render itself.
             self.lastWarmWait = max(0, result.waitedMilliseconds - result.producedMilliseconds)
             self.lastWarmProduce = result.producedMilliseconds
             if self.warmInFlight?.digest == result.key.digest { self.warmInFlight = nil }
-            // The bytes on disk are the product; a refusal or a cancel keeps the digest retryable.
-            if result.data != nil || result.origin == .hit {
-                self.warmedHDDigests.insert(result.key.digest)
-                self.warmedHDOrder.append(result.key.digest)
-                while self.warmedHDOrder.count > 64 {
-                    self.warmedHDDigests.remove(self.warmedHDOrder.removeFirst())
-                }
-            }
             self.lock.unlock()
             if let onLanded { DispatchQueue.main.async { onLanded() } }
         }
@@ -785,8 +796,11 @@ public final class ThumbnailProvider: @unchecked Sendable {
 
     /// Runs on a service worker. Books the delivery and hands the decoded image to the main thread.
     private func deliver(_ result: ThumbResult, index: Int, state: RequestState, display: ImageSize,
-                         completion: @escaping @MainActor (Int, ThumbKey, CGImage?) -> Void) {
+                         generation: UInt64, completion: @escaping @MainActor (Int, ThumbKey, CGImage?) -> Void) {
         state.markFinished()
+        guard cache.generation == generation else {
+            DispatchQueue.main.async { completion(index, result.key, nil) }; return
+        }
         switch result.origin {
         case .hit: note { $0.diskHits += 1 }
         case .generated: note { $0.generated += 1 }
@@ -797,6 +811,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
             DispatchQueue.main.async { completion(index, result.key, nil) }
             return
         }
+        if result.key.spec == .hdJPEG { histograms.ensurePreview(key: result.key, data: data, generation: generation) }
         // 223 — the two decode doors are counted separately, so "the HEIC path used ImageIO" is a
         // number a test can refute rather than a claim in a comment.
         // 308 — three now: HEIC (Core Image → texture), 1920 PQ JPEG (ImageIO downsample), and the
@@ -822,17 +837,24 @@ public final class ThumbnailProvider: @unchecked Sendable {
             return
         }
         note { $0.decodes += 1 }
-        remember(image, for: result.key, display: display)
+        PreviewCacheStorage.publish(in: cache.root.deletingLastPathComponent(), generation: generation) {
+            synchronizeCacheMemory()
+            remember(image, for: result.key, display: display)
+        }
         note { $0.applied += 1 }
-        DispatchQueue.main.async { completion(index, result.key, image) }
+        DispatchQueue.main.async { completion(index, result.key, self.cache.generation == generation ? image : nil) }
     }
 
     // MARK: - producer
 
     /// The `ThumbnailProducer` the service calls. Several workers may call this at once.
     public func produce(_ key: ThumbKey, source: URL) throws -> ThumbPayload {
+        try produce(key, source: source, cacheGeneration: cache.generation)
+    }
+
+    private func produce(_ key: ThumbKey, source: URL, cacheGeneration: UInt64) throws -> ThumbPayload {
         if key.spec.isHDFamily {
-            return try produceHD(key, source: source)
+            return try produceHD(key, source: source, cacheGeneration: cacheGeneration)
         }
         let ext = source.pathExtension
         // Defensive second line of defence: the request path clamps first (`effectiveTier`), but a
@@ -935,11 +957,11 @@ public final class ThumbnailProvider: @unchecked Sendable {
     /// 311 — and it is the **only** file: the 1920 HEIC the loupe's stand-in used to read as a
     /// by-product is gone. Encoding it was the expensive half of a warm (HEVC frame cost, serialised
     /// inside the process) and no surface needs two files for one photo. The loupe reads this JPEG.
-    private func produceHD(_ key: ThumbKey, source: URL) throws -> ThumbPayload {
+    private func produceHD(_ key: ThumbKey, source: URL, cacheGeneration: UInt64) throws -> ThumbPayload {
         let document: EditModel
         lock.lock(); document = documentsByKey[key.digest] ?? .neutral; lock.unlock()
         let renderStart = CACurrentMediaTime()
-        let rendered = try renderHD(key: key, source: source, document: document)
+        let rendered = try renderHD(key: key, source: source, document: document, cacheGeneration: cacheGeneration)
         let renderMs = (CACurrentMediaTime() - renderStart) * 1000
 
         let encodeStart = CACurrentMediaTime()
@@ -974,7 +996,8 @@ public final class ThumbnailProvider: @unchecked Sendable {
     /// Internal, not private: the 308 acceptance harness compares the JPEG against the **exact**
     /// buffer it was encoded from (same render, same document), rather than re-rendering and hoping
     /// the two agree.
-    func renderHD(key: ThumbKey, source: URL, document: EditModel) throws -> HDRender {
+    func renderHD(key: ThumbKey, source: URL, document: EditModel, cacheGeneration: UInt64? = nil) throws -> HDRender {
+        let generation = cacheGeneration ?? cache.generation
         guard FileManager.default.fileExists(atPath: source.path) else {
             throw ThumbProviderError.unreadable(source)
         }
@@ -1026,9 +1049,15 @@ public final class ThumbnailProvider: @unchecked Sendable {
         let linearOptions = RenderOptions(canvas: nil, scale: scale,
                                           display: DisplayOptions(primaries: .displayP3, bitDepth: 16,
                                                                   headroom: 1, linearOutput: true),
-                                          useCache: false, wantsPixels: true)
+                                          useCache: false, wantsPixels: true,
+                                          histogramSampleLongEdge: 256)
         let frameStart = CACurrentMediaTime()
-        let frame = try? graph.render(document, options: linearOptions).display
+        let result = try graph.render(document, options: linearOptions)
+        let frame = result.display
+        if let sample = result.histogramSample {
+            histograms.cache.store(HistogramSnapshot(sample: sample, canvas: result.canvas),
+                                   for: HistogramCacheKey(thumbnail: key), generation: generation)
+        }
         let frameMs = (CACurrentMediaTime() - frameStart) * 1000
         lock.lock()
         Self.append(rawDecodeMs, to: &phaseTimesStore.rawDecode)
@@ -1313,6 +1342,11 @@ public final class ThumbnailProvider: @unchecked Sendable {
     /// service): the adapter is the service's producer, the provider is only weakly behind it.
     private final class ProducerAdapter: ThumbnailProducer {
         weak var provider: ThumbnailProvider?
+
+        func produce(_ key: ThumbKey, source: URL, cacheGeneration: UInt64) throws -> ThumbPayload {
+            guard let provider else { throw ThumbServiceError.noProducer(key) }
+            return try provider.produce(key, source: source, cacheGeneration: cacheGeneration)
+        }
 
         func produce(_ key: ThumbKey, source: URL) throws -> ThumbPayload {
             guard let provider else {
