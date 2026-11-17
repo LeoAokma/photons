@@ -60,3 +60,11 @@
 - 文件：MobileLibraryFolders.swift、MobileEngine/WorkspaceModel/WorkspaceView、engine/UI 测试。
 - 验证：`testSingleLibraryFoldersPersistWithoutChangingOriginalsOrEdits` 和 `testFoldersFilterMoveAndPersist` 通过，2 项 / 0 失败；验证重开持久化、原片字节/编辑不变、名称冲突、跨库导入拒绝、UI 创建/移动/筛选。日志 `05-folders.log`。
 - 依赖：IPAD-03；提交标题含 IPAD-05。限制：本轮为库内单层归类，不把 Files 中的物理文件夹变成第二库；移除文件夹有明确保留照片的确认。无移植。回退代码不会删除索引或原片。
+
+## IPAD-06
+
+- 变更：侧栏直方图增加 HDR/SDR 与色域、输出尺寸、0–255 代码坐标、HDR +1…+4 EV 轴、当前显示上限、过白/削顶/削底、采样数和触摸代码/档位/RGB bin 读数。采用 Mac 的 SDR/HDR 各半宽、线性高度、排除端点尖峰的每通道归一化与 RGB 加色叠加；无额外白色曲线。
+- 文件：新增 MobileHistogram.swift，Inspector 调整，engine/UI 验证。
+- 来源：参考当前基线的 Sources/PhotonsUI/HistogramPlot.swift、HistogramCard.swift；测量仍来自共享 Histogram/HistogramSnapshot。未改 Mac 行为。
+- 验证：`testHistogramAxisAndDisplayClippingMatchMacSemantics`、`testHistogramShowsClippingAndTouchReadout` 通过，2 项 / 0 失败；显示上限改变不改变 bins，触摸读数和统计行可见。日志 `06-histogram.log`，UI 测试保留截图。
+- 依赖：共享直方图基线；提交标题含 IPAD-06。限制：触摸直方图显示 bin 计数，不是照片上触点的逐像素 RGB；真实 HDR 显示仍需设备验证。回退新视图和 Inspector 调用即可。

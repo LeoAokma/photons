@@ -10,7 +10,7 @@ struct MobileInspector: View {
     var body: some View {
         VStack(spacing: 0) {
             if let histogram = model.frame?.histogram {
-                MobileHistogram(histogram: histogram).frame(height: 110).padding(14)
+                MobileHistogram(histogram: histogram,hdr: model.hdr).padding(14)
             }
             if let plan = model.plan {
                 ScrollView {
@@ -207,25 +207,6 @@ struct MobileSlider: View {
             }
             Slider(value: $value, in: range, step: step, onEditingChanged: { editing in if !editing { commit() } }).accessibilityLabel(title)
         }.padding(.vertical, 3)
-    }
-}
-struct MobileHistogram: View {
-    let histogram: Histogram
-    var body: some View {
-        Canvas { context,size in
-            let colors: [Color] = [.red, .green, .blue]
-            for (index,channel) in [histogram.red, histogram.green, histogram.blue].enumerated() {
-                let values = channel.bins + (histogram.headroom > 1 ? channel.hdrBins : [])
-                let peak = max(1,values.max() ?? 1)
-                var path = Path(); path.move(to: CGPoint(x: 0,y: size.height))
-                for (i,value) in values.enumerated() {
-                    path.addLine(to: CGPoint(x: Double(i) / Double(max(1,values.count - 1)) * size.width,
-                                            y: size.height * (1 - log1p(Double(value)) / log1p(Double(peak)))))
-                }
-                path.addLine(to: CGPoint(x: size.width,y: size.height)); path.closeSubpath()
-                context.fill(path, with: .color(colors[index].opacity(0.35)))
-            }
-        }.background(Color.black.opacity(0.3)).clipShape(RoundedRectangle(cornerRadius: 6)).accessibilityLabel("RGB histogram")
     }
 }
 struct MobilePositionDiagram: View {

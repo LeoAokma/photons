@@ -17,6 +17,19 @@ final class IPadEngineTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
 
+    func testHistogramAxisAndDisplayClippingMatchMacSemantics() throws {
+        XCTAssertEqual(MobileHistogramReading.bin(at: 0.25,hdr: true).index,128)
+        XCTAssertTrue(MobileHistogramReading.bin(at: 0.5,hdr: true).tail)
+        XCTAssertEqual(MobileHistogramReading.bin(at: 0.75,hdr: true).index,128)
+        XCTAssertEqual(MobileHistogramReading.bin(at: 1,hdr: false).index,255)
+        let sample = LinearSample(width: 3,height: 1,rgba: [0,0,0,1, 1,1,1,1, 4,4,4,1])
+        let histogram = HistogramSnapshot(sample: sample,canvas: ImageSize(width: 300,height: 100)).hdr
+        XCTAssertEqual(histogram.luma.clippedLow,1.0/3,accuracy: 0.001)
+        XCTAssertGreaterThan(histogram.withDisplayHeadroom(1).luma.clippedCeiling,histogram.withDisplayHeadroom(8).luma.clippedCeiling)
+        XCTAssertEqual(histogram.withDisplayHeadroom(1).binsDigest(),histogram.withDisplayHeadroom(8).binsDigest())
+        XCTAssertEqual(MobileHistogramReading.percent(0.0001),"<0.1%")
+    }
+
     func testSingleLibraryFoldersPersistWithoutChangingOriginalsOrEdits() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("folder-samples"))
         let first = try await engine.createFolder("Travel"), second = try await engine.createFolder("Studio")

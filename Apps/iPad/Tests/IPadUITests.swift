@@ -2,6 +2,18 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testHistogramShowsClippingAndTouchReadout() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60)); first.tap()
+        let plot = app.descendants(matching: .any)["histogram-plot"].firstMatch
+        XCTAssertTrue(plot.waitForExistence(timeout: 15)); plot.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["histogram-readout"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["histogram-clipping"].firstMatch.exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "iPad histogram details"; shot.lifetime = .keepAlways; add(shot)
+    }
+    @MainActor
     func testFoldersFilterMoveAndPersist() throws {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
