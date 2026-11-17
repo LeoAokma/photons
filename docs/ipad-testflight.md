@@ -5,14 +5,15 @@ The iPad preview uses a separate App Store Connect record from the Mac app. It d
 - App: **Photons Studio Preview**, Apple ID `6835653664`.
 - Bundle ID: `com.leoaokma.photons.ipad-preview`.
 - Initial beta: `0.1.0 (1)`, iPadOS 18+, iPad only, English startup.
+- Latest internal beta: **0.1.0 (2)**, source `e5364464338660305b25ff6a6d705131316b4789`. Verified **Testing** in the existing **Developer Beta** group (3 testers, 2 builds) at 23:15 EST on 2026-11-16. Build-specific English test notes are saved. The external build `0.1.0 (1)` remains **Waiting for Review**; this update did not add testers or submit another external review. See [TF-IPAD-02 release record](reports/developer-beta-ipad-2-2026-11-16.md).
 - Release bundles include the app icon, privacy manifests, MIT/GRDB notices and the developer-created 43XL calibration. Private Boston RAW samples are explicitly excluded.
 - Use a private external TestFlight group with public links disabled. Apple must approve the first external build through Beta App Review. Add only explicitly selected testers; creating a group does not send invitations.
 
-## Distribution verification — 2026-11-16
+## Initial build 0.1.0 (1) distribution history — 2026-11-16
 
 The arm64 Release archive passed strict code-signature verification with an App Store distribution profile (`get-task-allow=false`, no device list). The executable and dSYM UUIDs match. The 48.7 MiB uncompressed app contains the 43XL calibration, privacy manifests, MIT/GRDB notices and an opaque 1024 px icon, with no bundled Boston RAWs. Xcode reported **Upload succeeded** for `0.1.0 (1)` at 18:35 EST. Apple completed server processing, and the build was submitted to external **Private Beta**; its status is **Waiting for Review**. External automatic tester notifications are disabled. No testers have been invited. Upload success and server processing do not mean Beta App Review approval.
 
-The same build is **Ready to Test** in the internal **Developer Beta** group. Both groups currently have zero testers; internal automatic distribution is off, and the external group has no public link. Review status can be checked in [App Store Connect](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835653664/testflight).
+At the initial release, the same build was **Ready to Test** in the internal **Developer Beta** group. Both groups then had zero testers; internal automatic distribution was off, and the external group had no public link. The latest internal group status is recorded above. Review status can be checked in [App Store Connect](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835653664/testflight).
 
 The functional engine/UI checks are recorded in [iPad preview validation](reports/ipad-preview-validation.md); this distribution follow-up changes packaging and signing only. Physical iPad performance, memory and HDR display behaviour remain the subject of this beta.
 
@@ -24,12 +25,13 @@ Install an App Store Connect provisioning profile matching this Bundle ID and a 
 xcodebuild -project Apps/iPad/PhotonsIPad.xcodeproj \
   -scheme 'Photons iPad Preview' -configuration Release \
   -destination 'generic/platform=iOS' -derivedDataPath .build/ipad-device \
-  -archivePath '.build/ipad-testflight/Photons iPad Preview.xcarchive' \
+  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-2.xcarchive' \
   -disableAutomaticPackageResolution -skipPackageUpdates archive \
   PHOTONS_INCLUDE_BOSTON_SAMPLES=NO \
   PHOTONS_IPAD_SIGN_STYLE=Manual \
   PHOTONS_IPAD_SIGN_IDENTITY='Apple Distribution' \
-  PHOTONS_IPAD_PROFILE='YOUR INSTALLED APP STORE PROFILE'
+  PHOTONS_IPAD_PROFILE='YOUR INSTALLED APP STORE PROFILE' \
+  CURRENT_PROJECT_VERSION=2 MARKETING_VERSION=0.1.0
 ```
 
 The custom signing variables apply only to the app's Release configuration. Passing `PROVISIONING_PROFILE_SPECIFIER` globally would incorrectly assign the app profile to SwiftPM resource bundles. Debug keeps automatic development signing.
@@ -38,7 +40,7 @@ Use a local, ignored export-options plist with `method=app-store-connect`, `dest
 
 ```sh
 xcodebuild -exportArchive \
-  -archivePath '.build/ipad-testflight/Photons iPad Preview.xcarchive' \
+  -archivePath '.build/ipad-testflight/Photons-iPad-0.1.0-2.xcarchive' \
   -exportOptionsPlist .build/ipad-testflight/ExportOptions.plist \
   -exportPath .build/ipad-testflight/upload -allowProvisioningUpdates
 ```
@@ -59,8 +61,8 @@ Photons Studio Preview brings local RAW photo editing, HDR/SDR preview and expor
 - Export HDR/SDR images and lossless linear DNG, verify automatic library import, and save/share through Files.
 - Report your iPad model, iPadOS version, photo format, image dimensions and reproduction steps, including crashes, memory pressure and slow operations.
 
-This preview exports up to 6000 px on the long edge. Full-resolution large exports, background recovery and several desktop tools are still being adapted. Use copies of valuable photos; processing currently requires the app to stay active.
+Build 2 supports Full resolution as well as 2048, 4096 and 6000 px long-edge exports. Large full-resolution exports require enough available device memory. Background recovery and several desktop tools are still being adapted. Use copies of valuable photos; processing currently requires the app to stay active.
 
-## Beta Review Notes — English
+## Initial build 1 Beta Review Notes — English (retained)
 
 No login, subscription or invitation code is required inside the app. All photo processing is local. Tap + to import photos from Files. Tap a photo for its inspector; long-press a photo and tap additional images to select multiple photos, then tap the panorama toolbar icon. Choose Shift panorama for lens/back movement captures or Perspective panorama for modest changes in camera direction. The gear button opens full-screen settings and lens-profile management. The supplied 43XL calibration is optional; no private source photographs are bundled. Export supports 2048, 4096 or 6000 px long edge and saves into the app library with Files sharing available. This is an iPad-only development beta; desktop external AI-denoise and exposure-stack HDR helpers are not bundled.
