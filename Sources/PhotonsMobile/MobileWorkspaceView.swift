@@ -260,6 +260,8 @@ public struct MobileWorkspaceView: View {
                                 }.padding(7).background(model.selected.contains(photo.id) ? Color.orange.opacity(0.12) : .clear)
                                     .clipShape(RoundedRectangle(cornerRadius: 9))
                             .contentShape(Rectangle())
+                            .onAppear { model.thumbnailVisibility(photo.id,visible: true) }
+                            .onDisappear { model.thumbnailVisibility(photo.id,visible: false) }
                             .gesture(photoGesture(photo))
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(.isButton)

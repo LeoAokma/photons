@@ -1,6 +1,6 @@
 # Panorama UI and iPad responsiveness fixes
 
-Separate follow-up to the current iPad source `7855ac9` (PR #3, not yet merged at start). Branch: `codex/panorama-ui-performance`. Excludes the deghost PR and Mac perspective PR. Publication base is awaiting the owner’s choice; implementation and validation proceed here.
+Separate follow-up to the current iPad source `7855ac9` (PR #3, not yet merged at start). Branch: `codex/panorama-ui-performance`. Excludes the deghost PR and Mac perspective PR. Owner decision: complete these fixes now, wait for PR #3 to merge, then submit an independent PR against the updated main. Do not duplicate PR #3 or merge it on the owner’s behalf.
 
 | Tracking ID | Independent acceptance goal | Dependencies |
 | --- | --- | --- |
@@ -20,8 +20,14 @@ Panorama zoom now shows “Previewing low-res stitch” / “正在预览低分�
 
 Validation: simulator build passed; two engine tests passed (missing originals cannot trigger a panorama detail decode; ordinary edited-photo detail pixels still match full-resolution output). The zoom/notice/Fit UI test passed after scoping its accessibility query to the foreground canvas; the initial query matched the background canvas as well. `git diff --check` passed. Simulator only; no physical-device/HDR-display quality claim. Revert independently to restore the former detail behavior.
 
-## PANO-UI-03
+## PANO-UI-03 — `ec5a6a7`
 
 Selection mode now uses a single-tap recognizer directly. Each checkbox updates only the selected-ID set, without resetting the active editor, reading edit/history data or cancelling its render. Initial long-press selection still loads the initial photo once; ordinary browsing retains double-tap opening. Unchanged thumbnail images are not resubmitted to CALayer on every highlight redraw. Files: MobileWorkspaceView, MobileWorkspaceModel, iPad tests. Depends on PR #3 grid, no preceding fix behavior.
 
 Validation: simulator build and 2 tests passed: 40 model toggles preserve the editor without touching missing originals; UI selection/deselection and rapid double-taps stay in the grid, and normal double-tap opening works after leaving selection mode. No physical-device latency benchmark; this removes the identified blocking paths rather than promising a measured frame-time target. `git diff --check` passed. Revert independently.
+
+## PANO-UI-04
+
+Memory warnings previously erased every grid thumbnail and cancelled its loader; neither panorama dismissal nor a completed job reliably restarted the loader. Preserve currently visible (and pre-panorama visible) thumbnails plus the active photo under pressure. Load only missing visible cells, with a small recent cache (64 entries unless the visible set itself is larger). Coalesce appearances, skip ready images, recover cancelled loads after jobs/dismissal/cache clearing, and make root startup idempotent. HDR/SDR changes mark display variants stale while retaining existing images until their cached counterparts arrive. Files: MobileWorkspaceModel, MobileWorkspaceView, iPad engine tests. Depends on PR #3 caching; PANO-UI-02 also removes a source of avoidable memory pressure but is not required for recovery.
+
+Validation: iPad simulator build; 3 engine tests passed (pressure retention, disk-backed recovery after a cancelling job, idempotent restart, HDR/SDR cached reuse, missing-load recovery without panorama, transient panorama close). Two existing UI tests passed: full grid/inspector/panorama/tone/export/close workflow and cache measurement/clearing. Recovery assertions verified unchanged renderCount and retained CGImage identities. `git diff --check` passed. Tests inject memory warnings with generated fixtures; the reported physical-iPad memory-pressure event was not directly captured. Revert independently; no library/original/edit deletion.

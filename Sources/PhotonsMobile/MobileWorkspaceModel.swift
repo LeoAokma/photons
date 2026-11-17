@@ -49,18 +49,25 @@ final class MobileWorkspaceModel: ObservableObject {
     @Published var showGrid = true
     @Published var hdr = UserDefaults.standard.object(forKey: "photons.mobile.hdr") as? Bool ?? true
     let engine: MobileEngine
-    init() {
+    init(engine: MobileEngine? = nil) {
+        if let engine { self.engine = engine; return }
         // Generated UI-test examples stay separate from the user's working library.
         let sampleLibrary = ProcessInfo.processInfo.arguments.contains("--demo")
             ? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Generated Samples.photonslibrary") : nil
         if let sampleLibrary, ProcessInfo.processInfo.arguments.contains("--reset-demo") {
             try? FileManager.default.removeItem(at: sampleLibrary)
         }
-        engine = MobileEngine(libraryURL: sampleLibrary)
+        self.engine = MobileEngine(libraryURL: sampleLibrary)
     }
     private var job: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
     private var thumbnailTask: Task<Void, Never>?
+    private var thumbnailRevision = 0
+    private var visibleThumbnailIDs: Set<String> = []
+    private var panoramaThumbnailIDs: Set<String> = []
+    private var staleThumbnailIDs: Set<String> = []
+    private var thumbnailOrder: [String] = []
+    private var started = false
     private var selectionTask: Task<Void, Never>?
     private var cancellation = PanoramaCancellation()
     private var generation = 0
@@ -107,12 +114,16 @@ final class MobileWorkspaceModel: ObservableObject {
 
     func beginPanorama() {
         panoramaReturnToGrid = showGrid
+        panoramaThumbnailIDs = visibleThumbnailIDs
+        stopThumbnailLoading()
     }
     /// A stitch is a temporary workspace, not a photograph in the library.
     /// Export captures its plan before dismissal; only the saved output enters the library.
     func endPanorama() {
         guard let returnToGrid = panoramaReturnToGrid else { return }
         panoramaReturnToGrid = nil
+        visibleThumbnailIDs.formUnion(panoramaThumbnailIDs)
+        panoramaThumbnailIDs.removeAll()
         invalidateDetail(clearViewport: true)
         if busy && !panoramaExporting { cancel() }
         previewTask?.cancel(); generation += 1; rendering = false
@@ -120,11 +131,15 @@ final class MobileWorkspaceModel: ObservableObject {
         frame = active.flatMap { thumbnails[$0.id] }
         showGrid = returnToGrid
         if !returnToGrid { render() }
+        warmThumbnails()
     }
 
     var selectedPhotos: [MobilePhoto] { photos.filter { selected.contains($0.id) } }
     var canExport: Bool { plan != nil || active != nil }
     func start() async {
+        // SwiftUI can restart the root .task after dismissing a full-screen workspace.
+        guard !started else { warmThumbnails(); return }
+        started = true
         do {
             try await reload()
             if ProcessInfo.processInfo.arguments.contains("--boston"), !MobileSamples.boston.isEmpty {
@@ -133,28 +148,68 @@ final class MobileWorkspaceModel: ObservableObject {
                 let urls = try await Task.detached { try MobileSamples.create() }.value
                 importPhotos(urls)
             } else { warmThumbnails() }
-        } catch { self.error = error.localizedDescription }
+        } catch { started = false; self.error = error.localizedDescription }
     }
     func reload() async throws {
         photos = try await engine.photos(); profiles = try await engine.profiles(); folders = try await engine.folderIndex()
     }
-    func warmThumbnails() {
-        thumbnailTask?.cancel()
-        let list = photos, hdr = hdr
+    func thumbnailVisibility(_ id: String, visible: Bool) {
+        if visible {
+            visibleThumbnailIDs.insert(id)
+            warmThumbnails()
+        } else { visibleThumbnailIDs.remove(id) }
+    }
+    private var protectedThumbnailIDs: Set<String> {
+        visibleThumbnailIDs.union(panoramaThumbnailIDs).union(active.map { [$0.id] } ?? [])
+    }
+    private func stopThumbnailLoading() {
+        thumbnailTask?.cancel(); thumbnailTask = nil; thumbnailRevision += 1
+    }
+    private func trimThumbnails(underPressure: Bool = false) {
+        let keep = protectedThumbnailIDs
+        if underPressure { thumbnails = thumbnails.filter { keep.contains($0.key) } }
+        // Keep a small recent scroll-back cache, plus the cells actually on screen.
+        while thumbnails.count > max(64,keep.count) {
+            guard let id = thumbnailOrder.first(where: { thumbnails[$0] != nil && !keep.contains($0) })
+                ?? thumbnails.keys.sorted().first(where: { !keep.contains($0) }) else { break }
+            thumbnails.removeValue(forKey: id)
+        }
+        thumbnailOrder.removeAll { thumbnails[$0] == nil }
+        staleThumbnailIDs.formIntersection(thumbnails.keys)
+    }
+    func warmThumbnails(refreshExisting: Bool = false) {
+        if refreshExisting {
+            staleThumbnailIDs.formUnion(thumbnails.keys)
+            stopThumbnailLoading()
+        }
+        guard !busy, panoramaReturnToGrid == nil, showGrid, thumbnailTask == nil else { return }
+        thumbnailRevision += 1
+        let ticket = thumbnailRevision
         thumbnailTask = Task {
-            for (index,photo) in list.enumerated() {
-                if Task.isCancelled { break }
+            defer { if ticket == thumbnailRevision { thumbnailTask = nil } }
+            // Coalesce the grid's cell appearances without restarting an in-flight decode.
+            do { try await Task.sleep(for: .milliseconds(30)) } catch { return }
+            var failed: Set<String> = []
+            while !Task.isCancelled && !busy && panoramaReturnToGrid == nil && showGrid {
+                let needed = visibleThumbnailIDs.isEmpty
+                    ? Set(folderPhotos.prefix(12).map(\.id)) : visibleThumbnailIDs
+                guard let photo = photos.first(where: {
+                    needed.contains($0.id) && !failed.contains($0.id)
+                        && (thumbnails[$0.id] == nil || staleThumbnailIDs.contains($0.id))
+                }) else { break }
+                let mode = hdr
                 do {
-                    let value = try await engine.thumbnail(photo, hdr: hdr)
-                    guard !Task.isCancelled else { break }
-                    thumbnails[photo.id] = value; previewErrors.removeValue(forKey: photo.id)
+                    let value = try await engine.thumbnail(photo,hdr: mode)
+                    guard !Task.isCancelled, mode == hdr else { break }
+                    thumbnails[photo.id] = value; staleThumbnailIDs.remove(photo.id)
+                    thumbnailOrder.removeAll { $0 == photo.id }; thumbnailOrder.append(photo.id)
+                    previewErrors.removeValue(forKey: photo.id)
                     if active?.id == photo.id && showGrid && plan == nil { frame = value }
+                    trimThumbnails()
                 } catch is CancellationError { break }
-                catch { previewErrors[photo.id] = error.localizedDescription }
-                if !busy { status = L10n.tr("ipad.9d30fdcf7baa", String(describing: (index + 1)), String(describing: (list.count))); progress = Double(index + 1) / Double(max(1,list.count)) }
+                catch { failed.insert(photo.id); previewErrors[photo.id] = error.localizedDescription }
                 await Task.yield()
             }
-            if !Task.isCancelled && !busy { status = ""; progress = nil }
         }
     }
     func select(_ photo: MobilePhoto, open: Bool = false) {
@@ -263,7 +318,7 @@ final class MobileWorkspaceModel: ObservableObject {
                 }
             }
         } else { render() }
-        warmThumbnails()
+        warmThumbnails(refreshExisting: true)
     }
     func setRating(_ rating: Int) {
         guard let photo = active else { return }
@@ -278,7 +333,7 @@ final class MobileWorkspaceModel: ObservableObject {
     private func run(_ title: String, work: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }
         invalidateDetail()
-        thumbnailTask?.cancel(); previewTask?.cancel(); generation += 1; rendering = false
+        stopThumbnailLoading(); previewTask?.cancel(); generation += 1; rendering = false
         busy = true; status = title; progress = nil; cancellation = PanoramaCancellation()
         job = Task {
             do { try await work() }
@@ -286,6 +341,7 @@ final class MobileWorkspaceModel: ObservableObject {
             catch { self.error = error.localizedDescription }
             busy = false; progress = nil
             status = ""; requestDetail(viewport)
+            warmThumbnails()
         }
     }
     func cancel() { cancellation.cancel(); job?.cancel(); status = L10n.tr("e8e08b0f61dd") }
@@ -383,14 +439,18 @@ final class MobileWorkspaceModel: ObservableObject {
     }
     func memoryWarning() {
         invalidateDetail(clearViewport: true)
-        previewTask?.cancel(); generation += 1; rendering = false; thumbnailTask?.cancel(); thumbnails.removeAll()
-        Task { await engine.releaseWorkingMemory() }
+        previewTask?.cancel(); generation += 1; rendering = false
+        stopThumbnailLoading(); trimThumbnails(underPressure: true)
+        Task {
+            await engine.releaseWorkingMemory()
+            warmThumbnails()
+        }
     }
     func clearPreviewCache() async throws {
         guard !busy else { throw MobileError.message(L10n.tr("ipad.580e1a655542")) }
         busy = true
-        defer { busy = false }
-        previewTask?.cancel(); thumbnailTask?.cancel()
+        defer { busy = false; warmThumbnails() }
+        previewTask?.cancel(); stopThumbnailLoading()
         generation += 1; rendering = false
         invalidateDetail(); status = ""; progress = nil
         // Finish loading the selected photo's saved edits; cancelling this load could leave

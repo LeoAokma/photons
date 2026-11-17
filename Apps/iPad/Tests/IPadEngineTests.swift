@@ -221,6 +221,71 @@ final class IPadEngineTests: XCTestCase {
     }
 
     @MainActor
+    func testPanoramaDismissalPreservesVisibleThumbnailsAndRecoversEvictedOnes() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("thumbnail-lifecycle"))
+        _ = try await engine.importPhotos(urls,skipDuplicates: true,progress: { _,_ in })
+        let photos = try await engine.photos(), model = MobileWorkspaceModel(engine: engine)
+        let first = photos[0], second = photos[1], third = photos[2]
+        model.hdr = true
+        model.thumbnailVisibility(first.id,visible: true); model.thumbnailVisibility(second.id,visible: true)
+        await model.start()
+        for _ in 0..<200 where model.thumbnails[first.id] == nil || model.thumbnails[second.id] == nil {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        let original = try XCTUnwrap(model.thumbnails[first.id]), other = try XCTUnwrap(model.thumbnails[second.id])
+        // Simulate a recently scrolled-off cell, already persisted to the disk cache.
+        model.thumbnails[third.id] = try await engine.thumbnail(third,hdr: true)
+        let before = await engine.renderCount
+        model.beginPanorama()
+        model.thumbnailVisibility(first.id,visible: false); model.thumbnailVisibility(second.id,visible: false)
+        model.showGrid = false
+        model.memoryWarning()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(model.thumbnails[first.id]?.image === original.image)
+        XCTAssertTrue(model.thumbnails[second.id]?.image === other.image)
+        XCTAssertNil(model.thumbnails[third.id],"Offscreen thumbnails should be evicted under pressure")
+        model.endPanorama()
+        XCTAssertTrue(model.showGrid)
+        XCTAssertTrue(model.thumbnails[first.id]?.image === original.image)
+        // A job cancels the queued load; completion must restart missing thumbnails.
+        model.thumbnailVisibility(third.id,visible: true)
+        model.importPhotos(urls)
+        for _ in 0..<200 where model.busy || model.thumbnails[third.id] == nil {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertFalse(model.busy); XCTAssertNotNil(model.thumbnails[third.id]); XCTAssertNil(model.error)
+        let recovered = await engine.renderCount
+        XCTAssertEqual(recovered,before,"Recovery must use persisted previews, not redevelop unchanged sources")
+        await model.start() // Root .task restart is harmless.
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(model.thumbnails[first.id]?.image === original.image)
+        // HDR/SDR changes refresh only the display variant, retaining disk/RAW reuse.
+        model.toggleHDR()
+        for _ in 0..<200 where model.thumbnails[first.id]?.image === original.image {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        let expected = try await engine.thumbnail(first,hdr: false)
+        XCTAssertTrue(model.thumbnails[first.id]?.image === expected.image)
+        let afterToggle = await engine.renderCount; XCTAssertEqual(afterToggle,before)
+    }
+
+    @MainActor
+    func testMemoryPressureRestartsMissingVisibleThumbnailsWithoutPanorama() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("thumbnail-pressure"))
+        _ = try await engine.importPhotos(urls,skipDuplicates: true,progress: { _,_ in })
+        let photos = try await engine.photos()
+        let model = MobileWorkspaceModel(engine: engine), photo = try XCTUnwrap(photos.first)
+        model.thumbnailVisibility(photo.id,visible: true)
+        await model.start()
+        // Cancel the coalesced first load before it runs, just as a memory warning can.
+        model.memoryWarning()
+        for _ in 0..<200 where model.thumbnails[photo.id] == nil {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertNotNil(model.thumbnails[photo.id]); XCTAssertNil(model.error)
+    }
+
+    @MainActor
     func testMultiSelectionDoesNotLoadOrReplaceTheActiveEditor() async throws {
         let model = MobileWorkspaceModel()
         let first = MobilePhoto(id: "first",name: "first",url: folder.appendingPathComponent("missing-first.tiff"),rating: 0,width: 768,height: 512)
