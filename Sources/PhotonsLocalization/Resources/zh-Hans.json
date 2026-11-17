@@ -1459,5 +1459,9 @@
   "886fc2719d25": "自动调节",
   "a0dc4ea6b223": "自动调节：按纹理损失安排曝光、高光、白色、黑色与对比",
   "187f2e7d1e49": "明暗 · 自动",
-  "panorama.invalidPerspectiveGeometry": "透视变换在图像内部越过无穷远线。请减小相机转角，或使用重叠更多的照片。"
+  "panorama.invalidPerspectiveGeometry": "透视变换在图像内部越过无穷远线。请减小相机转角，或使用重叠更多的照片。",
+  "panorama.perspectiveDescription": "通过透视变换，对齐相机小幅旋转或倾斜拍摄的重叠照片。",
+  "panorama.perspectiveLimits": "采用平面投影，适合远景或近似平面的重叠照片。不支持明显视差、超广视角或 360° 全景。",
+  "panorama.perspectiveLCCNotice": "请先对单张照片应用 LCC，再进行透视接片。旋转相机后的布局不能代表镜头的实际移轴位置。",
+  "panorama.changeMode": "切换接片模式…"
 }

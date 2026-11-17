@@ -1459,5 +1459,9 @@
   "886fc2719d25": "Auto tone",
   "a0dc4ea6b223": "Auto tone: exposure, highlights, whites, blacks and contrast, arranged by texture loss",
   "187f2e7d1e49": "Light · Auto",
-  "panorama.invalidPerspectiveGeometry": "The perspective transforms cross the image horizon. Use a smaller camera rotation or more overlapping photographs."
+  "panorama.invalidPerspectiveGeometry": "The perspective transforms cross the image horizon. Use a smaller camera rotation or more overlapping photographs.",
+  "panorama.perspectiveDescription": "Align overlapping views taken with modest camera rotation or tilt using perspective transforms.",
+  "panorama.perspectiveLimits": "Uses a planar projection. Best for overlapping views of distant or approximately flat scenes. Strong parallax, very wide views and 360° panoramas are not supported.",
+  "panorama.perspectiveLCCNotice": "Apply LCC to individual photographs before perspective stitching. A rotated-camera layout does not describe physical lens-shift positions.",
+  "panorama.changeMode": "Change panorama mode…"
 }

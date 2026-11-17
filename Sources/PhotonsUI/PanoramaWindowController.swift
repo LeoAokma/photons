@@ -27,11 +27,12 @@ public final class PanoramaWindowController: NSWindowController, NSWindowDelegat
 }
 
 @MainActor
-private final class PanoramaWindowModel: ObservableObject {
+final class PanoramaWindowModel: ObservableObject {
     let urls: [URL]
     private let sourceAccess: [FileAccess]
     weak var window: NSWindow?
     @Published var choosingMode = true
+    @Published private(set) var registrationMode:PanoramaRegistrationMode = .shift
     @Published var busy = false
     @Published var status = ""
     @Published var error: String?
@@ -100,6 +101,7 @@ private final class PanoramaWindowModel: ObservableObject {
         alignmentNeedsUpdate=knownPositions.count>1
     }
     func changeLCC(automaticallyLocate:Bool=false) {
+        guard registrationMode == .shift else {lccEnabled=false;return}
         guard let current=plan,!busy else {return}
         guard current.isRegistered else {lccEnabled=false;return}
         if let reference=positionReference,let sensor {lccOffset=reference.profileOffset(in:current,sensor:sensor)}
@@ -211,6 +213,7 @@ private final class PanoramaWindowModel: ObservableObject {
         LCCProfileLibraryModel.shared.refresh()
     }
     func selectLensProfile() {
+        guard registrationMode == .shift else {return}
         UserDefaults.standard.set(selectedLensProfileID,forKey:"Photons.panorama.lensProfileID")
         guard var plan else { return }
         let profile=lensProfiles.first { $0.id.uuidString==selectedLensProfileID }
@@ -248,13 +251,24 @@ private final class PanoramaWindowModel: ObservableObject {
         }
         return value
     }
-    func prepare() {
+    func chooseMode() {
+        guard !busy else {return}
+        alignmentWindow?.close();editingPosition=nil
+        choosingMode=true;plan=nil;error=nil;status=""
+    }
+    func prepare(mode:PanoramaRegistrationMode?=nil) {
+        guard !busy else {return}
+        if let mode {registrationMode=mode}
         choosingMode = false;lccSession=nil;lccEnabled=false;cropToLCC=false;estimatedReference=nil;lccOffset = .zero;alignmentNeedsUpdate=false
-        let positions=knownPositions,sensor=self.sensor
+        alignmentWindow?.close();editingPosition=nil
+        let mode=registrationMode,positions=registrationMode == .shift ? knownPositions:[:]
+        let sensor=registrationMode == .shift ? self.sensor:nil
+        plan=nil // A failed retry must not leave an older panorama available for export.
         run { [urls,options] engine,token,progress in
-            do {return try engine.analyze(urls:urls,options:options,knownPositions:positions,sensorOverride:sensor,cancellation:token,progress:progress)}
+            do {return try engine.analyze(urls:urls,options:options,knownPositions:positions,sensorOverride:sensor,registrationMode:mode,cancellation:token,progress:progress)}
             catch {
                 try token.check()
+                guard mode == .shift else {throw error}
                 return try engine.alignmentDraft(urls:urls,knownPositions:positions,sensorOverride:sensor,message:error.localizedDescription,cancellation:token)
             }
         }
@@ -279,18 +293,23 @@ private final class PanoramaWindowModel: ObservableObject {
         }
     }
     var canStitch:Bool {
-        guard !busy,!alignmentNeedsUpdate,let plan,plan.isRegistered else {return false}
+        guard !choosingMode,!busy,!alignmentNeedsUpdate,let plan,plan.isRegistered,plan.registrationMode==registrationMode else {return false}
+        if registrationMode == .perspective {return !lccEnabled && plan.lccState==nil && plan.warps != nil}
         if !lccEnabled {return plan.lccState==nil}
         guard let lcc=plan.lccState else {return false}
         if !automaticLCCWB {guard let wb=lcc.whiteBalance,wb.0==Float(lccTemperature),wb.1==Float(lccTint) else {return false}}
         return lcc.profileID.uuidString==selectedLensProfileID && lcc.offsetMM==lccOffset && (lcc.cropRect != nil)==cropToLCC && lcc.sensor==sensor && lcc.exposureEV==exposureEV && lcc.protectHighlights==protectHighlights && lcc.cameraBody==cameraBody && lcc.bodyOrientation==bodyOrientation
     }
-    func stitch() {
-        guard let plan, let window, canStitch else { return }
+    func exportManifest(for plan:PanoramaPlan)->PanoramaManifest {
+        if plan.registrationMode == .perspective {return PanoramaManifest(plan:plan)}
         let profile=lensProfiles.first {$0.id.uuidString==selectedLensProfileID}
-        let manifest=PanoramaManifest(plan:plan,profileID:profile?.id,profileName:profile?.name,
+        return PanoramaManifest(plan:plan,profileID:profile?.id,profileName:profile?.name,
             offsetMM:positionReference != nil || estimatedReference != nil ? lccOffset:nil,
             sensor:sensor,bodyOrientation:bodyOrientation,cameraBody:cameraBody)
+    }
+    func stitch() {
+        guard let plan, let window, canStitch else { return }
+        let manifest=exportManifest(for:plan)
         let controller=PanoramaExportController(plan:plan,manifest:manifest)
         controller.onExported=onExported
         controller.onQueued={ [weak self] in self?.exportWindow=nil;self?.window?.close() }
@@ -333,11 +352,14 @@ private struct PanoramaWorkspace: View {
             VStack(alignment:.leading,spacing:12) {
                 Label { Text(L10n.tr("e0a7acc067fd")) } icon: { PanoramaModeIcon() }.font(.title2.bold())
                 Text(L10n.tr("f6ec5765c5b6"))
-                Button(L10n.tr("0f638e919d73")) { model.prepare() }.buttonStyle(.borderedProminent).controlSize(.large)
+                Button(L10n.tr("0f638e919d73")) { model.prepare(mode:.shift) }.buttonStyle(.borderedProminent).controlSize(.large)
+                    .accessibilityIdentifier("panorama.mode.shift")
             }.padding(24).frame(maxWidth:.infinity,alignment:.leading).background(.quaternary,in:RoundedRectangle(cornerRadius:14))
             VStack(alignment:.leading,spacing:8) {
                 Label { Text(L10n.tr("713e40499206")) } icon: { PanoramaModeIcon(perspective:true) }.font(.title2)
-                Text(L10n.tr("45da88d7b38d")).foregroundStyle(.secondary)
+                Text(L10n.tr("panorama.perspectiveDescription")).foregroundStyle(.secondary)
+                Button(L10n.tr("0f638e919d73")) { model.prepare(mode:.perspective) }.buttonStyle(.borderedProminent).controlSize(.large)
+                    .accessibilityIdentifier("panorama.mode.perspective")
             }.padding(24).frame(maxWidth:.infinity,alignment:.leading).background(.quinary,in:RoundedRectangle(cornerRadius:14))
             Text(L10n.tr("62fd2de26931"))
                 .font(.callout).foregroundStyle(.secondary)
@@ -377,7 +399,37 @@ private struct PanoramaWorkspace: View {
     }
     private var inspector: some View {
         VStack(alignment:.leading,spacing:16) {
-            Text(L10n.tr("e0a7acc067fd")).font(.title2.bold())
+            Text(L10n.tr(model.registrationMode == .shift ? "e0a7acc067fd":"713e40499206")).font(.title2.bold())
+            Button(L10n.tr("panorama.changeMode")) {model.chooseMode()}
+                .accessibilityIdentifier("panorama.changeMode")
+            if model.registrationMode == .shift {shiftControls}
+            else {
+                Text(L10n.tr("panorama.perspectiveLimits")).font(.callout).foregroundStyle(.secondary)
+                Text(L10n.tr("panorama.perspectiveLCCNotice")).font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+            Text(L10n.tr("71e8dddcf62b")).font(.headline)
+            Toggle(L10n.tr("dcc5dc5e40cb"),isOn:$model.options.avoidMotion).onChange(of:model.options.avoidMotion) { _,_ in model.refresh() }
+            Toggle(L10n.tr("f332d17f7e09"),isOn:$model.options.matchExposure).onChange(of:model.options.matchExposure) { _,_ in model.refresh() }
+            Text(L10n.tr("802a18c71f09")).font(.callout)
+            AdjustmentSlider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })
+            Picker(L10n.tr("f55043412c64"),selection:$model.options.preferredSource) {
+                Text(L10n.tr("db9773faa309")).tag(-1)
+                ForEach(Array(model.urls.enumerated()),id:\.offset) { i,url in Text(url.lastPathComponent).tag(i) }
+            }.onChange(of:model.options.preferredSource) { _,_ in model.refresh() }
+            Text(L10n.tr("95875297cbcd")).font(.caption).foregroundStyle(.secondary)
+            if model.registrationMode == .shift {
+                Divider()
+                Button(L10n.tr("9e4be2d889be")) { model.manageLCC() }
+                Text(L10n.tr("26747f634b19" , String(describing: (model.lccCount)), String(describing: (model.urls.count)))).font(.caption).foregroundStyle(.secondary)
+            }
+
+        }.disabled(model.busy)
+        .onChange(of:model.sensorChoice) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
+        .onChange(of:model.sensorWidth) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
+        .onChange(of:model.sensorHeight) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
+    }
+    @ViewBuilder private var shiftControls:some View {
             VStack(alignment:.leading,spacing:6) {
                 Text(L10n.tr("dcd3ee9cec9b")).font(.headline)
                 CameraBodyPicker(selection:Binding(get:{model.cameraBody},set:{model.setBody($0)})).labelsHidden()
@@ -476,25 +528,6 @@ private struct PanoramaWorkspace: View {
                 }
                 Text(model.positionReference == nil ? L10n.tr("571a6cd6f748") : L10n.tr("531e654e1a1e")).font(.caption).foregroundStyle(.secondary)
             }
-            Divider()
-            Text(L10n.tr("71e8dddcf62b")).font(.headline)
-            Toggle(L10n.tr("dcc5dc5e40cb"),isOn:$model.options.avoidMotion).onChange(of:model.options.avoidMotion) { _,_ in model.refresh() }
-            Toggle(L10n.tr("f332d17f7e09"),isOn:$model.options.matchExposure).onChange(of:model.options.matchExposure) { _,_ in model.refresh() }
-            Text(L10n.tr("802a18c71f09")).font(.callout)
-            AdjustmentSlider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })
-            Picker(L10n.tr("f55043412c64"),selection:$model.options.preferredSource) {
-                Text(L10n.tr("db9773faa309")).tag(-1)
-                ForEach(Array(model.urls.enumerated()),id:\.offset) { i,url in Text(url.lastPathComponent).tag(i) }
-            }.onChange(of:model.options.preferredSource) { _,_ in model.refresh() }
-            Text(L10n.tr("95875297cbcd")).font(.caption).foregroundStyle(.secondary)
-            Divider()
-            Button(L10n.tr("9e4be2d889be")) { model.manageLCC() }
-            Text(L10n.tr("26747f634b19" , String(describing: (model.lccCount)), String(describing: (model.urls.count)))).font(.caption).foregroundStyle(.secondary)
-
-        }.disabled(model.busy)
-        .onChange(of:model.sensorChoice) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
-        .onChange(of:model.sensorWidth) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
-        .onChange(of:model.sensorHeight) {_,_ in model.selectLensProfile();if model.lccEnabled {model.changeLCC()}}
     }
 }
 
