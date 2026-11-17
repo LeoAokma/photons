@@ -60,6 +60,27 @@ actor MobileEngine {
     private(set) var panoramaPreviewCount = 0
     private var previewDirectory: URL { libraryURL.appendingPathComponent("MobilePreviews",isDirectory: true) }
 
+    struct CacheUsage: Sendable {
+        var diskBytes: Int = 0
+        var files: Int = 0
+        var memoryBytes: Int = 0
+    }
+    func cacheUsage() throws -> CacheUsage {
+        var result = CacheUsage(memoryBytes: photoCache.bytes + thumbnailCache.bytes + detailCache.bytes + (panoramaPair?.bytes ?? 0))
+        guard FileManager.default.fileExists(atPath: previewDirectory.path) else { return result }
+        for url in try FileManager.default.contentsOfDirectory(at: previewDirectory,includingPropertiesForKeys: [.fileSizeKey,.isRegularFileKey]) {
+            let values = try url.resourceValues(forKeys: [.fileSizeKey,.isRegularFileKey])
+            if values.isRegularFile == true { result.diskBytes += values.fileSize ?? 0; result.files += 1 }
+        }
+        return result
+    }
+    func clearPreviewCache() throws {
+        releaseWorkingMemory()
+        if FileManager.default.fileExists(atPath: previewDirectory.path) {
+            try FileManager.default.removeItem(at: previewDirectory)
+        }
+    }
+
     init(libraryURL: URL? = nil) {
         self.libraryURL = libraryURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("iPad Preview.photonslibrary", isDirectory: true)

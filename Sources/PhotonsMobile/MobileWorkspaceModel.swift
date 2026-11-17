@@ -190,7 +190,7 @@ final class MobileWorkspaceModel: ObservableObject {
         select(visible[index + offset], open: true)
     }
     func render() {
-        guard !selectionLoading, let photo = active, plan == nil else { return }
+        guard !busy, !selectionLoading, let photo = active, plan == nil else { return }
         invalidateDetail()
         previewTask?.cancel(); generation += 1
         let ticket = generation, values = edit, hdr = hdr
@@ -380,6 +380,19 @@ final class MobileWorkspaceModel: ObservableObject {
         invalidateDetail(clearViewport: true)
         previewTask?.cancel(); generation += 1; rendering = false; thumbnailTask?.cancel(); thumbnails.removeAll()
         Task { await engine.releaseWorkingMemory() }
+    }
+    func clearPreviewCache() async throws {
+        guard !busy else { throw MobileError.message("Wait for the current task to finish before clearing the cache.") }
+        busy = true
+        defer { busy = false }
+        previewTask?.cancel(); thumbnailTask?.cancel()
+        generation += 1; rendering = false
+        invalidateDetail(); status = ""; progress = nil
+        // Finish loading the selected photo's saved edits; cancelling this load could leave
+        // neutral controls attached to an edited photograph when settings are dismissed.
+        await selectionTask?.value
+        try await engine.clearPreviewCache()
+        // Keep the image currently on screen; subsequent requests regenerate disposable previews.
     }
 }
 #endif

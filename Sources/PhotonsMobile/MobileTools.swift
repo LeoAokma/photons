@@ -203,6 +203,7 @@ struct MobileSettingsView: View {
             }
             Section("Development preview") { Text("The shared engines are running on iPadOS. Some desktop interfaces and external helpers are still being adapted. See Preview capabilities for the current scope.") }
             }
+            MobileCacheSettings(model: model)
         }.navigationTitle(libraryOnly ? "Photo library" : "General")
     }
 }

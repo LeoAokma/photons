@@ -76,3 +76,10 @@
 - 文件：MobilePreviewCache.swift、MobileEngine.swift、MobileWorkspaceModel.swift、IPadEngineTests.swift。依赖 IPAD-04；无移植代码。
 - 验证：HDR 高光/持久化、局部像素一致性、全景切换复用均通过；配对缓存测试覆盖切换与缩略图隔离、重启零渲染、编辑/源文件失效、局部复用、LRU 和损坏回退。初次测试发现 URL 元数据缓存使修改时间失效未触发，改为实时文件属性后重测通过。日志 `07-cache.log`、`07-cache-recheck.log`；4 个测试最终通过。
 - 限制：为首次渲染增加一次轻量显示投影，以换取首个 HDR/SDR 切换也无需重跑开发流程；尚未测实体机耗电。内存预算指引擎预览缓存，不包含解码器、UI 当前图像和系统 GPU。提交标题含 IPAD-07；IPAD-08 依赖此缓存目录/结构。
+
+## IPAD-08
+
+- 变更：General / Photo library 设置显示预览磁盘大小、文件数、引擎预览内存，提供刷新和带确认的清理。清理先使待完成预览失效，等待当前照片的编辑加载完成，再删除 MobilePreviews 并释放引擎工作缓存；屏幕正在显示的图像保留，下次按需重建。
+- 文件：MobileCacheSettings.swift、MobileTools.swift、MobileEngine.swift、MobileWorkspaceModel.swift、engine/UI tests。依赖 IPAD-07 (`461f7d5`)；无移植代码。
+- 验证：`testClearCacheKeepsLibraryOriginalsEditsFoldersAndProfiles`、`testSettingsMeasuresAndClearsPreviewCache` 最终通过（2 项 / 0 失败），覆盖清理后磁盘/内存归零、照片字节/编辑/归类/配置/导出保留、再次请求重建，以及 UI 确认/计数/返回网格。早期 UI 断言受系统重复按钮节点与组合内容可访问性影响，修正定位并提供明确文件数无障碍值后通过。最终日志 `08-cache-settings-final.log`。
+- 限制：内存行统计引擎预览缓存，并非整个应用占用；确认说明原片和编辑不被删除。回退时同步回退 UI/模型/引擎入口，磁盘缓存可由 IPAD-07 继续使用。提交标题含 IPAD-08。

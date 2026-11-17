@@ -17,6 +17,30 @@ final class IPadEngineTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
     private func engine() -> MobileEngine { MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary")) }
 
+    func testClearCacheKeepsLibraryOriginalsEditsFoldersAndProfiles() async throws {
+        let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("clear-cache"))
+        let group = try await engine.createFolder("Keep")
+        _ = try await engine.importPhotos(urls,skipDuplicates: true,folder: group.id,progress: { _,_ in })
+        let photos = try await engine.photos(), photo = try XCTUnwrap(photos.first)
+        let original = try Data(contentsOf: photo.url)
+        var edit = EditModel.neutral; edit.light.exposure = 0.8
+        try await engine.save(edit,history: .init(baseline: edit),id: photo.id)
+        let profiles = try await engine.profiles()
+        let export = folder.appendingPathComponent("Test.photonslibrary/Exports/keep.txt")
+        try FileManager.default.createDirectory(at: export.deletingLastPathComponent(),withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: export)
+        _ = try await engine.frame(photo,edit: edit,hdr: true)
+        let before = try await engine.cacheUsage(); XCTAssertGreaterThan(before.diskBytes,0); XCTAssertGreaterThan(before.memoryBytes,0)
+        try await engine.clearPreviewCache()
+        let after = try await engine.cacheUsage(); XCTAssertEqual(after.diskBytes,0); XCTAssertEqual(after.memoryBytes,0); XCTAssertEqual(after.files,0)
+        XCTAssertEqual(try Data(contentsOf: photo.url),original); XCTAssertEqual(try Data(contentsOf: export),Data("keep".utf8))
+        let stored = try await engine.edit(photo.id), folders = try await engine.folderIndex(), remainingProfiles = try await engine.profiles()
+        XCTAssertEqual(stored.light.exposure,0.8); XCTAssertEqual(folders.assignments[photo.id],group.id); XCTAssertEqual(profiles,remainingProfiles)
+        let count = await engine.renderCount
+        _ = try await engine.frame(photo,edit: edit,hdr: true)
+        let regenerated = await engine.renderCount; XCTAssertEqual(regenerated,count+1)
+    }
+
     func testPairedPreviewCacheSurvivesToggleRestartAndInvalidatesEdits() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("cache"))
         let photo = MobilePhoto(id: "cache",name: "cache",url: urls[0],rating: 0,width: 768,height: 512)

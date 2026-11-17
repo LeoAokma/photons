@@ -2,6 +2,23 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testSettingsMeasuresAndClearsPreviewCache() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
+        app.buttons["settings-button"].tap()
+        let clear = app.buttons["clear-preview-cache"]
+        for _ in 0..<3 where !clear.isHittable { app.swipeUp() }
+        XCTAssertTrue(clear.waitForExistence(timeout: 10)); clear.tap()
+        app.buttons["confirm-clear-cache"].firstMatch.tap()
+        let count = app.descendants(matching: .any)["cache-file-count"].firstMatch
+        XCTAssertTrue(count.waitForExistence(timeout: 10))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"),object: count)],timeout: 10),.completed)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Preview cache settings"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["close-settings"].tap()
+        XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 5))
+    }
+    @MainActor
     func testHistogramShowsClippingAndTouchReadout() throws {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
