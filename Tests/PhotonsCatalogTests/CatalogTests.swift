@@ -186,6 +186,8 @@ final class CatalogTests: XCTestCase {
         let url = try makeJPEG(at: dir.appendingPathComponent("m.jpg"), rating: 4, label: "Green",
                                keywords: ["travel", "coast"], make: "Sony", model: "A7RV")
         let meta = try MetadataReader.read(url)
+        XCTAssertEqual(meta.width, 32)
+        XCTAssertEqual(meta.height, 24)
         XCTAssertEqual(meta.rating, 4)
         XCTAssertEqual(meta.colorLabel, "Green")
         XCTAssertEqual(meta.keywords.sorted(), ["coast", "travel"])

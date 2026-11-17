@@ -100,6 +100,7 @@ actor MobileEngine {
         let layout = LibraryLayout(packageURL: libraryURL)
         let db = FileManager.default.fileExists(atPath: layout.databaseURL.path)
             ? try Catalog.open(at: libraryURL) : try Catalog.create(at: libraryURL)
+        try db.repairDNGPreviewDimensions()
         catalog = db
         return db
     }

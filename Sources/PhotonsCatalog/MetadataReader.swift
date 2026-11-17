@@ -1,6 +1,7 @@
 import Foundation
 import ImageIO
 import CoreGraphics
+import CoreImage
 
 /// Everything M2 needs to know about one file, in the shape of the schema.
 public struct PhotoMetadata: Sendable {
@@ -52,6 +53,19 @@ public enum MetadataReader {
         meta.width = (props[kCGImagePropertyPixelWidth as String] as? NSNumber)?.intValue
         meta.height = (props[kCGImagePropertyPixelHeight as String] as? NSNumber)?.intValue
         meta.orientation = (props[kCGImagePropertyOrientation as String] as? NSNumber)?.intValue
+
+        // A DNG may put only a small JPEG preview in IFD0. CIRAWFilter's nativeSize
+        // resolves the RAW/SubIFD dimensions without requesting or rendering pixels.
+        // Keep ImageIO's size if RAW probing fails or reports a smaller fallback preview.
+        if url.pathExtension.lowercased() == "dng", let raw = CIRAWFilter(imageURL: url) {
+            let size = raw.nativeSize
+            if size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
+               size.width < CGFloat(Int.max), size.height < CGFloat(Int.max),
+               size.width * size.height > CGFloat(meta.width ?? 0) * CGFloat(meta.height ?? 0) {
+                meta.width = Int(size.width)
+                meta.height = Int(size.height)
+            }
+        }
 
         let tiff = (props[kCGImagePropertyTIFFDictionary as String] as? [String: Any]) ?? [:]
         let exif = (props[kCGImagePropertyExifDictionary as String] as? [String: Any]) ?? [:]

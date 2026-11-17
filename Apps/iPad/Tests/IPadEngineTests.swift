@@ -511,6 +511,82 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertEqual(thumb.image.width, cached.image.width)
     }
 
+    func testDNGCatalogUsesFullSizeAndRepairsLegacyPreviewDimensions() async throws {
+        let url = folder.appendingPathComponent("panorama-6000.DNG")
+        let image = CIImage(color: CIColor(red: 0.2,green: 0.4,blue: 0.6))
+            .cropped(to: CGRect(x: 0,y: 0,width: 6000,height: 4304))
+        try LinearDNGWriter.write(image: image,context: CIContext(options: [.cacheIntermediates: false]),to: url)
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL,nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [String: Any])
+        XCTAssertEqual((properties[kCGImagePropertyPixelWidth as String] as? NSNumber)?.intValue,512)
+        XCTAssertEqual((properties[kCGImagePropertyPixelHeight as String] as? NSNumber)?.intValue,367)
+        let metadata = try MetadataReader.read(url)
+        XCTAssertEqual(metadata.width,6000); XCTAssertEqual(metadata.height,4304)
+
+        let engine = engine()
+        _ = try await engine.importPhotos([url],skipDuplicates: true,progress: { _,_ in })
+        let imported = try await engine.photos()
+        let photo = try XCTUnwrap(imported.first)
+        XCTAssertEqual(photo.width,6000); XCTAssertEqual(photo.height,4304)
+        var edit = EditModel.neutral; edit.light.exposure = 0.7
+        var history = EditHistory(baseline: .neutral)
+        history.commit(edit,label: "Exposure",coalesce: false)
+        try await engine.save(edit,history: history,id: photo.id)
+        let catalog = try Catalog.open(at: folder.appendingPathComponent("Test.photonslibrary"))
+        try catalog.setRating(4,forAsset: photo.id)
+        // Simulate an existing library written by the old IFD0-only reader.
+        try await catalog.dbQueue.write { db in
+            try db.execute(sql: "UPDATE assets SET width = 512, height = 367 WHERE id = ?",arguments: [photo.id])
+        }
+        let before = try XCTUnwrap(catalog.asset(id: photo.id))
+        let sourceHash = try FileHasher.sha256(of: photo.url)
+        let reopened = self.engine()
+        let corrected = try await reopened.photos()
+        XCTAssertEqual(corrected.count,1); XCTAssertEqual(corrected[0].id,photo.id)
+        XCTAssertEqual(corrected[0].width,6000); XCTAssertEqual(corrected[0].height,4304)
+        let after = try XCTUnwrap(catalog.asset(id: photo.id))
+        XCTAssertEqual(after.width,6000); XCTAssertEqual(after.height,4304)
+        XCTAssertEqual(after.rating,4); XCTAssertEqual(after.contentHash,before.contentHash)
+        XCTAssertEqual(after.developJson,before.developJson); XCTAssertEqual(after.historyEnd,before.historyEnd)
+        XCTAssertEqual(after.editTime,before.editTime); XCTAssertEqual(after.renderVersion,before.renderVersion)
+        XCTAssertEqual(try FileHasher.sha256(of: photo.url),sourceHash)
+        var savedHistory = try await reopened.history(photo.id)
+        XCTAssertEqual(savedHistory.undo()?.light.exposure,0)
+        let renderCount = await reopened.renderCount
+        XCTAssertEqual(renderCount,0,"Dimension repair must not render photos or invalidate preview caches")
+        XCTAssertEqual(try catalog.repairDNGPreviewDimensions(),0,"Repair must be idempotent")
+    }
+
+    func testDNGDimensionRepairSkipsMissingSourcesAndSmallImages() async throws {
+        let library = folder.appendingPathComponent("Test.photonslibrary")
+        let catalog = try Catalog.create(at: library)
+        for (name,width,height) in [("portrait",400,600),("small",96,64)] {
+            let url = folder.appendingPathComponent(name + ".dng")
+            let image = CIImage(color: CIColor(red: 0.3,green: 0.4,blue: 0.5))
+                .cropped(to: CGRect(x: 0,y: 0,width: width,height: height))
+            try LinearDNGWriter.write(image: image,context: CIContext(options: [.cacheIntermediates: false]),to: url)
+            let summary = try ImportService(catalog: catalog).run(sources: [url],options: .init(mode: .reference))
+            let id = try XCTUnwrap(summary.addedAssetIDs.first)
+            let asset = try XCTUnwrap(catalog.asset(id: id))
+            XCTAssertEqual(asset.width,width); XCTAssertEqual(asset.height,height)
+            if name == "portrait" {
+                try await catalog.dbQueue.write { db in
+                    try db.execute(sql: "UPDATE assets SET width = 341, height = 512 WHERE id = ?",arguments: [id])
+                }
+                let holding = url.appendingPathExtension("offline")
+                try FileManager.default.moveItem(at: url,to: holding)
+                XCTAssertEqual(try catalog.repairDNGPreviewDimensions(),0)
+                XCTAssertEqual(try catalog.asset(id: id)?.width,341)
+                try FileManager.default.moveItem(at: holding,to: url)
+                XCTAssertEqual(try catalog.repairDNGPreviewDimensions(),1)
+                XCTAssertEqual(try catalog.asset(id: id)?.width,400)
+                XCTAssertEqual(try catalog.asset(id: id)?.height,600)
+            }
+        }
+        XCTAssertEqual(try catalog.repairDNGPreviewDimensions(),0)
+        XCTAssertEqual(try catalog.assets().first { $0.filename == "small.dng" }?.width,96)
+    }
+
     func testPanoramaAlignmentScaledLosslessExportAndMetadata() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("samples"))
         _ = try await engine.importPhotos(urls, skipDuplicates: true, progress: { _,_ in })
@@ -547,6 +623,10 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertNotNil(frame.histogram)
         // A resized/cropped ordinary export of a reimported DNG must keep its original stitch geometry.
         let reimported = try XCTUnwrap(imported.first { $0.name == output.lastPathComponent })
+        XCTAssertEqual(reimported.width,604); XCTAssertEqual(reimported.height,256)
+        let fullPhoto = try XCTUnwrap(imported.first { $0.name == full.lastPathComponent })
+        XCTAssertEqual(fullPhoto.width,Int(plan.outputSize.width))
+        XCTAssertEqual(fullPhoto.height,Int(plan.outputSize.height))
         var cropEdit = EditModel.neutral; cropEdit.geometry.crop = .init(x: 0.25,y: 0.125,width: 0.5,height: 0.75)
         settings.format = "tiff"; settings.hdr = false; settings.longEdge = 160
         let copy = try await engine.export(photo: reimported,edit: cropEdit,plan: nil,manifest: nil,settings: settings,
