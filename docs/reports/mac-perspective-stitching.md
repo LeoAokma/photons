@@ -1,6 +1,6 @@
 # macOS perspective stitching
 
-Base: upstream/main `737f92d54056bf4f77fe93daa1c366e6bae639a1`. Branch: `codex/mac-perspective-stitching`.
+Base: upstream/main `737f92d54056bf4f77fe93daa1c366e6bae639a1`. Branch: `codex/mac-perspective-stitching`. PR: https://github.com/chemharuka/photons/pull/4 (open, mergeable when checked on 2026-11-17).
 
 The request is to audit the iPad perspective stitcher and expose the shared capability on macOS in a separate PR. HDR/LCC image-quality diagnosis is separate and makes no production rendering changes.
 
@@ -26,7 +26,7 @@ An invertible homography can have finite corners while a projective horizon cros
 Files: `PanoramaTransform.swift`, `PanoramaEngine.swift`, `PanoramaSnapshot.swift`, `PanoramaManifest.swift`, two panorama test suites, English/Chinese messages. Validation: `swift test --filter 'ProjectiveRegistrationTests|PanoramaProvenanceTests'` passed 8 tests, 0 failures. Includes composed-horizon rejection, invertible negative matrix scale, on-edge horizons, invalid restored/direct plans, robust fitting with outliers, unrelated/collinear matches and metadata round trips. Limits: this validates the geometric domain, not scene parallax or aesthetic registration quality. No solver thresholds, HDR/LCC pixel operations or shift behavior changed. No dependencies; the Mac entry point depends on this guard.
 
 
-## MAC-PERSPECTIVE-03 — macOS entry point
+## MAC-PERSPECTIVE-03 — macOS entry point (`8bf99a9`)
 
 The mode chooser now starts the same `PanoramaEngine.analyze(registrationMode: .perspective)` used by iPad. The workspace identifies the selected mode and offers retry/change-mode actions. Perspective registration ignores saved shift readings and sensor overrides; its inspector exposes seam controls and explains the planar-projection limits. It hides body travel, physical shift coordinates and panorama LCC. Export does not attach a selected shift body, lens profile or invented millimetre offsets. Registration failure clears the previous plan and reports the error rather than creating a shift-alignment draft. Shift mode retains its existing manual draft fallback. English and Simplified Chinese UI strings are included.
 
@@ -43,3 +43,15 @@ Limits: this is a planar homography stitcher for modest rotation/tilt and distan
 ## Review / integration
 
 This branch is based directly on upstream/main and does not include the unmerged content of PR #2 or #3. Both platforms already share the geometry engine on main. PR #2 also edits `PanoramaWindowController.swift` for brightness controls; preserve those controls when integrating both branches. The change here does not implement or replace tone mapping. All changes retain independent commit history.
+
+
+## Delivery record
+
+| Tracking ID | Commit | Dependencies |
+| --- | --- | --- |
+| MAC-PERSPECTIVE-01 | `024c3ce` | None |
+| MAC-PERSPECTIVE-02 | `fc60f73` | None |
+| MAC-PERSPECTIVE-03 | `8bf99a9` | 01, 02 |
+| MAC-PERSPECTIVE-DOC | This documentation-only delivery commit | 01–03 |
+
+All three implementation commits were pushed to `origin/codex/mac-perspective-stitching` before opening PR #4. The local full package build and tests above are the validation evidence; GitHub reports no configured status checks on this PR. No branches or user workspaces were removed. The HDR/LCC cloud investigation and private evidence remain outside this public PR.
