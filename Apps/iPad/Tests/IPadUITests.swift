@@ -2,6 +2,48 @@ import XCTest
 
 final class IPadUITests: XCTestCase {
     @MainActor
+    func testGridSelectionKeepsCardFramesAndHonorsCollapsedInspector() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let cards = (1...3).map { app.buttons[String(format: "photo-Sample-%02d.tiff",$0)] }
+        XCTAssertTrue(cards[0].waitForExistence(timeout: 60))
+        let inspector = app.otherElements["workspace-inspector"], grid = app.scrollViews["photo-grid"]
+        XCTAssertTrue(inspector.exists,"Wide grids reserve the inspector before any selection")
+        let dockedFrames = cards.map(\.frame), dockedGridWidth = grid.frame.width
+        func assertFrames(_ expected: [CGRect]) {
+            for (card,frame) in zip(cards,expected) {
+                XCTAssertEqual(card.frame.minX,frame.minX,accuracy: 0.5)
+                XCTAssertEqual(card.frame.minY,frame.minY,accuracy: 0.5)
+                XCTAssertEqual(card.frame.width,frame.width,accuracy: 0.5)
+                XCTAssertEqual(card.frame.height,frame.height,accuracy: 0.5)
+            }
+        }
+        cards[0].tap(); XCTAssertEqual(cards[0].value as? String,"Selected"); assertFrames(dockedFrames)
+        cards[2].tap(); XCTAssertEqual(cards[2].value as? String,"Selected"); assertFrames(dockedFrames)
+        let selected = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        selected.name = "Fixed grid with selected photo inspector"; selected.lifetime = .keepAlways; add(selected)
+        cards[2].tap(); XCTAssertEqual(cards[2].value as? String,"Not selected"); assertFrames(dockedFrames)
+        XCTAssertTrue(inspector.exists,"Deselecting empties the inspector without collapsing the grid")
+        app.buttons["toggle-inspector"].tap()
+        XCTAssertFalse(inspector.exists)
+        XCTAssertGreaterThan(grid.frame.width,dockedGridWidth + 250)
+        let expandedFrames = cards.map(\.frame)
+        for (expanded,docked) in zip(expandedFrames,dockedFrames) {
+            XCTAssertEqual(expanded.width,docked.width,accuracy: 0.5)
+            XCTAssertEqual(expanded.height,docked.height,accuracy: 0.5)
+        }
+        cards[0].tap(); XCTAssertEqual(cards[0].value as? String,"Selected"); assertFrames(expandedFrames)
+        XCTAssertFalse(inspector.exists,"Selection must respect the user's collapsed panel")
+        app.buttons["toggle-inspector"].tap(); XCTAssertTrue(inspector.exists); assertFrames(dockedFrames)
+        XCTAssertTrue(app.otherElements["RGB histogram"].exists)
+        // Pinching remains an intentional size change, unlike selecting a photo.
+        let oldWidth = cards[0].frame.width
+        grid.pinch(withScale: oldWidth < 230 ? 1.5 : 0.65,velocity: oldWidth < 230 ? 1 : -1)
+        XCTAssertGreaterThan(abs(cards[0].frame.width-oldWidth),oldWidth * 0.1)
+    }
+    @MainActor
     func testCompactGridFirstTapKeepsGridAndDoubleTapOpens() throws {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--demo","--reset-demo"]
@@ -12,6 +54,9 @@ final class IPadUITests: XCTestCase {
         guard app.frame.width < 950 else { throw XCTSkip("Run on an iPad with a compact portrait width") }
         first.tap(); XCTAssertEqual(first.value as? String,"Selected")
         XCTAssertFalse(app.otherElements["RGB histogram"].exists)
+        // These are deliberately separate single taps. With immediate feedback two
+        // successive automation tap() calls can fall inside UIKit's double-tap window.
+        Thread.sleep(forTimeInterval: 0.7)
         first.tap(); XCTAssertEqual(first.value as? String,"Not selected")
         first.doubleTap()
         XCTAssertTrue(app.descendants(matching: .any)["photo-canvas"].waitForExistence(timeout: 10))

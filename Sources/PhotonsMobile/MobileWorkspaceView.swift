@@ -16,7 +16,8 @@ public struct MobileWorkspaceView: View {
     @State private var inspectorSheet = false
     @State private var sidebarVisible = false
     @State private var sidebarSheet = false
-    @State private var inspectorVisible = false
+    @State private var inspectorVisible = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var wideLayout = true
     @State private var pinchStart: Double?
     @State private var tool: MobileSheet?
@@ -37,10 +38,15 @@ public struct MobileWorkspaceView: View {
                             if model.showGrid { libraryGrid } else { canvas }
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
                         if geometry.size.width >= 950 && inspectorVisible {
-                            Divider()
-                            MobileInspector(model: model).frame(width: 310)
+                            MobileInspector(model: model).frame(width: 310).frame(maxHeight: .infinity)
+                                .background(Color(white: 0.105))
+                                .overlay(alignment: .leading) { Divider() }
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("workspace-inspector")
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
                         }
                     }
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18),value: inspectorVisible)
                 }
                 .background(Color(white: 0.075))
                 .onAppear { wideLayout = geometry.size.width >= 950 }
@@ -137,15 +143,14 @@ public struct MobileWorkspaceView: View {
         if selectMode {
             model.toggleSelection(photo)
         } else {
-            let same = model.active?.id == photo.id
-            if same && (!wideLayout || inspectorVisible) {
-                inspectorVisible = false; model.clearSelection(); return
+            let same = model.active?.id == photo.id && model.selected.contains(photo.id)
+            if same {
+                model.clearSelection(); return
             }
             model.selected = [photo.id]
             model.select(photo)
-            if wideLayout { inspectorVisible = true }
-            // On a narrow screen the inspector is opened explicitly from its toolbar
-            // button. A modal sheet here would intercept the second tap of a double tap.
+            // Selection changes the inspector's contents, never the grid's available
+            // width. Honor an explicitly collapsed panel; narrow screens use the toolbar.
         }
     }
     private func beginSelection(_ photo: MobilePhoto) {
@@ -234,7 +239,7 @@ public struct MobileWorkspaceView: View {
                 ContentUnavailableView(L10n.tr("ipad.d763f5e2f3ba"),systemImage: "folder",description: Text(L10n.tr("ipad.bcff7cb83f35")))
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSize), spacing: 12)], spacing: 14) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSize, maximum: thumbnailSize), spacing: 12)], alignment: .leading, spacing: 14) {
                         ForEach(visiblePhotos) { photo in
                             VStack(alignment: .leading, spacing: 7) {
                                     ZStack(alignment: .topTrailing) {
@@ -251,7 +256,8 @@ public struct MobileWorkspaceView: View {
                                     Text(photo.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
                                     Text(photo.rating > 0 ? String(repeating: "★", count: photo.rating) : "\(photo.width) × \(photo.height)")
                                         .font(.caption2).foregroundStyle(.secondary)
-                                }.padding(7).background(model.selected.contains(photo.id) ? Color.orange.opacity(0.12) : .clear)
+                                }.padding(7).frame(width: thumbnailSize,alignment: .leading)
+                                    .background(model.selected.contains(photo.id) ? Color.orange.opacity(0.12) : .clear)
                                     .clipShape(RoundedRectangle(cornerRadius: 9))
                             .contentShape(Rectangle())
                             .onAppear { model.thumbnailVisibility(photo.id,visible: true) }
