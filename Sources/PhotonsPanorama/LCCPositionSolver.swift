@@ -27,8 +27,8 @@ public enum LCCPositionSolver {
         let w=plan.sources[0].size.width,h=plan.sources[0].size.height
         let centers=plan.sources.indices.map {i in CGPoint(x:(plan.sensorRect(i).midX-plan.size.width/2)*sensor.width/w,
             y:(plan.size.height/2-plan.sensorRect(i).midY)*sensor.height/h)}
-        let travel=cameraBody.travel(at:bodyOrientation)
-        guard let bounds=travel.opticalOriginBounds(centers:centers) else {
+        guard let bounds=LCCEndStopCalibration.originBounds(centers:centers,body:cameraBody,orientation:bodyOrientation,
+            calibration:fields.values.first?.endStopCalibration) else {
             throw PanoramaFailure(L10n.tr("cd505be730c2" , String(describing: (cameraBody.name)), String(describing: (bodyOrientation.rawValue))))
         }
         let x0=max(bounds.minX,approximateOffset.map {$0.x-searchRadius} ?? bounds.minX)

@@ -1,3 +1,31 @@
+Measured end stops for the two CFV 100C profiles
+
+The APO-Digitar 43XL + iiic (45 captures) and APO-Digitar 80N (6 captures) were
+recorded on the same Alpa 12 Max. In body right/up coordinates the physical
+centers for the engraved stops are L −18.08, R +18.16, U +24.81 and D −18.35 mm.
+These are estimates for this unit. Other bodies retain their published travel.
+
+The photographer identified the zero and stop frames on a stationary camera.
+Use the registered center-to-center displacement along each axis, divided by the
+oriented pixel dimension of one frame, multiplied by its sensor length in mm.
+The Boston 653–658 group is portrait (8750 px across 32.9 mm). Frames 654 and
+657 are horizontal zero. The two left measurements (654→655 and 657→656) are
+18.090 and 18.064 mm; the two right measurements (654→653 and 657→658) are
+18.146 and 18.167 mm. Boston 628–633 is landscape (8750 px across 32.9 mm
+vertically). Frames 630 and 631 are vertical zero. The two raises (631→628 and
+630→629) are 24.839 and 24.781 mm; the two drops (631→632 and 630→633) are
+18.353 and 18.348 mm. Each shipped value is the directional mean rounded to
+0.01 mm. The three independently registered horizontal spans in 628–633 range
+from 36.11 to 36.21 mm. Registration and nominal sensor dimensions limit accuracy.
+
+Only exact marked stops in these profiles were relocated. Zero, intermediate
+shifts and all sensor measurements keep their original values. Body rotations
+are applied after converting the marked stop into the body's own coordinates.
+Both apps can also read verified older files with the two original profile IDs.
+Renamed profiles retain their IDs. Copies made after migration carry provenance
+and the physical coordinates themselves. Repeated loads do not accumulate shifts.
+Frozen export masks, gain maps and previously recorded optical origins are reused.
+
 43XL + iiic / Hasselblad CFV 100C / f/11 / infinity
 All profiles currently supplied with Photons are user-generated calibration files,
 created and shared by the developer acting as a user, not official/certified lens profiles.
@@ -10,7 +38,7 @@ errors, cell coordinates, shifts, sensor size and capture conditions. It keeps t
 full illuminated sensor footprint, including dark corners. No original RAW image,
 absolute source path or private EXIF serial number is included.
 
-The application copies this calibration into Application Support/Photons/LensProfiles
+The application copies the two bundled calibrations into Application Support/Photons/LensProfiles
 on first use. User-created profiles live there too. A profile is a losslessly compressed
 binary property list with a versioned JSON catalog header and SHA-256 integrity digest.
 

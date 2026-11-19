@@ -715,6 +715,20 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertEqual(point.x,0.375,accuracy: 1e-8); XCTAssertEqual(point.y,0.5,accuracy: 1e-8)
     }
 
+    func testBundledProfilesUseMeasuredStopsOnIPad() async throws {
+        let profiles = try await engine().profiles()
+        for (name, count) in [("APO-Digitar 43XL + iiic", 45), ("APO-Digitar 80N", 6)] {
+            let summary = try XCTUnwrap(profiles.first { $0.name == name })
+            let profile = try LCCProfileStore().load(summary.id)
+            XCTAssertEqual(profile.captures.count, count)
+            XCTAssertEqual(profile.captures.map(\.shiftX).min(), -18.08)
+            XCTAssertEqual(profile.captures.map(\.shiftX).max(), 18.16)
+            XCTAssertEqual(profile.captures.map(\.shiftY).min(), -18.35)
+            XCTAssertEqual(profile.captures.map(\.shiftY).max(), 24.81)
+            XCTAssertNotNil(summary.resolvedEndStops)
+        }
+    }
+
     func testTraditionalAndProfileLCCUseTheSharedPipeline() async throws {
         let flat = try makeFlat(name: "flat.dng", exposure: 1)
         let scene = try makeFlat(name: "scene.dng", exposure: 0.5)

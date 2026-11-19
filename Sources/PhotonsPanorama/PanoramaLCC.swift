@@ -96,6 +96,7 @@ private struct LCCSampler {
 }
 
 public final class LCCCorrectionField {
+    let endStopCalibration: LCCEndStopCalibration?
     public let orientation:LCCCaptureOrientation
     public let isCameraSpace:Bool
     public let region:LCCCoverageRegion
@@ -105,6 +106,7 @@ public final class LCCCorrectionField {
     private var values:[SIMD4<Double>]=[]
     private var reference=SIMD4<Double>(repeating:1)
     public init(profile:LCCLensProfile,orientation:LCCCaptureOrientation,cancellation:PanoramaCancellation = .init()) throws {
+        endStopCalibration = profile.endStopCalibration
         self.orientation=orientation;isCameraSpace=profile.captures(for:orientation).allSatisfy {$0.grid.space.hasPrefix("camera-cfa-")};samplers=profile.captures(for:orientation).compactMap(LCCSampler.init)
         guard !samplers.isEmpty else {throw PanoramaFailure(L10n.tr("da5dd0a43564" , String(describing: (orientation.title))))}
         region=LCCCoverageRegion(samplers.map {$0.capture.fieldRect});bounds=region.rectangles.reduce(.null) {$0.union($1)}
@@ -296,11 +298,17 @@ extension PanoramaEngine {
             if y%16==0 {try cancellation.check()}
             for x in 0..<cw {
                 let rect=CGRect(x:Double(x)*dx,y:Double(y)*dy,width:dx,height:dy)
-                let relevant=plan.sources.indices.filter {plan.sourceRect($0).intersects(rect)}
+                // Registration rounds the canvas outwards. Only the part of this cell
+                // actually occupied by a source needs calibration; crop still requires
+                // the whole cell to be inside both the photographic and calibrated regions.
+                let relevant = plan.sources.indices.compactMap { i -> (Int, CGRect)? in
+                    let overlap = plan.sourceRect(i).intersection(rect)
+                    return overlap.isEmpty ? nil : (i, overlap)
+                }
                 guard !relevant.isEmpty else {continue};used+=1
-                let a=fieldPoint(CGPoint(x:rect.minX,y:rect.maxY)),b=fieldPoint(CGPoint(x:rect.maxX,y:rect.minY))
-                let fieldRect=CGRect(x:a.x,y:a.y,width:b.x-a.x,height:b.y-a.y)
-                let good=relevant.allSatisfy { i in
+                let good = relevant.allSatisfy { i, overlap in
+                    let a=fieldPoint(CGPoint(x:overlap.minX,y:overlap.maxY)),b=fieldPoint(CGPoint(x:overlap.maxX,y:overlap.minY))
+                    let fieldRect=CGRect(x:a.x,y:a.y,width:b.x-a.x,height:b.y-a.y)
                     guard let field=matches[i],field.region.covers(fieldRect) else {return false}
                     return field.gain(at:CGPoint(x:fieldRect.midX,y:fieldRect.midY)) != nil
                 }

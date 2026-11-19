@@ -322,7 +322,7 @@ struct MobilePanoramaWorkspace: View {
                 Text(L10n.tr("ipad.70ddfa521391")).font(.caption).foregroundStyle(.secondary)
                 Button(L10n.tr("ipad.08b90bbe8907")) {
                     guard let profileID, let plan = model.plan else { return }
-                    let offset = guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: positions[selectedFrame] ?? .zero).profileOffset(in: plan, sensor: sensor) : nil
+                    let offset = guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: physicalPosition(positions[selectedFrame] ?? .zero)).profileOffset(in: plan, sensor: sensor) : nil
                     model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation, cropToCoverage: cropToLCC)
                 }.disabled(model.busy || dirty || model.plan == nil || profileID == nil).accessibilityIdentifier("panorama-lcc")
                 if let lcc = model.plan?.lccState { Label(lcc.profileName, systemImage: "checkmark.seal"); Text(String(format: L10n.tr("ipad.0858f5e8bf0a"), lcc.coveredFraction * 100)).font(.caption) }
@@ -339,13 +339,17 @@ struct MobilePanoramaWorkspace: View {
             }
         }
     }
+    private func physicalPosition(_ reading: CGPoint) -> CGPoint {
+        let profile = model.profiles.first { $0.id == profileID }
+        return profile?.resolvedEndStops?.position(forReading: reading, body: bodyType, orientation: orientation) ?? reading
+    }
     private func align() {
         guard validSensor, !model.busy else { return }
         aligning = true; model.error = nil
-        model.stitch(options: options, positions: mode == .shift && guided ? positions : [:], sensor: mode == .shift && manualSensor ? sensor : nil, registrationMode: mode)
+        model.stitch(options: options, positions: mode == .shift && guided ? positions.mapValues(physicalPosition) : [:], sensor: mode == .shift && manualSensor ? sensor : nil, registrationMode: mode)
     }
     private func accept(_ plan: PanoramaPlan) {
-        let anchor = mode == .shift && guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: positions[selectedFrame] ?? .zero) : nil
+        let anchor = mode == .shift && guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: physicalPosition(positions[selectedFrame] ?? .zero)) : nil
         let offset = anchor?.profileOffset(in: plan, sensor: sensor) ?? .zero
         positions = framePositions(plan, offset: offset)
         // Measured absolute reference survives an uncorrected export for later LCC.

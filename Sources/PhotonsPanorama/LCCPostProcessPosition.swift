@@ -81,7 +81,8 @@ public extension LCCCorrectionEngine {
         let fields=try fields(rendered,cancellation:cancellation),body=manifest.cameraBody ?? cameraBody
         let centers=manifest.frames.indices.compactMap {manifest.relativePosition(of:$0)}
         guard centers.count==manifest.frames.count,
-              let bounds=body.travel(at:manifest.bodyOrientation).opticalOriginBounds(centers:centers) else {
+              let bounds=LCCEndStopCalibration.originBounds(centers:centers,body:body,orientation:manifest.bodyOrientation,
+                  calibration:profile.endStopCalibration) else {
             throw PanoramaFailure(L10n.tr("lcc.position.geometry"))
         }
         let engine=PanoramaEngine(),plan=try engine.singlePhoto(scene,cancellation:cancellation)

@@ -81,6 +81,7 @@ public enum LCCProfileCodec {
         guard try JSONDecoder().decode(LCCProfileSummary.self,from:header)==LCCProfileSummary(profile) else {
             throw PanoramaFailure(L10n.tr("8615cf543f0a"))
         }
+        profile.resolveLegacyEndStops()
         return profile
     }
     public static func summary(at url:URL) throws -> LCCProfileSummary {
@@ -106,18 +107,22 @@ public struct LCCProfileStore {
     }
     public func url(for id:UUID)->URL { directory.appendingPathComponent(id.uuidString.lowercased()+".photonslcc") }
     public func installBundledProfile() throws {
-        let target=url(for:LCCLensProfile.builtInID)
-        // This is a developer-created user sample, not a protected official profile. Once copied,
-        // the user's file owns this ID: application updates must never overwrite their edits.
-        if FileManager.default.fileExists(atPath:target.path) { return }
-        guard let source=Bundle.module.url(forResource:"43xl-iiic-cfv100c",withExtension:"photonslcc",subdirectory:"Profiles") else {
-            throw PanoramaFailure(L10n.tr("a76334bd19b7"))
+        let samples = [(LCCLensProfile.builtInID, "43xl-iiic-cfv100c"), (LCCEndStopCalibration.lens80ID, "80n-cfv100c")]
+        for (id, name) in samples {
+            let target = url(for: id)
+            guard !FileManager.default.fileExists(atPath: target.path) else { continue }
+            guard let source = Bundle.module.url(forResource: name, withExtension: "photonslcc", subdirectory: "Profiles") else {
+                throw PanoramaFailure(L10n.tr("a76334bd19b7"))
+            }
+            let bytes = try Data(contentsOf: source)
+            guard try LCCProfileCodec.decode(bytes).id == id else { throw PanoramaFailure(L10n.tr("5b744aed063f")) }
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let staged = directory.appendingPathComponent(UUID().uuidString + ".tmp")
+            defer { try? FileManager.default.removeItem(at: staged) }
+            try bytes.write(to: staged)
+            do { try FileManager.default.moveItem(at: staged, to: target) }
+            catch CocoaError.fileWriteFileExists { continue }
         }
-        let bytes=try Data(contentsOf:source)
-        let profile=try LCCProfileCodec.decode(bytes)
-        guard profile.id==LCCLensProfile.builtInID else { throw PanoramaFailure(L10n.tr("5b744aed063f")) }
-        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
-        try bytes.write(to:target,options:.atomic)
     }
     public func catalog()->LCCProfileCatalog {
         guard FileManager.default.fileExists(atPath:directory.path) else { return .init(profiles:[],issues:[]) }

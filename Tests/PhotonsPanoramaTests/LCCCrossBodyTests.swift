@@ -85,6 +85,24 @@ final class LCCCrossBodyTests: XCTestCase {
         XCTAssertNotNil(partial.lccState?.suggestedCropRect)
     }
 
+    func testCanvasRoundingIsNotAnUncalibratedStripOfPhoto() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let engine = PanoramaEngine(), separation = 16.5
+        let layout = try plan(root: root, engine: engine, separation: separation)
+        let sensor = SensorSize(width: 36, height: 24, source: "fixture")
+        let span = separation * sensor.width / 80
+        var measured = profile(shifts: [0, span])
+        measured.camera = layout.sources[0].camera
+        let offset = PanoramaPositionReference(sourceIndex: 0, positionMM: .zero).profileOffset(in: layout, sensor: sensor)
+        let corrected = try engine.applyingLCC(layout, profile: measured, fields: LCCCorrectionEngine.fields(measured),
+            offsetMM: offset, sensor: sensor, crop: false)
+        let state = try XCTUnwrap(corrected.lccState)
+        XCTAssertEqual(state.coveredFraction, 1)
+        XCTAssertLessThan(try XCTUnwrap(state.suggestedCropRect).maxX, layout.size.width)
+    }
+
     func testCopyOfLegacySampleKeepsCalibrationProvenance() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -124,7 +142,7 @@ final class LCCCrossBodyTests: XCTestCase {
         let source = try PanoramaSource(url: url)
         var options = PanoramaOptions(); options.matchExposure = false; options.avoidMotion = false
         var plan = PanoramaPlan(sources: [source, source], origins: [.zero, CGPoint(x: separation, y: 0)],
-            size: CGSize(width: 80 + separation, height: 60), registrationScores: [1, 1], whiteBalance: nil,
+            size: CGSize(width: ceil(80 + separation), height: 60), registrationScores: [1, 1], whiteBalance: nil,
             gains: [1, 1], ownership: [], maskWidth: 0, maskHeight: 0,
             optical: .init(center: nil, confidence: 0, explanation: "", occludedEdges: []), options: options,
             previewScale: 1, previewImages: [image, image], preview: nil)

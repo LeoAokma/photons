@@ -86,7 +86,14 @@ final class PanoramaWindowModel: ObservableObject {
         if positionReference==nil {estimatedReference=nil;positionExplanation="";lccOffset = .zero}
         if lccEnabled {changeLCC(automaticallyLocate:true)}
     }
-    var overviewReference:PanoramaPositionReference? {positionReference ?? estimatedReference}
+    private func physicalPosition(_ reading: CGPoint) -> CGPoint {
+        let profile = lensProfiles.first { $0.id.uuidString == selectedLensProfileID }
+        return profile?.resolvedEndStops?.position(forReading: reading, body: cameraBody, orientation: bodyOrientation) ?? reading
+    }
+    private var measuredReference: PanoramaPositionReference? {
+        positionReference.map { PanoramaPositionReference(sourceIndex: $0.sourceIndex, positionMM: physicalPosition($0.positionMM)) }
+    }
+    var overviewReference:PanoramaPositionReference? {measuredReference ?? estimatedReference}
     func setPositionReference(index:Int,x:Double,y:Double,asReference:Bool) {
         guard x.isFinite,y.isFinite,abs(x)<=150,abs(y)<=150 else {error=L10n.tr("2dce53ce7a65");return}
         alignmentWindow?.close()
@@ -105,7 +112,7 @@ final class PanoramaWindowModel: ObservableObject {
         guard registrationMode == .shift else {lccEnabled=false;return}
         guard let current=plan,!busy else {return}
         guard current.isRegistered else {lccEnabled=false;return}
-        if let reference=positionReference,let sensor {lccOffset=reference.profileOffset(in:current,sensor:sensor)}
+        if let reference=measuredReference,let sensor {lccOffset=reference.profileOffset(in:current,sensor:sensor)}
         if !lccEnabled {
             run {engine,token,_ in try engine.removingLCC(current,cancellation:token)};return
         }
@@ -262,7 +269,7 @@ final class PanoramaWindowModel: ObservableObject {
         if let mode {registrationMode=mode}
         choosingMode = false;lccSession=nil;lccEnabled=false;cropToLCC=false;estimatedReference=nil;lccOffset = .zero;alignmentNeedsUpdate=false
         alignmentWindow?.close();editingPosition=nil
-        let mode=registrationMode,positions=registrationMode == .shift ? knownPositions:[:]
+        let mode=registrationMode,positions=registrationMode == .shift ? knownPositions.mapValues(physicalPosition):[:]
         let sensor=registrationMode == .shift ? self.sensor:nil
         plan=nil // A failed retry must not leave an older panorama available for export.
         run { [urls,options] engine,token,progress in
