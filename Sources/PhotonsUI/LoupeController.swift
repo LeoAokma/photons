@@ -885,12 +885,6 @@ public final class LoupeController: NSViewController, HeadroomSource {
     /// even when the *scale* happens to match (a crop change moves the picture's content, not only its
     /// ratio), instead of cutting.
     public private(set) var cropExitAnimations = 0
-    /// The continuous value a *pinch* has accumulated, in the same units as `viewState.zoom`.
-    ///
-    /// The camera itself is always on a rung (`LoupeViewState.snappedLevel`), which would otherwise
-    /// round every 1–5 % pinch event straight back to the rung the gesture started on. Cleared by every
-    /// command that names a rung outright — those are not a pinch continuing.
-    private var pinchZoom: Double?
     /// What the window's screen can do; `headroom` is what S4 clamps at.
     public private(set) var displayHeadroom = DisplayHeadroom.sdr
     /// Set while the canvas layer is actually carrying extended-range values.
@@ -1909,7 +1903,6 @@ public final class LoupeController: NSViewController, HeadroomSource {
     public func zoomToActualSize(aroundView point: CGPoint?) {
         let projection = framing()
         guard let camera = camera(projection: projection) else { return }
-        pinchZoom = nil
         // 082: 1:1 is a *stop* like any other — a crop session whose frame is smaller than the canvas
         // at 1:1 stops at the frame-inscribed level instead.
         let anchor = point ?? canvasCentrePoint()
@@ -1922,7 +1915,6 @@ public final class LoupeController: NSViewController, HeadroomSource {
     /// to honour: at `fit` the entire picture is on screen and there is nowhere else for it to be. The
     /// last centre is kept, so Z‑Z returns to where the user was.
     public func zoomToFit() {
-        pinchZoom = nil
         let projection = framing()
         guard let camera = camera(projection: projection) else {
             var next = viewState
@@ -2022,7 +2014,6 @@ public final class LoupeController: NSViewController, HeadroomSource {
     public func zoom(to stop: Double, aroundView point: CGPoint?) {
         let projection = framing()
         guard let camera = camera(projection: projection) else { return }
-        pinchZoom = nil
         // 082: a crop session's ceiling is 「框恰好内接于画布」 — clamped **before** the anchor maths,
         // so the pixel under the cursor is kept for the zoom that actually lands.
         let anchor = point ?? canvasCentrePoint()
@@ -2070,7 +2061,6 @@ public final class LoupeController: NSViewController, HeadroomSource {
     private func zoomToTarget(_ scale: Double, at anchor: CGPoint) {
         let projection = framing()
         guard let camera = camera(projection: projection) else { return }
-        pinchZoom = nil
         setViewState(camera.zoomedExactly(to: scale, aroundView: anchor),
                      anchor: .pointer(viewPoint: anchor, backingScale: backingScale), projection: projection)
     }
@@ -2111,30 +2101,17 @@ public final class LoupeController: NSViewController, HeadroomSource {
         setViewState(next, projection: projection)
     }
 
-    /// Trackpad pinch: a **continuous accumulator feeding a discrete ladder**.
-    ///
-    /// A pinch event is 1–5 %; if the camera's own (already snapped) zoom were the base, every event
-    /// would floor back to the rung the gesture started on and the pinch could never leave it. So the
-    /// accumulator carries the continuous value, the camera stays on a rung, and the source pixel under
-    /// the cursor stays where it is (`LoupeFraming.zooming`). Any command that names a rung outright
-    /// (menu, ⌘=, ⌘−, Z, double-click) clears the accumulator: that is not a pinch continuing.
+    /// Follow the fingers at the current pointer or touch centroid.
     public func magnify(by factor: CGFloat, at point: CGPoint) {
         let projection = framing()
-        guard let camera = camera(projection: projection), factor.isFinite, factor > 0 else { return }
-        // The floor of the ladder is 25 %, and 25 % is where a pinch out stops: `fit` is a different
-        // mode, entered by its own action, so a gesture cannot slide the camera into it by accident.
-        //
-        // 082: a crop session's pinch stops at 「框恰好内接于画布」 (the accumulator keeps running, so a
-        // pinch back in leaves on the next event).
-        let (next, accumulated) = camera.pinched(by: factor, aroundView: point,
-                                                 accumulated: pinchZoom)
-        pinchZoom = accumulated
+        guard let camera = camera(projection: projection), factor.isFinite, factor > 0, factor != 1 else { return }
+        let next = camera.pinched(by: factor, aroundView: point).state
         setViewState(next, anchor: .pointer(viewPoint: point, backingScale: backingScale),
-                     projection: projection)
+                     followsGesture: true, projection: projection)
     }
 
     private func setViewState(_ requested: LoupeViewState, anchor: LoupeZoomAnchor = .center,
-                              forceAnimation: Bool = false,
+                              forceAnimation: Bool = false, followsGesture: Bool = false,
                               projection: LoupeFraming? = nil) {
         // 333 ④ — **one** projection for the whole change: the crop clamp, the status strip, the zoom
         // pill, the scale comparison and the bridge all read this value. It is computed here only when
@@ -2172,22 +2149,12 @@ public final class LoupeController: NSViewController, HeadroomSource {
         // whether a bridge exists is what decides between "follow the animation" and "the cut is the
         // change".
         view.window?.invalidateCursorRects(for: canvasView)
-        // **Every** stop change is bridged — fit ↔ a numeric stop, and numeric stop ↔ numeric stop
-        // (`12.5 ↔ 25 ↔ 33.3 ↔ 50 ↔ 66.7 ↔ 100 ↔ 200 ↔ 300 ↔ 400`). The camera jumps here and the pixels
-        // follow when they are rendered; between the two the canvas still holds the old picture, so
-        // without the bridge the change is a cut at whatever ratio the two stops differ by.
-        //
-        // The user's constraint is not "never animate" but "**never come to rest between stops**":
-        // `viewState.zoom` is already the target stop on this line (snapped by `zoom(to:)`,
-        // `magnify(by:)` and the `⌘=`/`⌘−` walk), so the model is never 137 %, and the bridge only
-        // ever interpolates the *presentation* of the old picture on its way to that stop.
-        //
-        // A pan is not a stop change — `zoom` is untouched — and it keeps its hard per-frame cut:
-        // animating a drag would leave the picture behind the hand.
+        // Named zoom commands animate. A live pinch presents the new projection immediately;
+        // detailed rendering still uses the coalesced viewport queue.
         var bridging = false
         if let framing = projection,
            forceAnimation || movesScale(from: previous, to: next, framing: framing) {
-            bridging = armZoomBridge(from: previous, to: next, framing: framing, anchor: anchor)
+            bridging = armZoomBridge(from: previous, to: next, framing: framing, anchor: anchor, immediate: followsGesture)
         }
         if syncsCropOverlayOnCameraChange {
             // A bridge owns the next 180 ms: the frame is drawn at its frame 0 here, which is the
@@ -2376,7 +2343,7 @@ public final class LoupeController: NSViewController, HeadroomSource {
     /// whether the crop overlay must follow an animation or may cut straight to the target geometry.
     @discardableResult
     private func armZoomBridge(from old: LoupeViewState, to new: LoupeViewState,
-                               framing: LoupeFraming, anchor: LoupeZoomAnchor) -> Bool {
+                               framing: LoupeFraming, anchor: LoupeZoomAnchor, immediate: Bool = false) -> Bool {
         guard lastFrame != nil, let onCanvas = canvasTexture else { return false }  // nothing to carry
         let canvas = viewportPixels
         let texture = ImageSize(width: onCanvas.texture.width, height: onCanvas.texture.height)
@@ -2437,11 +2404,11 @@ public final class LoupeController: NSViewController, HeadroomSource {
                                               window: bridge.window(atProgress: 0, textureSize: texture),
                                               drawable: canvas, canvas: canvas,
                                               source: ObjectIdentifier(onCanvas.texture)))
-        guard !reducesMotion, bridge.duration > 0 else {
+        guard !immediate, !reducesMotion, bridge.duration > 0 else {
             // Reduce Motion: no slide — one present at the stop's own geometry, then hand over.
             presentZoomBridgeFrame(progress: 1, bridge: bridge, texture: onCanvas.texture, serial: serial)
             finishZoomBridge()
-            return true
+            return !immediate
         }
         startZoomBridgeTicker()
         let armSerial = zoomBridgeSerial
@@ -5453,7 +5420,7 @@ public final class LoupeController: NSViewController, HeadroomSource {
             var next = state
             next.zoom = limit < LoupeViewState.minimumZoom
                 ? limit
-                : min(LoupeViewState.clampZoom(state.zoom), limit)
+                : min(framing.zoom(of: state), limit)
             let centre = CropCanvasClamp.clampCenter(x: state.centerX, y: state.centerY,
                                                      canvas: canvas, frame: frame, zoom: next.zoom)
             next.centerX = centre.x
@@ -5462,7 +5429,7 @@ public final class LoupeController: NSViewController, HeadroomSource {
         }
         guard canvas.width > 0, canvas.height > 0, frame.width > 0, frame.height > 0 else { return state }
         var next = state
-        next.zoom = min(LoupeViewState.clampZoom(state.zoom), LoupeViewState.maximumZoom)
+        next.zoom = framing.zoom(of: state)
         // Half the window, in source pixels: how far the window centre may sit from the frame's own
         // centre before the frame's centre leaves the canvas.
         let halfW = Double(canvas.width) / 2 / max(next.zoom, 1e-9)
@@ -9184,11 +9151,7 @@ public final class LoupeController: NSViewController, HeadroomSource {
     /// never disagree with the canvas about where the camera is.
     private func syncZoomSlider(projection: LoupeFraming? = nil) {
         let projection = projection ?? framing()
-        // `currentZoomStop` is nil exactly in fit; the fit ratio is passed only so the thumb can be
-        // *displayed* at its continuous position — it is never a snap target.
-        //
-        // 082: `zoom` is the camera's own number, so a crop session's frame-inscribed ceiling (which is
-        // not a rung) prints as itself on the chip instead of the neighbouring stop's label.
+        // A numeric scale can be between ticks after a pinch or at the crop ceiling.
         zoomSlider.update(zoomStop: currentZoomStop(projection: projection),
                           fitZoom: projection?.fitZoom,
                           zoom: viewState.isActualSize ? viewState.zoom : nil)

@@ -123,6 +123,16 @@ public final class LoupeCanvasView: NSView {
 
     public init() {
         super.init(frame: .zero)
+        let pinch = NSMagnificationGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        pinch.allowedTouchTypes = .direct
+        addGestureRecognizer(pinch)
+
+        // Mouse click parity and tool hit-testing are handled by mouseDown.
+        let tap = NSClickGestureRecognizer(target: self, action: #selector(handleTouchDoubleTap(_:)))
+        tap.buttonMask = 0
+        tap.allowedTouchTypes = .direct
+        tap.numberOfClicksRequired = 2
+        addGestureRecognizer(tap)
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         // The canvas is the matte surface the photo sits on, so a fit photo reads as a photo. 054: it
@@ -506,8 +516,32 @@ public final class LoupeCanvasView: NSView {
                              inverted: event.isDirectionInvertedFromDevice)
     }
 
-    /// ⑥ — the pinch is the loupe's zoom, crop mode included (`magnify(by:at:)` is the same ladder and
-    /// the same pointer anchor the loupe mode uses).
+    private var previousPinchScale: CGFloat = 1
+
+    @objc private func handlePinch(_ gesture: NSMagnificationGestureRecognizer) {
+        if gesture.state == .began { previousPinchScale = 1 }
+        defer {
+            if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
+                previousPinchScale = 1
+            }
+        }
+        guard gesture.state == .began || gesture.state == .changed || gesture.state == .ended else { return }
+        let scale = 1 + gesture.magnification
+        guard scale.isFinite, scale > 0 else { return }
+        controller?.magnify(by: scale / previousPinchScale, at: gesture.location(in: self))
+        previousPinchScale = scale
+    }
+
+    @objc private func handleTouchDoubleTap(_ gesture: NSClickGestureRecognizer) {
+        let point = gesture.location(in: self)
+        switch controller?.gestureOwner(atViewPoint: point, clickCount: 2) {
+        case .doubleClick: controller?.handleDoubleClick(at: point)
+        case .cropToolApply: controller?.applyCropTool()
+        default: break
+        }
+    }
+
+    /// The zoom slider forwards magnification events received over the slider here.
     public override func magnify(with event: NSEvent) {
         controller?.magnify(by: 1 + event.magnification,
                             at: convert(event.locationInWindow, from: nil))

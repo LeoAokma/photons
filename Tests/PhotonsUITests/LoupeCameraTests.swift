@@ -85,23 +85,26 @@ final class LoupeCameraTests: XCTestCase {
 
     // MARK: 7
 
-    func testPinchAccumulatesBelowTheRung() {
-        var state = LoupeViewState.fit
-        var accumulated: Double?
-        var seen: [Double] = []
-        for _ in 0..<3 {
-            let camera = camera(state: state)
-            let result = camera.pinched(by: 1.02, aroundView: CGPoint(x: 500, y: 400),
-                                        accumulated: accumulated)
-            state = result.state
-            accumulated = result.accumulated
-            seen.append(result.accumulated)
-        }
-        XCTAssertEqual(state.mode, .actual)
-        XCTAssertEqual(state.zoom, 0.125, accuracy: 1e-12)
-        XCTAssertEqual(seen.count, 3)
-        XCTAssertLessThan(seen[0], seen[1])
-        XCTAssertLessThan(seen[1], seen[2])
+    func testPinchTracksFractionalScaleAndReversesAtTheLimit() {
+        let point = CGPoint(x: 200, y: 150)
+        let initial = camera(state: actual(zoom: 1))
+        let state = initial.pinched(by: 1.037, aroundView: point).state
+        XCTAssertEqual(state.zoom, 1.037, accuracy: 1e-12)
+        let limited = camera(state: state).pinched(by: 20, aroundView: point).state
+        XCTAssertEqual(limited.zoom, 8)
+        XCTAssertEqual(camera(state: limited).pinched(by: 0.98, aroundView: point).state.zoom, 7.84, accuracy: 1e-12)
+        XCTAssertEqual(initial.pinched(by: .nan, aroundView: point).state, initial.state)
+    }
+
+    func testPinchStartsAtTheDisplayedScaleWhenLargeImageFitsBelowTenPercent() {
+        let f = LoupeFraming(viewport: ImageSize(width: 600, height: 400),
+                             sourceWidth: 21000, sourceHeight: 9000, crop: .full)
+        let camera = LoupeCamera(viewport: LoupeViewport(framing: f, state: .fit),
+                                 backingScale: 2, cropLimit: nil)
+        XCTAssertLessThan(f.fitZoom, 0.1)
+        let next = camera.pinched(by: 1.02, aroundView: CGPoint(x: 140, y: 100)).state
+        XCTAssertEqual(next.zoom, f.fitZoom * 1.02, accuracy: 1e-10)
+        XCTAssertEqual(f.zoom(of: next), next.zoom)
     }
 
     // MARK: 8

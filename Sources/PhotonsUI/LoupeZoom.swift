@@ -87,7 +87,7 @@ public struct LoupeViewState: Equatable, Sendable {
     public var zoomLabel: String {
         switch mode {
         case .fit: return L10n.tr("53c9aca4b68c")
-        case .actual: return Self.percentLabel(of: Self.clampZoom(zoom))
+        case .actual: return Self.percentLabel(of: min(max(0, zoom), Self.maximumZoom))
         }
     }
 
@@ -140,13 +140,7 @@ extension LoupeViewState {
     /// depends on the frame any more.
     public static let levels: [LoupeZoomLevel] = zoomStops.map { LoupeZoomLevel(zoom: $0) }
 
-    /// The rung a raw zoom value lands on: **the largest rung not above it** — "自动往下走一级".
-    ///
-    /// A floor, not a nearest-value round: a pinch to 0.9 lands on 66.7 %, never on 100 %; a pinch to
-    /// 0.34 lands on 33.3 %. Below the lowest rung (12.5 %) the answer is 12.5 %: the ladder's floor
-    /// is a stop, and going further out is `fit`, which is an explicit action (`zoomToFit()`), not a
-    /// snap. The comparison uses the table's exact values, so `1.0/3.0` is reachable and nothing hides
-    /// between the rungs.
+    /// Named zoom commands floor the requested value to a menu stop.
     public static func snappedLevel(for target: Double) -> LoupeZoomLevel {
         let t = target.isFinite ? target : 1
         return levels.last(where: { $0.zoom <= t + 1e-9 }) ?? levels[0]
@@ -923,7 +917,15 @@ public struct LoupeFraming: Equatable, Sendable {
     }
 
     public func zoom(of state: LoupeViewState) -> Double {
-        state.mode == .actual ? LoupeViewState.clampZoom(state.zoom) : fitZoom
+        state.mode == .actual ? boundedZoom(state.zoom) : fitZoom
+    }
+
+    /// A very large photo can fit below 10%. Start a pinch at that displayed scale.
+    private func boundedZoom(_ requested: Double) -> Double {
+        if requested < LoupeViewState.minimumZoom {
+            return max(requested, min(fitZoom, LoupeViewState.minimumZoom))
+        }
+        return LoupeViewState.clampZoom(requested)
     }
 
     // MARK: window
@@ -1342,7 +1344,7 @@ public struct LoupeFraming: Equatable, Sendable {
         }
         var next = base
         next.mode = .actual
-        next.zoom = LoupeViewState.clampZoom(zoom)
+        next.zoom = boundedZoom(zoom)
         // With the new zoom and the *old* centre, the cursor sits on `anchor`; the old state put
         // `mapped` there. Shifting the centre by (mapped − anchor) is exact: the centre enters the
         // mapping with slope 1.

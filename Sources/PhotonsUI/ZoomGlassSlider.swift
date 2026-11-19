@@ -404,10 +404,11 @@ public final class ZoomGlassSlider: NSView {
         // contradicts the picture.
         if let shown = zoom ?? zoomStop, shown.isFinite {
             showingFit = false
-            let index = LoupeViewState.stopIndex(of: shown) ?? geometry.nearestIndex(forZoom: shown)
+            let stop = LoupeViewState.stopIndex(of: shown)
+            let index = stop ?? geometry.nearestIndex(forZoom: shown)
             currentIndex = min(max(index, 0), geometry.lastIndex)
             chipLabel.stringValue = LoupeViewState.percentLabel(of: shown)
-            track.thumbX = geometry.x(forIndex: currentIndex)
+            track.thumbX = stop == nil ? geometry.fitThumbCenter(forZoom: shown) : geometry.x(forIndex: currentIndex)
         } else {
             showingFit = true
             chipLabel.stringValue = L10n.tr("53c9aca4b68c")

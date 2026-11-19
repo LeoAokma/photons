@@ -23,10 +23,7 @@ public struct LoupeCamera: Equatable, Sendable {
     public var state: LoupeViewState { viewport.state }
     public var zoom: Double { viewport.zoom }
 
-    /// The numeric stop the camera is exactly on, or nil (fit) — `LoupeController.currentZoomStop`.
-    ///
-    /// `1e-9`, not a fudge factor: the camera is only ever parked on a table value, so "on a stop" is
-    /// an equality question about the table's own doubles.
+    /// The named stop at this scale, or nil at Fit and between stops.
     public var currentStop: Double? {
         guard state.isActualSize else { return nil }
         let zoom = LoupeViewState.clampZoom(state.zoom)
@@ -105,18 +102,12 @@ public struct LoupeCamera: Equatable, Sendable {
         return viewport.framing.panning(state, byContent: content)
     }
 
-    /// Pinch: a continuous accumulator feeding the discrete ladder. `accumulated` is the raw value
-    /// carried between events, so the camera can stay on a rung while the gesture keeps moving.
+    /// A live pinch may rest between named stops. The returned scale is the applied
+    /// one, so reversing at a limit takes effect on the very next sample.
     public func pinched(by factor: CGFloat, aroundView point: CGPoint,
-                        accumulated: Double?) -> (state: LoupeViewState, accumulated: Double) {
-        guard factor.isFinite, factor > 0 else {
-            return (state, accumulated ?? state.zoom)
-        }
-        let raw = (accumulated ?? viewport.framing.zoom(of: state)) * Double(factor)
-        let level = LoupeViewState.snappedLevel(for: raw)
-        let target = min(level.zoom, cropLimit ?? Double.infinity)
-        let next = viewport.framing.zooming(state, to: target, aroundView: point,
-                                            backingScale: backingScale)
-        return (next, raw)
+                        accumulated: Double? = nil) -> (state: LoupeViewState, accumulated: Double) {
+        guard factor.isFinite, factor > 0, factor != 1 else { return (state, zoom) }
+        let next = zoomedExactly(to: (accumulated ?? zoom) * factor, aroundView: point)
+        return (next, next.zoom)
     }
 }

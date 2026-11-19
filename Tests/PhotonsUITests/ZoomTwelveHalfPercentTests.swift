@@ -86,6 +86,24 @@ final class ZoomTwelveHalfPercentTests: XCTestCase {
         }
     }
 
+    func testCanvasAcceptsDirectTouchAndDoubleClickAfterFreePinch() throws {
+        let (loupe, _) = try makeLoupe()
+        let gestures = loupe.canvasView.gestureRecognizers
+        XCTAssertTrue(gestures.contains { $0 is NSMagnificationGestureRecognizer && $0.allowedTouchTypes.contains(.direct) })
+        let tap = try XCTUnwrap(gestures.compactMap { $0 as? NSClickGestureRecognizer }.first)
+        XCTAssertEqual(tap.numberOfClicksRequired, 2)
+        XCTAssertEqual(tap.buttonMask, 0)
+        XCTAssertTrue(tap.allowedTouchTypes.contains(.direct))
+        let point = CGPoint(x: 140, y: 100)
+        loupe.zoomToActualSize(aroundView: point)
+        loupe.magnify(by: 1.073, at: point)
+        XCTAssertEqual(loupe.viewState.zoom, 1.073, accuracy: 1e-9)
+        loupe.handleDoubleClick(at: point)
+        XCTAssertEqual(loupe.viewState.mode, .fit)
+        loupe.handleDoubleClick(at: point)
+        XCTAssertEqual(loupe.viewState.zoom, DoubleClickZoom.target, accuracy: 1e-9)
+    }
+
     // MARK: - 1. the table, printed
 
     func testTheLadderIsNineStopsWithTwelveAndAHalfFirst() throws {

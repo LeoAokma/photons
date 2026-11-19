@@ -366,7 +366,7 @@ final class LoupeZoomTransitionAnimationTests: XCTestCase {
     /// animation is) but the camera must not come to rest on one, so `viewState.zoom` is asserted to be
     /// exactly a table value after every single command — including while a bridge is still running,
     /// i.e. before any of them has settled.
-    func testEveryZoomLeavesTheCameraOnAStopNeverInBetween() throws {
+    func testNamedCommandsUseStopsAndPinchesKeepFractionalZoom() throws {
         let url = try rawFixture()
         let controller = makeController()
         start(controller, url: url, identity: "anim-invariant")
@@ -419,22 +419,11 @@ final class LoupeZoomTransitionAnimationTests: XCTestCase {
         XCTAssertEqual(up, ["100%", "200%", "300%", "400%"])
         XCTAssertEqual(controller.viewState.zoom, 4, accuracy: 1e-12, "the ladder tops out on 400 %")
 
-        // A pinch sweep: the accumulator carries the continuous value, the camera may not.
-        var factor = 0.55
-        for _ in 0..<80 {
-            controller.magnify(by: CGFloat(factor), at: CGPoint(x: 120, y: 80))
-            assertOnAStop("pinch ×\(String(format: "%.2f", factor))")
-            factor = factor < 1 ? factor * 1.08 : factor * 0.92
-            if factor > 2.4 { factor = 0.9 }
-        }
-
-        // A pinch that passes through a third lands on **the third**, not on 33 %.
         controller.zoom(to: 0.5, aroundView: CGPoint(x: 160, y: 100))
-        controller.magnify(by: 0.68, at: CGPoint(x: 160, y: 100))     // 0.5 × 0.68 = 0.34
-        XCTAssertEqual(controller.viewState.zoom, 1.0 / 3.0, accuracy: 1e-12)
-        print("invariant: 9 × ⌘− = \(seen.joined(separator: " → ")) · 4 × ⌘= = "
-              + "\(up.joined(separator: " → ")) · pinch 0.34 → "
-              + LoupeViewState.percentLabel(of: controller.viewState.zoom))
+        controller.magnify(by: 0.68, at: CGPoint(x: 160, y: 100))
+        XCTAssertEqual(controller.viewState.zoom, 0.34, accuracy: 1e-12)
+        XCTAssertNil(controller.currentZoomStop)
+        XCTAssertNil(controller.zoomBridge)
     }
 
     // MARK: - ⑤ cleanup: a resize mid-transition leaves no transform behind
