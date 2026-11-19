@@ -1456,6 +1456,8 @@
   "lcc.profile.compatibility": "同一镜头与传感器可共用不同机身采集的标定；按实际测量覆盖范围使用，可保留多份配置。拼接移轴范围仍由当前拍摄机身决定。",
   "lcc.profile.bodyProvenance": "机身用于记录标定来源和坐标方向，不限制此配置可用于哪些机身。",
   "panorama.tone.highlights": "HDR 高光亮度（档）",
+  "panorama.deghost.label": "防伪影（Deghost）",
+  "panorama.deghost.hint": "减少运动物体造成的重影。云层或高光出现硬边时可关闭。开关会更新当前接片，不重新配准或移除 LCC。",
   "panorama.tone.reset": "重置",
   "panorama.tone.hint": "曝光调整整张图的亮度；HDR 亮度限制高光。这些设置也会应用于导出。"
 }

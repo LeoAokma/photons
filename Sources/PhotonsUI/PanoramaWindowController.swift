@@ -261,7 +261,8 @@ private final class PanoramaWindowModel: ObservableObject {
         }
     }
     func refresh() {
-        guard let current = plan, current.isRegistered,!busy else { return }
+        guard let current = plan, current.isRegistered, !busy, current.options != options else { return }
+        alignmentWindow?.close()
         run { [options] engine,token,progress in try engine.update(current,options:options,cancellation:token,progress:progress) }
     }
     func changeTone() {
@@ -272,21 +273,33 @@ private final class PanoramaWindowModel: ObservableObject {
         cancellation.cancel(); cancellation = PanoramaCancellation()
         let token = cancellation, tone = tone; busy = true; error = nil
         queue.async { [weak self] in
-            do {
+            let outcome = Result {
                 let engine = PanoramaEngine()
                 var result = try operation(engine,token) { message in DispatchQueue.main.async { self?.status = message } }
-                if result.isRegistered { result = try engine.applyingTone(result,settings:tone,cancellation:token) }
-                try token.check()
-                DispatchQueue.main.async { guard (try? token.check()) != nil else {self?.busy=false;return}
-                    self?.plan = result; self?.selectLensProfile(); self?.busy = false
-                    self?.status = result.isRegistered ? L10n.tr("8dc393a05b0d"):L10n.tr("50ab666cb70c") }
-            } catch {
-                DispatchQueue.main.async { self?.busy = false; if !(error is CancellationError) { self?.error = error.localizedDescription }; self?.status = "" }
+                if result.isRegistered && result.tone != tone {
+                    result = try engine.applyingTone(result,settings:tone,cancellation:token)
+                }
+                return result
+            }
+            DispatchQueue.main.async {
+                guard let self, self.cancellation === token else { return }
+                self.busy = false
+                do {
+                    try token.check()
+                    let result = try outcome.get()
+                    self.plan = result
+                    self.selectLensProfile()
+                    self.status = result.isRegistered ? L10n.tr("8dc393a05b0d") : L10n.tr("50ab666cb70c")
+                } catch {
+                    if let plan = self.plan, plan.isRegistered { self.options = plan.options }
+                    if !(error is CancellationError) { self.error = error.localizedDescription }
+                    self.status = ""
+                }
             }
         }
     }
     var canStitch:Bool {
-        guard !busy,!alignmentNeedsUpdate,let plan,plan.isRegistered,plan.tone==tone else {return false}
+        guard !busy,!alignmentNeedsUpdate,let plan,plan.isRegistered,plan.tone==tone,plan.options==options else {return false}
         if !lccEnabled {return plan.lccState==nil}
         guard let lcc=plan.lccState else {return false}
         if !automaticLCCWB {guard let wb=lcc.whiteBalance,wb.0==Float(lccTemperature),wb.1==Float(lccTint) else {return false}}
@@ -499,7 +512,11 @@ private struct PanoramaWorkspace: View {
             }
             Divider()
             Text(L10n.tr("71e8dddcf62b")).font(.headline)
-            Toggle(L10n.tr("dcc5dc5e40cb"),isOn:$model.options.avoidMotion).onChange(of:model.options.avoidMotion) { _,_ in model.refresh() }
+            Toggle(L10n.tr("panorama.deghost.label"), isOn: $model.options.avoidMotion)
+                .toggleStyle(.checkbox)
+                .accessibilityIdentifier("panorama-deghost")
+                .onChange(of: model.options.avoidMotion) { _,_ in model.refresh() }
+            Text(L10n.tr("panorama.deghost.hint")).font(.caption).foregroundStyle(.secondary)
             Toggle(L10n.tr("f332d17f7e09"),isOn:$model.options.matchExposure).onChange(of:model.options.matchExposure) { _,_ in model.refresh() }
             Text(L10n.tr("802a18c71f09")).font(.callout)
             AdjustmentSlider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })

@@ -73,7 +73,7 @@ private final class LCCAlignmentModel:ObservableObject {
         queue.async { [weak self] in
             do {
                 let result=try PanoramaEngine().applyingLCC(base,profile:session.profile,fields:session.fields,offsetMM:offset,
-                    sensor:session.sensor,crop:commit && crop,cancellation:token,rebuildSeams:false,
+                    sensor:session.sensor,crop:commit && crop,cancellation:token,rebuildSeams:commit,
                     exposureEV:base.lccState?.exposureEV ?? 0,protectHighlights:base.lccState?.protectHighlights ?? true,whiteBalanceOverride:commit && base.lccState?.whiteBalanceWasManual != true ? nil:base.lccState?.whiteBalance,
                     cameraBody:base.lccState?.cameraBody,bodyOrientation:base.lccState?.bodyOrientation ?? .degrees0)
                 try token.check()
