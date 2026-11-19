@@ -79,7 +79,25 @@ struct MobileProfileDetails: View {
 struct MobileProfileCoverage: View {
     @Environment(\.locale) private var interfaceLocale
     let captures: [LCCProfileCapture]
-    static func bounds(_ captures: [LCCProfileCapture]) -> CGRect { captures.reduce(.null) { $0.union($1.fieldRect) } }
+    static func bounds(_ captures: [LCCProfileCapture]) -> CGRect {
+        guard let first = captures.first?.fieldRect else { return .null }
+        var left = first.minX, right = first.maxX, bottom = first.minY, top = first.maxY
+        for capture in captures.dropFirst() {
+            let field = capture.fieldRect
+            left = min(left, field.minX)
+            right = max(right, field.maxX)
+            bottom = min(bottom, field.minY)
+            top = max(top, field.maxY)
+        }
+        // CGRect stores an origin and a size. Keep fractional end stops inside the
+        // diagram when reconstructing the far edge would round it inward.
+        func extent(from low: CGFloat, through high: CGFloat) -> CGFloat {
+            let span = high - low
+            return low + span < high ? span.nextUp : span
+        }
+        return CGRect(x: left, y: bottom, width: extent(from: left, through: right),
+                      height: extent(from: bottom, through: top))
+    }
     var body: some View {
         let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Canvas { context,size in
