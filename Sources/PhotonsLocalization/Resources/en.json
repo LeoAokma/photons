@@ -1456,6 +1456,8 @@
   "lcc.profile.compatibility": "The same lens and sensor can share calibrations made on different bodies wherever measured coverage is sufficient. Multiple profiles can coexist. Stitching travel remains limited by the active capture body.",
   "lcc.profile.bodyProvenance": "The body records calibration provenance and coordinate orientation; it does not restrict which bodies can use this profile.",
   "panorama.tone.highlights": "HDR highlight brightness (stops)",
+  "panorama.deghost.label": "Deghost",
+  "panorama.deghost.hint": "Reduce ghosts from moving subjects. Turn off if clouds or highlights develop hard boundaries. Changes update the current stitch without realigning or removing LCC.",
   "panorama.tone.reset": "Reset",
   "panorama.tone.hint": "Exposure adjusts the whole image. HDR brightness limits highlights. These settings are included in exports.",
   "ipad.0026c5053478": "Revert",

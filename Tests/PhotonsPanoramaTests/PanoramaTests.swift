@@ -108,20 +108,28 @@ final class PanoramaTests: XCTestCase {
         for p in stride(from:0,to:plan.ownership.count,by:11) where plan.ownership[p] >= 0 {
             XCTAssertEqual(weights.reduce(Float(0)) { $0+$1[p] },1,accuracy:0.00001,"Feathering must not darken the seam")
         }
-        // Toggling deghost changes source ownership, not registration or applied correction.
-        plan.lccState=PanoramaLCCState(profileID:LCCLensProfile.builtInID,profileName:"fixture",offsetMM:CGPoint(x:2,y:3),
+
+        let crop = CGRect(x:4,y:4,width:110,height:90)
+        plan.lccState = PanoramaLCCState(profileID:LCCLensProfile.builtInID,profileName:"fixture",offsetMM:CGPoint(x:2,y:3),
             gainImages:images,usesFixedDecode:[false,false,false],complete:true,coveredFraction:1,
-            suggestedCropRect:nil,cropRect:CGRect(x:4,y:4,width:110,height:90),footprintRects:[],
-            sensor:SensorSize(width:43.8,height:32.9,source:"fixture"),exposureEV:0,protectHighlights:false)
-        var options=plan.options; options.avoidMotion=false; options.matchExposure=false
-        let off=try engine.update(plan,options:options)
+            suggestedCropRect:nil,cropRect:crop,footprintRects:[],sensor:SensorSize(width:43.8,height:32.9,source:"fixture"),
+            exposureEV:0,protectHighlights:false)
+        plan.tone = .panoramaDefault
+        var options = plan.options
+        options.avoidMotion = false
+        let off = try engine.update(plan,options:options)
         XCTAssertEqual(off.ownership[50*off.maskWidth+60],0)
-        XCTAssertEqual(off.origins,plan.origins); XCTAssertEqual(off.lccState?.cropRect,plan.lccState?.cropRect)
+        XCTAssertEqual(off.origins,plan.origins)
         XCTAssertEqual(off.lccState?.offsetMM,plan.lccState?.offsetMM)
-        XCTAssertFalse(try PanoramaSnapshot(plan:off).plan().options.avoidMotion)
+        XCTAssertEqual(off.lccState?.cropRect,crop)
+        XCTAssertEqual(off.tone,plan.tone)
+        XCTAssertNotNil(off.preview)
+        let exported = try PanoramaSnapshot(plan:off).plan()
+        XCTAssertFalse(exported.options.avoidMotion)
+        XCTAssertEqual(exported.blendMasks,off.blendMasks)
         XCTAssertFalse(PanoramaManifest(plan:off).options.avoidMotion)
-        options.avoidMotion=true
-        let on=try engine.update(off,options:options)
+
+        let on = try engine.update(off,options:plan.options)
         XCTAssertNotEqual(on.ownership[50*on.maskWidth+60],0)
         XCTAssertEqual(on.lccState?.profileID,plan.lccState?.profileID)
     }
