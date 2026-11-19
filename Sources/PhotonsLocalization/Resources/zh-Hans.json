@@ -1678,7 +1678,7 @@
   "ipad.ceab5645f7ee": "输出动态范围",
   "ipad.cf28f49ec597": "新建文件夹",
   "ipad.cfdca5c797a2": "HDR 预览",
-  "ipad.d153ac56fa98": "输出保存在“文件”中的 Photons Preview → Exports，并导入当前图片库。之后可通过“保存 / 分享”选择其他位置。",
+  "ipad.d153ac56fa98": "输出保存在“文件”中的 {0} → Exports，并导入当前图片库。之后可通过“保存 / 分享”选择其他位置。",
   "ipad.d1c9377b9c59": "使用匹配标定帧或镜头配置进行 LCC 校正",
   "ipad.d252fffacbf0": "正在导入",
   "ipad.d33461e6c0b6": "清理缓存",

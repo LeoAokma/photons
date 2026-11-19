@@ -1,0 +1,3 @@
+// Scope the Studio identity to the iPad app target. Package bundles keep their own identifiers.
+PHOTONS_IPAD_BUNDLE_ID = com.leoaokma.photons
+PHOTONS_IPAD_DISPLAY_NAME = Photons Studio

@@ -189,7 +189,7 @@ struct MobileExportSheet: View {
                 if settings.format == "jpeg" || settings.format == "heic" { Slider(value: $settings.quality, in: 0.5...1) { Text(L10n.tr("55847d2e5bed")) } }
             } footer: { Text(L10n.tr("ipad.112c02e83fc1")) }
             Section {
-                Text(L10n.tr("ipad.d153ac56fa98"))
+                Text(L10n.tr("ipad.d153ac56fa98", Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Photons"))
                 Button(L10n.tr("ipad.bf930788929a")) { model.export(settings); dismiss(); onExport() }.accessibilityIdentifier("confirm-export")
             }
         }.navigationTitle(L10n.tr("76420433f22d")).onAppear { settings.hdr = model.hdr }
