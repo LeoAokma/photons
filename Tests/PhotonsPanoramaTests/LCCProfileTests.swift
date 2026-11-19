@@ -37,7 +37,7 @@ final class LCCProfileTests:XCTestCase {
         let summary=LCCProfileSummary(p)
         XCTAssertEqual(summary.match(camera:"CFV 100C",exifOrientation:8,sensor:.init(width:32.9,height:43.8,source:""))?.orientation,.portraitLeft)
         XCTAssertNil(summary.match(camera:"CFV 100C",exifOrientation:6,sensor:.init(width:32.9,height:43.8,source:"")))
-        let corner=try XCTUnwrap(p.captures.first {$0.orientation == .portraitLeft && $0.shiftX==18 && $0.shiftY==25})
+        let corner=try XCTUnwrap(p.captures.first {$0.orientation == .portraitLeft && $0.shiftX==18.16 && $0.shiftY==24.81})
         XCTAssertGreaterThan(corner.grid.floats.min()!,0)
         XCTAssertLessThan(corner.grid.floats.min()!,300)
         XCTAssertEqual(corner.grid.width,137);XCTAssertEqual(corner.grid.height,183)
@@ -54,6 +54,43 @@ final class LCCProfileTests:XCTestCase {
         XCTAssertEqual(try Data(contentsOf:url),before)
         XCTAssertEqual(try store.load(profile.id).name,"我的测量")
     }
+    func testLegacyEndStopsOnlyRelocateMarkedCapturesOnce() throws {
+        for id in [LCCLensProfile.builtInID, LCCEndStopCalibration.lens80ID] {
+            var original = sample()
+            original.id = id
+            original.notes = "Custom notes"
+            original.captures[0].shiftX = -18
+            original.captures[0].shiftY = 25
+            var interior = original.captures[0]
+            interior.id = UUID(); interior.shiftX = 17.99; interior.shiftY = -15
+            original.captures.append(interior)
+            let migrated = try LCCProfileCodec.decode(LCCProfileCodec.encode(original))
+            var expected = original
+            expected.captures[0].shiftX = -18.08; expected.captures[0].shiftY = 24.81
+            expected.endStopCalibration = .cfv100cMax2026
+            XCTAssertEqual(migrated, expected)
+            XCTAssertEqual(try LCCProfileCodec.decode(LCCProfileCodec.encode(migrated)), migrated)
+            original.id = UUID()
+            XCTAssertEqual(try LCCProfileCodec.decode(LCCProfileCodec.encode(original)), original)
+        }
+    }
+
+    func testFullThrowOriginUsesMeasuredAxisAndKeepsPartialAxisFree() throws {
+        let stops = LCCEndStopCalibration.cfv100cMax2026
+        XCTAssertEqual(stops.position(forReading: CGPoint(x: 18, y: 18), body: .alpa12Max, orientation: .degrees90),
+                       CGPoint(x: 18.35, y: 18.16))
+        let centers = [CGPoint(x: -18.06, y: 0), CGPoint(x: 18.06, y: 0.19)]
+        let bounds = try XCTUnwrap(LCCEndStopCalibration.originBounds(centers: centers, body: .alpa12Max,
+            orientation: .degrees0, calibration: stops))
+        XCTAssertEqual(bounds.minX, -0.10, accuracy: 0.0001)
+        XCTAssertEqual(bounds.maxX, 0.02, accuracy: 0.0001)
+        XCTAssertGreaterThan(bounds.height, 40)
+        XCTAssertEqual(LCCEndStopCalibration.originBounds(centers: centers, body: .alpa12XY, orientation: .degrees0,
+            calibration: stops), PanoramaCameraBody.alpa12XY.defaultTravel.opticalOriginBounds(centers: centers))
+        XCTAssertNil(LCCEndStopCalibration.originBounds(centers: [.zero, CGPoint(x: 50, y: 0)],
+            body: .alpa12Max, orientation: .degrees0, calibration: stops))
+    }
+
     func testShiftNameParsingDoesNotGuessUnknownNames() {
         XCTAssertEqual(LCCShiftFilename.parse("V18D_H5L.3FR")?.x,-5)
         XCTAssertEqual(LCCShiftFilename.parse("V18D_H5L.3FR")?.y,-18)

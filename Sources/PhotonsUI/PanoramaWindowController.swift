@@ -85,7 +85,14 @@ private final class PanoramaWindowModel: ObservableObject {
         if positionReference==nil {estimatedReference=nil;positionExplanation="";lccOffset = .zero}
         if lccEnabled {changeLCC(automaticallyLocate:true)}
     }
-    var overviewReference:PanoramaPositionReference? {positionReference ?? estimatedReference}
+    private func physicalPosition(_ reading: CGPoint) -> CGPoint {
+        let profile = lensProfiles.first { $0.id.uuidString == selectedLensProfileID }
+        return profile?.resolvedEndStops?.position(forReading: reading, body: cameraBody, orientation: bodyOrientation) ?? reading
+    }
+    private var measuredReference: PanoramaPositionReference? {
+        positionReference.map { PanoramaPositionReference(sourceIndex: $0.sourceIndex, positionMM: physicalPosition($0.positionMM)) }
+    }
+    var overviewReference:PanoramaPositionReference? {measuredReference ?? estimatedReference}
     func setPositionReference(index:Int,x:Double,y:Double,asReference:Bool) {
         guard x.isFinite,y.isFinite,abs(x)<=150,abs(y)<=150 else {error=L10n.tr("2dce53ce7a65");return}
         alignmentWindow?.close()
@@ -103,7 +110,7 @@ private final class PanoramaWindowModel: ObservableObject {
     func changeLCC(automaticallyLocate:Bool=false) {
         guard let current=plan,!busy else {return}
         guard current.isRegistered else {lccEnabled=false;return}
-        if let reference=positionReference,let sensor {lccOffset=reference.profileOffset(in:current,sensor:sensor)}
+        if let reference=measuredReference,let sensor {lccOffset=reference.profileOffset(in:current,sensor:sensor)}
         if !lccEnabled {
             run {engine,token,_ in try engine.removingLCC(current,cancellation:token)};return
         }
@@ -251,7 +258,7 @@ private final class PanoramaWindowModel: ObservableObject {
     }
     func prepare() {
         choosingMode = false;lccSession=nil;lccEnabled=false;cropToLCC=false;estimatedReference=nil;lccOffset = .zero;alignmentNeedsUpdate=false
-        let positions=knownPositions,sensor=self.sensor
+        let positions=knownPositions.mapValues(physicalPosition),sensor=self.sensor
         run { [urls,options] engine,token,progress in
             do {return try engine.analyze(urls:urls,options:options,knownPositions:positions,sensorOverride:sensor,cancellation:token,progress:progress)}
             catch {

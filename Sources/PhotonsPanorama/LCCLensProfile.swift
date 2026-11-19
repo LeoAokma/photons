@@ -102,6 +102,7 @@ public struct LCCLensProfile: Codable, Equatable, Identifiable {
     /// Capture provenance only. Optical compatibility and measured coverage do not depend
     /// on this body; the active panorama body separately constrains attainable positions.
     public var cameraBody:PanoramaCameraBody? = nil
+    public var endStopCalibration: LCCEndStopCalibration? = nil
     public var orientations: [LCCCaptureOrientation] {
         Array(Set(captures.map(\.orientation))).sorted { $0.rawValue < $1.rawValue }
     }
@@ -143,10 +144,14 @@ public struct LCCProfileSummary: Codable, Equatable, Identifiable {
     public let createdAt: Date
     public let variants: [LCCVariantSummary]
     public var cameraBody:PanoramaCameraBody? = nil
+    public var endStopCalibration: LCCEndStopCalibration? = nil
+    public var resolvedEndStops: LCCEndStopCalibration? {
+        endStopCalibration ?? LCCEndStopCalibration.legacyProfile(id, body: cameraBody)
+    }
     public var calibrationBody:PanoramaCameraBody? {cameraBody ?? (id==LCCLensProfile.builtInID ? .alpa12Max:nil)}
     public init(_ profile: LCCLensProfile) {
         id=profile.id; name=profile.name; camera=profile.camera; aperture=profile.aperture; createdAt=profile.createdAt
-        cameraBody=profile.cameraBody
+        cameraBody=profile.cameraBody; endStopCalibration=profile.endStopCalibration
         variants=profile.orientations.map { o in
             let frames=profile.captures(for:o)
             return LCCVariantSummary(orientation:o,count:frames.count,sensorWidth:frames[0].sensorWidth,

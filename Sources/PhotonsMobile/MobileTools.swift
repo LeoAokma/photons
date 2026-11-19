@@ -60,7 +60,9 @@ struct MobileLCCSheet: View {
                         var offset: CGPoint?
                         if manual {
                             if reference >= 0, let sensor = plan.sources[reference].sensor {
-                                offset = PanoramaPositionReference(sourceIndex: reference, positionMM: position).profileOffset(in: plan, sensor: sensor)
+                                let profile = model.profiles.first { $0.id == profileID }
+                                let physical = profile?.resolvedEndStops?.position(forReading: position, body: bodyType, orientation: orientation) ?? position
+                                offset = PanoramaPositionReference(sourceIndex: reference, positionMM: physical).profileOffset(in: plan, sensor: sensor)
                             } else { offset = CGPoint(x: -position.x, y: -position.y) }
                         }
                         model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation, cropToCoverage: cropToLCC)

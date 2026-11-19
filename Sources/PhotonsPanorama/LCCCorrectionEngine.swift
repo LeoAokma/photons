@@ -26,7 +26,10 @@ public enum LCCCorrectionEngine {
         guard position.map({$0.x.isFinite && $0.y.isFinite}) ?? true else {throw PanoramaFailure(L10n.tr("9d273dbe67b9"))}
         let engine=PanoramaEngine(),fields=try fields(profile,cancellation:cancellation)
         let plan=try engine.prepareLCCImages(engine.singlePhoto(scene,cancellation:cancellation),cancellation:cancellation,progress:progress)
-        var offset=position.map {CGPoint(x:-$0.x,y:-$0.y)} ?? .zero
+        var offset = position.map { reading in
+            let p = profile.endStopCalibration?.position(forReading: reading, body: body, orientation: orientation) ?? reading
+            return CGPoint(x: -p.x, y: -p.y)
+        } ?? .zero
         if refine || position == nil {
             offset=try LCCPositionSolver.solve(plan:plan,fields:fields,sensor:sensor,cameraBody:body,bodyOrientation:orientation,
                 approximateOffset:position == nil ? nil:offset,searchRadius:3,cancellation:cancellation,progress:progress).offsetMM

@@ -155,7 +155,9 @@ final class LCCWindowModel: ObservableObject {
                     if let manifest {
                         let offset:CGPoint
                         if suppliedPosition {
-                            guard let value=pictureCenter ? manifest.offset(pictureCenter:position):manifest.offset(reference:reference,position:position) else {throw PanoramaFailure(L10n.tr("lcc.position.geometry"))}
+                            let framePosition = profile.endStopCalibration?.position(forReading: position, body: manifest.cameraBody ?? body,
+                                orientation: manifest.bodyOrientation) ?? position
+                            guard let value=pictureCenter ? manifest.offset(pictureCenter:position):manifest.offset(reference:reference,position:framePosition) else {throw PanoramaFailure(L10n.tr("lcc.position.geometry"))}
                             offset=value;explanation=L10n.tr(pictureCenter ? "lcc.position.manualCenter":"lcc.position.manual")
                         } else {
                             let solution=try LCCCorrectionEngine.resolvePostProcessPosition(scene:source,manifest:manifest,profile:profile,cameraBody:body,cancellation:token,progress:progress)
@@ -192,7 +194,10 @@ final class LCCWindowModel: ObservableObject {
         correctedManifest=nil;profilePreview=uncorrectedPreview
         if positionConfirmed {
             let position=CGPoint(x:shiftX,y:shiftY)
-            resolvedOffset=usePictureCenter ? placementManifest?.offset(pictureCenter:position):placementManifest?.offset(reference:referenceFrame,position:position)
+            let profile = LCCProfileLibraryModel.shared.profiles.first { $0.id.uuidString == profileID }
+            let framePosition = profile?.resolvedEndStops?.position(forReading: position, body: placementManifest?.cameraBody ?? cameraBody,
+                orientation: placementManifest?.bodyOrientation ?? bodyOrientation) ?? position
+            resolvedOffset=usePictureCenter ? placementManifest?.offset(pictureCenter:position):placementManifest?.offset(reference:referenceFrame,position:framePosition)
             positionExplanation=L10n.tr(usePictureCenter ? "lcc.position.manualCenter":"lcc.position.manual")
         } else {
             let manifest=manifests[selected]
