@@ -47,7 +47,7 @@ Photons 自己不带 RAW 解码器。去马赛克、镜头校正、机器学习�
 
 ## iPadOS 开发预览
 
-预览版直接使用现有的图库、Metal 显影、LCC、全景和编码模块，提供独立的触控工作区。当前重点是验证真实处理流程，尚未覆盖完整桌面 UI。私人 TestFlight beta 使用独立的 **Photons Studio Preview** 应用记录；签名、上传流程和当前状态见 [iPad TestFlight 说明](docs/ipad-testflight.md)。
+预览版直接使用现有的图库、Metal 显影、LCC、全景和编码模块，提供独立的触控工作区。当前重点是验证真实处理流程，尚未覆盖完整桌面 UI。新的 iPad beta 与 Mac 共用 **Photons Studio** 应用记录。构建配置及分发记录见 [双平台 TestFlight](docs/reports/testflight-unified-2026-11-19.md)。
 
 ```sh
 python3 scripts/ipad-preview.py run --samples

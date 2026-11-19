@@ -24,3 +24,13 @@
 | APO-Digitar 80N | `b99a41830f51423cde2fff5409c83b1e42bd3a1e6c2b488c76f7593ce344de27` |
 
 本地构建在 `.build/unified-testflight-20261119/`，验证结果在 `local/unified-beta-20261119/release-verified.json`。这一步不涉及 TestFlight 分发或实机验证。
+
+## TF-UNIFIED-03
+
+2026-11-19（纽约时间），通过内置浏览器在 Photons Studio（Apple ID `6835570029`）下添加 iOS 平台。使用已有 Apple Distribution 证书生成匹配正式标识的 iOS App Store 描述文件。Xcode 于 09:52:54 返回 Upload succeeded，09:53 的上传记录归入主应用的 iOS 0.3.0 (7)。本地从同一归档导出的 IPA 也已验证应用标识、仅 iPad 设备族以及两个镜头文件的 SHA-256。
+
+Apple 处理完成后，已保存英中双语 What to Test 并选中主记录的 **Private Beta** 外部组，执行 **Submit for Review**。09:56 在 PB 的 Builds 清单核实，该构建平台为 **iOS**，状态为 **Waiting for Review**。Mac 为本次本地构建。旧独立 Preview 记录及其测试者和构建均未变动。本次部署使用现有应用功能，未添加订阅限制。
+
+[App Store Connect 构建](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835570029/testflight/ios/836a7a4e-dafe-4db4-8821-4d79fb4d03b8) · [Private Beta 构建清单](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835570029/testflight/groups/f5df1ef4-8e90-459a-9fb3-8b23a2f39624/builds)
+
+TF-UNIFIED-01 对应 `5049d1b`，TF-UNIFIED-02 对应 `2c857cf`，TF-UNIFIED-03 对应包含本节的提交（`git log --grep=TF-UNIFIED-03`）。回退 Git 文档不会撤销 Apple 后台的提交。

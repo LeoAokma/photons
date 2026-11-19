@@ -1,6 +1,6 @@
 # iPadOS development preview
 
-This is an experimental, independently buildable iPad app. Its purpose is to exercise the existing Photons editing, LCC and panorama engines on iPadOS. It is not yet a feature-complete desktop replacement. Private beta distribution uses the separate **Photons Studio Preview** App Store Connect record; see [iPad TestFlight](ipad-testflight.md) for signing, upload and current status.
+This is an experimental, independently buildable iPad app. Its purpose is to exercise the existing Photons editing, LCC and panorama engines on iPadOS. It is not yet a feature-complete desktop replacement. Current iPad betas use the **Photons Studio** App Store Connect record shared with Mac. The standalone Preview retains its own bundle identifier. See [iPad TestFlight](ipad-testflight.md) for both build configurations.
 
 See [Mac / iPad development suggestions](mac-ipad-development.md) for the **advisory**, revisable development approach.
 

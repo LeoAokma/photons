@@ -1,4 +1,8 @@
-# iPad private TestFlight beta
+# iPad TestFlight
+
+Build the iPad beta for the Mac **Photons Studio** record (Apple ID `6835570029`) by adding `-xcconfig Apps/iPad/Studio.xcconfig` to the Xcode archive command and using an iOS App Store distribution profile for `com.leoaokma.photons`. Map that identifier to the same profile in the export options. See the [unified beta release record](reports/testflight-unified-2026-11-19.md) for the build, packaged lens profiles and submission.
+
+## Standalone Preview distribution history
 
 The iPad preview uses a separate App Store Connect record from the Mac app. It does not replace the Mac build or require an app login, subscription, or invitation-code implementation.
 
