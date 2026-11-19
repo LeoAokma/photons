@@ -1815,5 +1815,10 @@
   "guide.quickstart.help.body": "导入左侧的灯泡会介绍各工具栏按钮与浏览手势。拼接窗口 HDR 旁也有灯泡，重点介绍相对位置解算、各模块与导出。",
   "ipad.language.system": "跟随系统",
   "ipad.panorama.perspectiveLCCNotice": "透视拼接前，请先对单张照片应用 LCC。相机转向后的布局并不代表物理移轴位置。",
-  "guide.swipe": "向左滑动下一页 · 向右滑动上一页"
+  "guide.swipe": "向左滑动下一页 · 向右滑动上一页",
+  "panorama.invalidPerspectiveGeometry": "透视变换在图像内部越过无穷远线。请减小相机转角，或使用重叠更多的照片。",
+  "panorama.perspectiveDescription": "通过透视变换，对齐相机小幅旋转或倾斜拍摄的重叠照片。",
+  "panorama.perspectiveLimits": "采用平面投影，适合远景或近似平面的重叠照片。不支持明显视差、超广视角或 360° 全景。",
+  "panorama.perspectiveLCCNotice": "请先对单张照片应用 LCC，再进行透视接片。旋转相机后的布局不能代表镜头的实际移轴位置。",
+  "panorama.changeMode": "切换接片模式…"
 }

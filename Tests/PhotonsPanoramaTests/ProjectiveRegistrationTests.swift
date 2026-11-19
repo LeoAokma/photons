@@ -2,6 +2,18 @@ import XCTest
 @testable import PhotonsPanorama
 
 final class ProjectiveRegistrationTests:XCTestCase {
+    func testComposedTransformsRejectAHorizonInsideTheSource() {
+        let size=CGSize(width:1000,height:800)
+        let pair=PanoramaTransform([1,0,0,0,1,0,-0.0003,0,1])
+        XCTAssertTrue(pair.isValid(for:size))
+        let combined=pair.multiplied(by:pair).multiplied(by:pair).multiplied(by:pair)
+        XCTAssertTrue(combined.isValid,"Invertibility alone misses a horizon inside the frame")
+        XCTAssertTrue(combined.corners(size).allSatisfy {$0.x.isFinite && $0.y.isFinite})
+        XCTAssertFalse(combined.isValid(for:size))
+        XCTAssertTrue(PanoramaTransform([-1,0,0,0,-1,0,0,0,-1]).isValid(for:size))
+        XCTAssertFalse(PanoramaTransform([1,0,0,0,1,0,-0.001,0,1]).isValid(for:size))
+        XCTAssertFalse(PanoramaTransform([]).isValid(for:size))
+    }
     func testRecoversTiltWithOutliersAndRoundTripsCoordinates() throws {
         let expected=PanoramaTransform([1.02,0.008,31,-0.006,1.015,270,0.00003,-0.00002,1])
         var pairs:[ProjectiveRegistration.Pair]=[]

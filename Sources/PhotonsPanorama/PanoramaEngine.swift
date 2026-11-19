@@ -117,6 +117,9 @@ public final class PanoramaEngine {
             else if let b=poses[edge.b],let inverse=edge.transform.inverse {poses[edge.a]=b.multiplied(by:inverse);scores[edge.a]=edge.score}
         }
         var transforms=poses.map {$0!}
+        guard transforms.enumerated().allSatisfy({$0.element.isValid(for:sources[$0.offset].size)}) else {
+            throw PanoramaFailure(L10n.tr("panorama.invalidPerspectiveGeometry"))
+        }
         for edge in edges where edge.score>0.8 {
             let probes=edge.probes.isEmpty ? [CGPoint(x:first.size.width/2,y:first.size.height/2)]:edge.probes
             let residuals=probes.map {p -> Double in
@@ -144,6 +147,7 @@ public final class PanoramaEngine {
     public func update(_ original: PanoramaPlan, options: PanoramaOptions,
                        cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws -> PanoramaPlan {
         guard original.isRegistered else {throw PanoramaFailure(L10n.tr("c31363b407bf"))}
+        try validateTransforms(original)
         var plan = original; plan.options = options
         progress(L10n.tr("0c65de60079d"))
         try PanoramaSeams.prepare(&plan,context:context,cancellation:cancellation)
@@ -249,6 +253,7 @@ public final class PanoramaEngine {
                                 progress: Progress = { _ in }) throws -> CIImage {
         guard plan.isRegistered else {throw PanoramaFailure(L10n.tr("57119ed82d7a"))}
         guard plan.tone.isValid else { throw PanoramaFailure("Invalid panorama brightness settings.") }
+        try validateTransforms(plan)
         if let edge = outputLongEdge, edge <= 0 { throw PanoramaFailure("Output long edge must be positive.") }
         let scale = outputLongEdge.map { min(1, Double($0) / max(plan.outputSize.width, plan.outputSize.height)) } ?? 1
         // Materialize one decode per source, rather than re-decoding a 100 MP RAW for every tile.
@@ -272,6 +277,14 @@ public final class PanoramaEngine {
         }
         try cancellation.check()
         return composite(plan,images:images,imageScale:scale,outputScale:scale)
+    }
+
+    private func validateTransforms(_ plan:PanoramaPlan) throws {
+        guard let warps=plan.warps else {return}
+        guard warps.count==plan.sources.count,
+              warps.enumerated().allSatisfy({$0.element.isValid(for:plan.sources[$0.offset].size)}) else {
+            throw PanoramaFailure(L10n.tr("panorama.invalidPerspectiveGeometry"))
+        }
     }
 
     public enum OutputFormat: String, CaseIterable { case dng, tiff }

@@ -1815,5 +1815,10 @@
   "guide.quickstart.help.body": "Use the light bulb left of Import for a tour of every toolbar button and browsing gesture. The panorama window has its own light bulb beside HDR, including relative-position solving and export tips.",
   "ipad.language.system": "System default",
   "ipad.panorama.perspectiveLCCNotice": "Apply LCC to individual photos before perspective stitching. A rotated-camera layout does not describe physical lens shift.",
-  "guide.swipe": "Swipe left for next · right for previous"
+  "guide.swipe": "Swipe left for next · right for previous",
+  "panorama.invalidPerspectiveGeometry": "The perspective transforms cross the image horizon. Use a smaller camera rotation or more overlapping photographs.",
+  "panorama.perspectiveDescription": "Align overlapping views taken with modest camera rotation or tilt using perspective transforms.",
+  "panorama.perspectiveLimits": "Uses a planar projection. Best for overlapping views of distant or approximately flat scenes. Strong parallax, very wide views and 360° panoramas are not supported.",
+  "panorama.perspectiveLCCNotice": "Apply LCC to individual photographs before perspective stitching. A rotated-camera layout does not describe physical lens-shift positions.",
+  "panorama.changeMode": "Change panorama mode…"
 }

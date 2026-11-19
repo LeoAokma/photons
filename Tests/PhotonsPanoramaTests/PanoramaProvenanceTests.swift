@@ -29,6 +29,7 @@ final class PanoramaProvenanceTests:XCTestCase {
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         defer {try? FileManager.default.removeItem(at:folder)}
         var plan=try fixture(folder)
+        plan.registrationMode = .perspective
         plan.warps=[.identity,PanoramaTransform([0.95,0.04,32,0,0.95,0.8,0.0003,0,1])]
         let manifest=PanoramaManifest(plan:plan,offsetMM:CGPoint(x:2,y:3),sensor:.init(width:43.8,height:32.9,source:"test"))
         try manifest.validate()
@@ -36,6 +37,8 @@ final class PanoramaProvenanceTests:XCTestCase {
         let snapshot=try JSONDecoder().decode(PanoramaSnapshot.self,from:JSONEncoder().encode(PanoramaSnapshot(plan:plan)))
         let frozen=try snapshot.plan()
         XCTAssertEqual(frozen.warps,plan.warps)
+        XCTAssertEqual(frozen.registrationMode,.perspective)
+        XCTAssertEqual(PanoramaManifest(plan:frozen).registrationMode,.perspective)
         let p=CGPoint(x:0.3,y:0.4)
         let warp=try XCTUnwrap(manifest.frames[1].imageToCanvas)
         let canvas=warp.point(p)
@@ -49,6 +52,38 @@ final class PanoramaProvenanceTests:XCTestCase {
         XCTAssertEqual(read.version,2)
         XCTAssertEqual(read.frames[1].imageToCanvas,warp)
         XCTAssertEqual(read.frames[1].sensorRect,manifest.frames[1].sensorRect)
+        XCTAssertEqual(read.registrationMode,.perspective)
+    }
+
+    func testLegacySnapshotRetainsShiftModelEvenWithProjectiveFallback() throws {
+        let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+        defer {try? FileManager.default.removeItem(at:folder)}
+        for projective in [false,true] {
+            var plan=try fixture(folder)
+            if projective {plan.warps=[.identity,.translation(CGPoint(x:32,y:0))]}
+            let data=try JSONEncoder().encode(PanoramaSnapshot(plan:plan))
+            var legacy=try XCTUnwrap(JSONSerialization.jsonObject(with:data) as? [String:Any])
+            legacy.removeValue(forKey:"registrationMode")
+            let snapshot=try JSONDecoder().decode(PanoramaSnapshot.self,from:JSONSerialization.data(withJSONObject:legacy))
+            let restored=try snapshot.plan()
+            XCTAssertEqual(restored.registrationMode,.shift)
+            XCTAssertEqual(restored.warps,plan.warps)
+        }
+    }
+
+    func testRejectsUnsafeRestoredAndDirectPlanGeometry() throws {
+        let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+        defer {try? FileManager.default.removeItem(at:folder)}
+        var plan=try fixture(folder)
+        plan.registrationMode = .perspective
+        plan.warps=[.identity,PanoramaTransform([1,0,0,0,1,0,-0.03,0,1])]
+        let snapshot=try JSONDecoder().decode(PanoramaSnapshot.self,from:JSONEncoder().encode(PanoramaSnapshot(plan:plan)))
+        XCTAssertThrowsError(try snapshot.plan())
+        XCTAssertThrowsError(try PanoramaEngine().update(plan,options:plan.options))
+        XCTAssertThrowsError(try PanoramaEngine().renderComposite(plan))
+        XCTAssertThrowsError(try PanoramaManifest(plan:plan).validate())
     }
 
     func testDNGThumbnailManifestAndSnapshotRoundTrip() throws {
