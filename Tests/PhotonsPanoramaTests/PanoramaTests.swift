@@ -117,7 +117,15 @@ final class PanoramaTests: XCTestCase {
         plan.tone = .panoramaDefault
         var options = plan.options
         options.avoidMotion = false
+        XCTAssertEqual(plan.previewStatus(for: plan.options, mode: .shift, alignmentChanged: false), .current)
+        XCTAssertEqual(plan.previewStatus(for: options, mode: .shift, alignmentChanged: false), .needsSeamUpdate)
+        XCTAssertEqual(plan.previewStatus(for: options, mode: .shift, alignmentChanged: true), .needsAlignment)
+        XCTAssertEqual(plan.previewStatus(for: options, mode: .perspective, alignmentChanged: false), .needsAlignment)
+        var draft = plan
+        draft.isRegistered = false
+        XCTAssertEqual(draft.previewStatus(for: draft.options, mode: .shift, alignmentChanged: false), .needsAlignment)
         let off = try engine.update(plan,options:options)
+        XCTAssertEqual(off.previewStatus(for: options, mode: .shift, alignmentChanged: false), .current)
         XCTAssertEqual(off.ownership[50*off.maskWidth+60],0)
         XCTAssertEqual(off.origins,plan.origins)
         XCTAssertEqual(off.lccState?.offsetMM,plan.lccState?.offsetMM)

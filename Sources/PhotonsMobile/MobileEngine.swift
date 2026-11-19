@@ -377,9 +377,8 @@ actor MobileEngine {
             body: body, orientation: orientation, cancellation: cancellation, progress: { progress($0, nil) }).plan, nil)
     }
     /// Rebuild only seams on the frozen, possibly LCC-corrected source previews.
-    func setPanoramaDeghosting(_ plan: PanoramaPlan, enabled: Bool, cancellation: PanoramaCancellation) throws -> PanoramaPlan {
-        var options = plan.options; options.avoidMotion = enabled
-        return try PanoramaEngine().update(plan, options: options, cancellation: cancellation)
+    func updatePanorama(_ plan: PanoramaPlan, options: PanoramaOptions, cancellation: PanoramaCancellation) throws -> PanoramaPlan {
+        try PanoramaEngine().update(plan, options: options, cancellation: cancellation)
     }
     func correctPanorama(_ plan: PanoramaPlan, profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody,
                          orientation: PanoramaBodyOrientation, cropToCoverage: Bool = false, cancellation: PanoramaCancellation,

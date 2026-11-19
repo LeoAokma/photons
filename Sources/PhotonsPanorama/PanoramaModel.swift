@@ -147,6 +147,11 @@ public struct OpticalEstimate {
     public var occludedEdges: [String]
 }
 
+/// Whether the rendered plan still describes the geometry and blend settings in the editor.
+public enum PanoramaPreviewStatus: Equatable, Sendable {
+    case needsAlignment, needsSeamUpdate, current
+}
+
 /// The same full-resolution geometry and low-resolution ownership field are consumed by BOTH
 /// renderers. Export cannot call registration. Stored coordinates use an upper-left origin;
 /// only the Core Image compositor converts them to lower-left coordinates.
@@ -179,6 +184,13 @@ public struct PanoramaPlan {
     public var lccLinearPreviewImages: [CIImage]?
     public var lccRawPreviews:[CameraMosaic?]?
     public var lccFlatPreviews:[CameraMosaic?]?
+
+    public func previewStatus(for requestedOptions: PanoramaOptions, mode: PanoramaRegistrationMode,
+                              alignmentChanged: Bool) -> PanoramaPreviewStatus {
+        guard isRegistered, registrationMode == mode, !alignmentChanged else { return .needsAlignment }
+        return options == requestedOptions ? .current : .needsSeamUpdate
+    }
+
     public var outputSize: CGSize { lccState?.cropRect?.size ?? size }
 
     public var megapixels: Double { size.width * size.height / 1_000_000 }

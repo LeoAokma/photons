@@ -618,6 +618,26 @@ final class IPadUITests: XCTestCase {
             start.press(forDuration: 0.05,thenDragTo: controls.coordinate(withNormalizedOffset: CGVector(dx: 0.98,dy: 0.2)))
         }
         scrollControls()
+        let deghost = app.switches["panorama-deghost"]
+        if !deghost.isHittable { scrollControls() }
+        XCTAssertEqual(deghost.value as? String, "1")
+        let exportButton = app.buttons["panorama-export"]
+        for expected in ["0", "1"] {
+            deghost.tap()
+            XCTAssertEqual(deghost.value as? String, expected)
+            XCTAssertTrue(exportButton.wait(for: \.isEnabled, toEqual: true, timeout: 30))
+        }
+        let exposureMatch = app.switches["Match exposure"]
+        if !exposureMatch.isHittable { scrollControls() }
+        XCTAssertEqual(exposureMatch.value as? String, "1")
+        exposureMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertEqual(exposureMatch.value as? String, "0", app.debugDescription)
+        XCTAssertTrue(exportButton.wait(for: \.isEnabled, toEqual: false, timeout: 5))
+        let update = app.buttons["align-panorama"]
+        XCTAssertEqual(update.label, "Update seams")
+        update.tap()
+        XCTAssertTrue(exportButton.wait(for: \.isEnabled, toEqual: true, timeout: 30))
+        XCTAssertEqual(update.label, "Update alignment")
         let crop = app.switches["panorama-crop-lcc"]
         if !crop.isHittable { scrollControls() }
         XCTAssertTrue(crop.exists)

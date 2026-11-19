@@ -281,8 +281,11 @@ final class PanoramaWindowModel: ObservableObject {
             }
         }
     }
+    private var previewStatus: PanoramaPreviewStatus {
+        plan?.previewStatus(for: options, mode: registrationMode, alignmentChanged: alignmentNeedsUpdate) ?? .needsAlignment
+    }
     func refresh() {
-        guard let current = plan, current.isRegistered, !busy, current.options != options else { return }
+        guard !busy, let current = plan, previewStatus == .needsSeamUpdate else { return }
         alignmentWindow?.close()
         run { [options] engine,token,progress in try engine.update(current,options:options,cancellation:token,progress:progress) }
     }
@@ -320,8 +323,7 @@ final class PanoramaWindowModel: ObservableObject {
         }
     }
     var canStitch:Bool {
-        guard !choosingMode,!busy,!alignmentNeedsUpdate,let plan,plan.isRegistered,plan.registrationMode==registrationMode,
-              plan.tone==tone,plan.options==options else {return false}
+        guard !choosingMode, !busy, let plan, previewStatus == .current, plan.tone == tone else { return false }
         if registrationMode == .perspective {return !lccEnabled && plan.lccState==nil && plan.warps != nil}
         if !lccEnabled {return plan.lccState==nil}
         guard let lcc=plan.lccState else {return false}

@@ -5,6 +5,45 @@ import ImageIO
 
 /// Optional real-camera regression fixtures; never require private photos in CI.
 final class BostonRegistrationTests: XCTestCase {
+    func testDeghostAfterLCCOnBoston591And592() throws {
+        guard let folder = ProcessInfo.processInfo.environment["PHOTONS_BOSTON_DIR"] else {
+            throw XCTSkip("Set PHOTONS_BOSTON_DIR for the 591–592 post-LCC regression")
+        }
+        let root = URL(fileURLWithPath: folder)
+        let urls = ["B0000591.3FR", "B0000592.3FR"].map { root.appendingPathComponent($0) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let profiles = LCCProfileStore(directory: directory)
+        try profiles.installBundledProfile()
+        let profile = try profiles.load(LCCLensProfile.builtInID)
+        let fields = try LCCCorrectionEngine.fields(profile)
+        let engine = PanoramaEngine()
+        let prepared = try engine.prepareLCCImages(engine.analyze(urls: urls))
+        let sensor = try XCTUnwrap(prepared.sources.first?.sensor)
+        let position = try LCCPositionSolver.solve(plan: prepared, fields: fields, sensor: sensor, allowPairedFlats: false)
+        let corrected = try engine.applyingLCC(prepared, profile: profile, fields: fields,
+            offsetMM: position.offsetMM, sensor: sensor, crop: false, cameraBody: .alpa12Max)
+        let lcc = try XCTUnwrap(corrected.lccState)
+        var options = corrected.options
+        options.avoidMotion = false
+        XCTAssertEqual(corrected.previewStatus(for: options, mode: .shift, alignmentChanged: false), .needsSeamUpdate)
+        let off = try engine.update(corrected, options: options)
+        let on = try engine.update(off, options: corrected.options)
+        for result in [off, on] {
+            XCTAssertEqual(result.previewStatus(for: result.options, mode: .shift, alignmentChanged: false), .current)
+            XCTAssertEqual(result.origins, corrected.origins)
+            XCTAssertEqual(result.outputSize, corrected.outputSize)
+            XCTAssertEqual(result.lccState?.profileID, profile.id)
+            XCTAssertEqual(result.lccState?.offsetMM, lcc.offsetMM)
+            XCTAssertEqual(result.lccState?.coveredFraction, lcc.coveredFraction)
+            XCTAssertNotNil(result.preview)
+        }
+        XCTAssertFalse(PanoramaManifest(plan: off).options.avoidMotion)
+        XCTAssertNotEqual(off.blendMasks, corrected.blendMasks)
+        XCTAssertEqual(on.blendMasks, corrected.blendMasks)
+        print("591–592 post-LCC", corrected.outputSize, "coverage", lcc.coveredFraction)
+    }
+
     func testBostonStripsAndConfirmedGroups() throws {
         guard let path = ProcessInfo.processInfo.environment["PHOTONS_BOSTON_DIR"] else {
             throw XCTSkip("Set PHOTONS_BOSTON_DIR to the external Boston RAW fixtures")

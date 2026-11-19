@@ -79,9 +79,7 @@ struct MobilePanoramaWorkspace: View {
     @State private var manualSensor = false
     @State private var guided = false
     @State private var appliedLayout: MobilePanoramaLayout?
-    @State private var appliedOptions: PanoramaOptions?
     @State private var appliedSelection = 0
-    @State private var aligning = false
     @State private var export = false
     @State private var profileID: UUID?
     @State private var cropToLCC = false
@@ -89,7 +87,9 @@ struct MobilePanoramaWorkspace: View {
         .init(positions: positions, body: bodyType, orientation: orientation, sensorWidth: sensorWidth,
               sensorHeight: sensorHeight, manualSensor: manualSensor, guided: guided)
     }
-    private var dirty: Bool { appliedLayout != layout || appliedOptions != options }
+    private var previewStatus: PanoramaPreviewStatus {
+        model.plan?.previewStatus(for: options, mode: mode, alignmentChanged: appliedLayout != layout) ?? .needsAlignment
+    }
     private var cropNeedsUpdate: Bool { cropToLCC != (model.plan?.lccState?.cropRect != nil) }
     private var sensor: SensorSize { .init(width: sensorWidth, height: sensorHeight, source: manualSensor ? "Manual" : "Source metadata") }
     private var validSensor: Bool { sensorWidth.isFinite && sensorHeight.isFinite && sensorWidth > 0 && sensorHeight > 0 && sensorWidth < 200 && sensorHeight < 200 }
@@ -117,7 +117,7 @@ struct MobilePanoramaWorkspace: View {
                         if let plan = model.plan { Text(L10n.tr("ipad.373e02dc1d14", String(describing: (Int(plan.outputSize.width))), String(describing: (Int(plan.outputSize.height))), String(describing: (photos.count)))).font(.caption) }
                         Spacer()
                         Button(L10n.tr("ipad.157f52f85cb4")) { export = true }
-                            .buttonStyle(.borderedProminent).disabled(model.plan == nil || dirty || model.busy || model.rendering || cropNeedsUpdate)
+                            .buttonStyle(.borderedProminent).disabled(previewStatus != .current || model.busy || model.rendering || cropNeedsUpdate)
                             .accessibilityIdentifier("panorama-export")
                             .mobileGuideTarget("panorama.export",in: guide)
                     }.padding(14)
@@ -151,18 +151,10 @@ struct MobilePanoramaWorkspace: View {
             } catch { model.error = error.localizedDescription }
         }
         .onChange(of: model.busy) { _,busy in
-            if !busy {
-                if aligning {
-                    aligning = false
-                    if model.error == nil, let plan = model.plan { accept(plan) }
-                } else if !dirty, model.error == nil, let plan = model.plan, let lcc = plan.lccState {
-                    positions = framePositions(plan, offset: lcc.offsetMM)
-                    rememberLayout()
-                }
+            if !busy, previewStatus == .current, model.error == nil, let plan = model.plan, let lcc = plan.lccState {
+                positions = framePositions(plan, offset: lcc.offsetMM)
+                rememberLayout()
             }
-        }
-        .onChange(of: model.plan?.options.avoidMotion) { _,enabled in
-            if let enabled { appliedOptions?.avoidMotion = enabled }
         }
         .sheet(isPresented: $export) {
             NavigationStack {
@@ -183,7 +175,7 @@ struct MobilePanoramaWorkspace: View {
                     MobilePhotoCanvas(image: image, hdr: model.hdr, identity: "panorama-workspace",accessibilityID: "panorama-preview",fullSize: model.canvasSize,
                                       detail: model.detailFrame,detailStatus: model.detailStatus,onViewportChange: { model.requestDetail($0) })
                         .padding(20)
-                    if dirty { Text(L10n.tr("ipad.88fd9edaed0d")).font(.caption).padding(12).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding() }
+                    if previewStatus != .current { Text(L10n.tr("ipad.88fd9edaed0d")).font(.caption).padding(12).background(.ultraThinMaterial, in: Capsule()).frame(maxHeight: .infinity, alignment: .bottom).padding() }
                 } else {
                     ContentUnavailableView(L10n.tr("slices.preview"), systemImage: "pano", description: Text(model.busy ? L10n.tr("ipad.25afb41e1b07") : L10n.tr("ipad.0d16cdbf4439")))
                 }
@@ -284,9 +276,10 @@ struct MobilePanoramaWorkspace: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(L10n.tr("ipad.a38fa6d1cdc0")).font(.headline)
                     Toggle(L10n.tr("panorama.deghost.label"),isOn: Binding(get: { options.avoidMotion },set: { enabled in
-                        let canRefresh = appliedLayout == layout && appliedOptions == options
+                        guard options.avoidMotion != enabled else { return }
+                        let refreshImmediately = previewStatus == .current
                         options.avoidMotion = enabled
-                        if canRefresh { model.setPanoramaDeghosting(enabled) }
+                        if refreshImmediately { model.updatePanoramaOptions(options) }
                     })).toggleStyle(MobileCheckboxStyle()).accessibilityIdentifier("panorama-deghost")
                     Text(L10n.tr("panorama.deghost.hint")).font(.caption).foregroundStyle(.secondary)
                     if mode == .shift {
@@ -300,9 +293,10 @@ struct MobilePanoramaWorkspace: View {
                     }
                     Toggle(L10n.tr("ipad.884e937d3d20"), isOn: $options.matchExposure)
                     Slider(value: $options.seamSoftness, in: 0...20) { Text(L10n.tr("ipad.11b8fec683fe")) }
-                }.accessibilityIdentifier("panorama-alignment-options")
+                }.accessibilityElement(children: .contain).accessibilityIdentifier("panorama-alignment-options")
                     .id("panorama.alignment").mobileGuideTarget("panorama.alignment",in: guide)
-                Button(L10n.tr("ipad.602ad77cd80f"), action: align).buttonStyle(.borderedProminent)
+                Button(L10n.tr(previewStatus == .needsSeamUpdate ? "panorama.updateSeams" : "ipad.602ad77cd80f"), action: align)
+                    .buttonStyle(.borderedProminent)
                     .disabled(model.busy || !validSensor || sources.count < 2).accessibilityIdentifier("align-panorama")
                     .id("panorama.solve").mobileGuideTarget("panorama.solve",in: guide)
                 Divider()
@@ -317,14 +311,14 @@ struct MobilePanoramaWorkspace: View {
                     .accessibilityIdentifier("panorama-crop-lcc")
                     .disabled(model.plan?.lccState.map { $0.suggestedCropRect == nil && !cropToLCC } ?? false)
                     .onChange(of: cropToLCC) { _,enabled in
-                        if model.plan?.lccState != nil && !dirty { model.setLCCCrop(enabled) }
+                        if model.plan?.lccState != nil && previewStatus == .current { model.setLCCCrop(enabled) }
                     }
                 Text(L10n.tr("ipad.70ddfa521391")).font(.caption).foregroundStyle(.secondary)
                 Button(L10n.tr("ipad.08b90bbe8907")) {
                     guard let profileID, let plan = model.plan else { return }
                     let offset = guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: physicalPosition(positions[selectedFrame] ?? .zero)).profileOffset(in: plan, sensor: sensor) : nil
                     model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation, cropToCoverage: cropToLCC)
-                }.disabled(model.busy || dirty || model.plan == nil || profileID == nil).accessibilityIdentifier("panorama-lcc")
+                }.disabled(model.busy || previewStatus != .current || profileID == nil).accessibilityIdentifier("panorama-lcc")
                 if let lcc = model.plan?.lccState { Label(lcc.profileName, systemImage: "checkmark.seal"); Text(String(format: L10n.tr("ipad.0858f5e8bf0a"), lcc.coveredFraction * 100)).font(.caption) }
                 if let note = model.lccPositionNote { Text(note).font(.caption).foregroundStyle(.orange) }
                 } else { Text(L10n.tr("ipad.panorama.perspectiveLCCNotice")).font(.caption).foregroundStyle(.secondary) }
@@ -345,8 +339,13 @@ struct MobilePanoramaWorkspace: View {
     }
     private func align() {
         guard validSensor, !model.busy else { return }
-        aligning = true; model.error = nil
-        model.stitch(options: options, positions: mode == .shift && guided ? positions.mapValues(physicalPosition) : [:], sensor: mode == .shift && manualSensor ? sensor : nil, registrationMode: mode)
+        if previewStatus == .needsSeamUpdate {
+            model.updatePanoramaOptions(options)
+            return
+        }
+        model.error = nil
+        model.stitch(options: options, positions: mode == .shift && guided ? positions.mapValues(physicalPosition) : [:],
+                     sensor: mode == .shift && manualSensor ? sensor : nil, registrationMode: mode, onAligned: accept)
     }
     private func accept(_ plan: PanoramaPlan) {
         let anchor = mode == .shift && guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: physicalPosition(positions[selectedFrame] ?? .zero)) : nil
@@ -357,7 +356,7 @@ struct MobilePanoramaWorkspace: View {
         rememberLayout()
     }
     private func rememberLayout() {
-        appliedLayout = layout; appliedOptions = options; appliedSelection = selectedFrame
+        appliedLayout = layout; appliedSelection = selectedFrame
     }
     private func revertLayout() {
         guard let saved = appliedLayout, !model.busy else { return }

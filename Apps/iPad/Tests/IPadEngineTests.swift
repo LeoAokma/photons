@@ -68,12 +68,37 @@ final class IPadEngineTests: XCTestCase {
         let worker=engine(),urls=try MobileSamples.create(in:folder.appendingPathComponent("deghost"))
         let photos=urls.prefix(2).enumerated().map { MobilePhoto(id:"test-\($0.offset)",name:$0.element.lastPathComponent,url:$0.element,rating:0,width:768,height:512) }
         let plan=try await worker.analyze(photos,options:.init(),positions:[:],sensor:nil,cancellation:.init(),progress:{_,_ in})
-        let off=try await worker.setPanoramaDeghosting(plan,enabled:false,cancellation:.init())
+        var options = plan.options
+        options.avoidMotion = false
+        let off = try await worker.updatePanorama(plan, options: options, cancellation: .init())
         XCTAssertFalse(off.options.avoidMotion);XCTAssertEqual(off.origins,plan.origins);XCTAssertEqual(off.size,plan.size)
         XCTAssertNotNil(off.preview)
-        let on=try await worker.setPanoramaDeghosting(off,enabled:true,cancellation:.init())
+        let on = try await worker.updatePanorama(off, options: plan.options, cancellation: .init())
         XCTAssertTrue(on.options.avoidMotion);XCTAssertEqual(on.origins,off.origins)
     }
+    @MainActor
+    func testCancelledRealignmentDoesNotAcceptAnOldPlan() async throws {
+        let worker = engine()
+        let urls = try MobileSamples.create(in: folder.appendingPathComponent("cancel-alignment"))
+        let photos = urls.prefix(2).map { MobilePhoto(id: $0.lastPathComponent, name: $0.lastPathComponent,
+            url: $0, rating: 0, width: 768, height: 512) }
+        let original = try await worker.analyze(photos, options: .init(), positions: [:], sensor: nil,
+            cancellation: .init(), progress: { _,_ in })
+        let model = MobileWorkspaceModel(engine: worker)
+        model.photos = photos
+        model.selected = Set(photos.map(\.id))
+        model.plan = original
+        var accepted = false
+        model.stitch(options: original.options, positions: [:], sensor: nil, registrationMode: .shift) { _ in
+            accepted = true
+        }
+        model.cancel()
+        for _ in 0..<400 where model.busy { try await Task.sleep(for: .milliseconds(25)) }
+        XCTAssertFalse(model.busy)
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(model.plan?.origins, original.origins)
+    }
+
     private var folder: URL!
     override func setUpWithError() throws {
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("ipad-test-\(UUID())", isDirectory: true)

@@ -74,6 +74,32 @@ final class PanoramaPerspectiveTests:XCTestCase {
         model.chooseMode()
         XCTAssertTrue(model.choosingMode);XCTAssertNil(model.plan);XCTAssertFalse(model.canStitch)
     }
+    func testSeamRefreshWaitsForCurrentGeometry() async throws {
+        _ = NSApplication.shared
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let model = PanoramaWindowModel(urls: try fixtures(folder))
+        model.prepare(mode: .perspective)
+        try await waitUntilIdle(model)
+        let original = try XCTUnwrap(model.plan)
+        XCTAssertTrue(model.canStitch)
+        model.alignmentNeedsUpdate = true
+        model.options.avoidMotion.toggle()
+        model.refresh()
+        XCTAssertFalse(model.busy)
+        XCTAssertEqual(model.plan?.options, original.options)
+        XCTAssertFalse(model.canStitch)
+
+        model.alignmentNeedsUpdate = false
+        XCTAssertFalse(model.canStitch)
+        model.refresh()
+        try await waitUntilIdle(model)
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.plan?.options, model.options)
+        XCTAssertEqual(model.plan?.origins, original.origins)
+        XCTAssertTrue(model.canStitch)
+    }
+
     func testPerspectiveFailureHasNoShiftDraftAndShiftCanStillCreateDraft() async throws {
         _ = NSApplication.shared
         let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

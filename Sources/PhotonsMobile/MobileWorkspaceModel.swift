@@ -361,7 +361,8 @@ final class MobileWorkspaceModel: ObservableObject {
     func importProfile(_ url: URL) {
         run(L10n.tr("ipad.fd4d52fa1e2c")) { try await self.engine.importProfile(url); self.profiles = try await self.engine.profiles() }
     }
-    func stitch(options: PanoramaOptions, positions: [Int: CGPoint], sensor: SensorSize?, registrationMode: PanoramaRegistrationMode = .shift) {
+    func stitch(options: PanoramaOptions, positions: [Int: CGPoint], sensor: SensorSize?,
+                registrationMode: PanoramaRegistrationMode, onAligned: @escaping (PanoramaPlan) -> Void) {
         let sources = selectedPhotos, tone = plan?.tone ?? .panoramaDefault
         run(L10n.tr("ipad.29baca75d5da")) {
             let result = try await self.engine.analyze(sources, options: options, positions: positions, sensor: sensor, registrationMode: registrationMode,
@@ -369,6 +370,7 @@ final class MobileWorkspaceModel: ObservableObject {
             let frame = try await self.engine.frame(result, hdr: self.hdr)
             try Task.checkCancellation()
             self.plan = result; self.manifest = nil; self.lccPositionNote = nil; self.frame = frame; self.showGrid = false
+            onAligned(result)
         }
     }
     func setPanoramaTone(_ tone: PanoramaToneSettings) {
@@ -400,11 +402,11 @@ final class MobileWorkspaceModel: ObservableObject {
             self.plan = result.0; self.manifest = result.1; self.frame = try await self.engine.frame(result.0, hdr: self.hdr); self.showGrid = false
         }
     }
-    func setPanoramaDeghosting(_ enabled: Bool) {
+    func updatePanoramaOptions(_ options: PanoramaOptions) {
         guard !busy, let original = plan, original.isRegistered else { return }
         let previous = manifest
-        run(L10n.tr("panorama.deghost.updating")) {
-            let updated = try await self.engine.setPanoramaDeghosting(original, enabled: enabled, cancellation: self.cancellation)
+        run(L10n.tr("b087e27f78f6")) {
+            let updated = try await self.engine.updatePanorama(original, options: options, cancellation: self.cancellation)
             let frame = try await self.engine.frame(updated, hdr: self.hdr)
             try self.cancellation.check()
             self.plan = updated; self.frame = frame
