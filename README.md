@@ -17,6 +17,10 @@ Photons 自己不带 RAW 解码器。去马赛克、镜头校正、机器学习�
 
 这条边界怎么划的、为什么**故意**不链 LibRaw、Exiv2、libheif 或 lensfun，都写在 [docs/architecture-decisions.md](docs/architecture-decisions.md)。那里每条结论都有真实文件的实测，或者对系统框架的阅读做依据。
 
+## 本仓库的开发主线
+
+`LeoAokma/photons` 的 `main` 汇集 iPad 应用、LCC 标定和全景拼接，也可直接构建用于验证这些功能的 Mac 应用。Mac 主应用的开发主要在 `chemharuka/photons` 进行。双方按功能移植需要的改动，各自安排发布。
+
 ## 已经能做什么
 
 下面概述桌面版的主要功能。项目仍在快速开发，验收命令不代表当前分支的所有检查都已通过；具体结果以对应 PR 的验证记录为准。iPad 目前覆盖的功能与限制单独列在 [开发预览说明](docs/ipad-preview.md)。
