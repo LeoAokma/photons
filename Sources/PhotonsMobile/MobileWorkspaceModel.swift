@@ -1,6 +1,7 @@
 #if os(iOS)
 import PhotonsLocalization
 import SwiftUI
+import PhotonsLocalization
 import UIKit
 import PhotonsCore
 import PhotonsCatalog
@@ -397,6 +398,19 @@ final class MobileWorkspaceModel: ObservableObject {
             let result = try await self.engine.correct(photo, flat: flat, profileID: profileID, position: position, refine: refine,
                 body: body, orientation: orientation, cancellation: self.cancellation, progress: self.report)
             self.plan = result.0; self.manifest = result.1; self.frame = try await self.engine.frame(result.0, hdr: self.hdr); self.showGrid = false
+        }
+    }
+    func setPanoramaDeghosting(_ enabled: Bool) {
+        guard !busy, let original = plan, original.isRegistered else { return }
+        let previous = manifest
+        run(L10n.tr("panorama.deghost.updating")) {
+            let updated = try await self.engine.setPanoramaDeghosting(original, enabled: enabled, cancellation: self.cancellation)
+            let frame = try await self.engine.frame(updated, hdr: self.hdr)
+            try self.cancellation.check()
+            self.plan = updated; self.frame = frame
+            self.manifest = PanoramaManifest(plan: updated, profileID: previous?.profileID, profileName: previous?.profileName,
+                offsetMM: previous?.profileOffsetMM, sensor: previous?.frames.first?.sensor,
+                bodyOrientation: previous?.bodyOrientation ?? .degrees0, cameraBody: previous?.cameraBody)
         }
     }
     func correctPanorama(profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody, orientation: PanoramaBodyOrientation, cropToCoverage: Bool = false) {

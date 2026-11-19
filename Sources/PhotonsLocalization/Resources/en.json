@@ -1820,5 +1820,8 @@
   "panorama.perspectiveDescription": "Align overlapping views taken with modest camera rotation or tilt using perspective transforms.",
   "panorama.perspectiveLimits": "Uses a planar projection. Best for overlapping views of distant or approximately flat scenes. Strong parallax, very wide views and 360° panoramas are not supported.",
   "panorama.perspectiveLCCNotice": "Apply LCC to individual photographs before perspective stitching. A rotated-camera layout does not describe physical lens-shift positions.",
-  "panorama.changeMode": "Change panorama mode…"
+  "panorama.changeMode": "Change panorama mode…",
+  "panorama.deghost.label": "Deghost",
+  "panorama.deghost.hint": "Reduce ghosts from moving subjects. Turn off if clouds or highlights develop hard boundaries. Changes update the current stitch without realigning or removing LCC.",
+  "panorama.deghost.updating": "Updating deghosting"
 }

@@ -1,6 +1,7 @@
 #if os(iOS)
 import PhotonsLocalization
 import SwiftUI
+import PhotonsLocalization
 import PhotonsCore
 import PhotonsPanorama
 
@@ -160,6 +161,9 @@ struct MobilePanoramaWorkspace: View {
                 }
             }
         }
+        .onChange(of: model.plan?.options.avoidMotion) { _,enabled in
+            if let enabled { appliedOptions?.avoidMotion = enabled }
+        }
         .sheet(isPresented: $export) {
             NavigationStack {
                 MobileExportSheet(model: model, onExport: { dismiss() })
@@ -279,6 +283,12 @@ struct MobilePanoramaWorkspace: View {
                 }
                 VStack(alignment: .leading, spacing: 12) {
                     Text(L10n.tr("ipad.a38fa6d1cdc0")).font(.headline)
+                    Toggle(L10n.tr("panorama.deghost.label"),isOn: Binding(get: { options.avoidMotion },set: { enabled in
+                        let canRefresh = appliedLayout == layout && appliedOptions == options
+                        options.avoidMotion = enabled
+                        if canRefresh { model.setPanoramaDeghosting(enabled) }
+                    })).toggleStyle(MobileCheckboxStyle()).accessibilityIdentifier("panorama-deghost")
+                    Text(L10n.tr("panorama.deghost.hint")).font(.caption).foregroundStyle(.secondary)
                     if mode == .shift {
                     Toggle(L10n.tr("ipad.c44d573e0600"), isOn: $manualSensor).onChange(of: manualSensor) { _,enabled in
                         if !enabled, let known = sources.first?.sensor { sensorWidth = known.width; sensorHeight = known.height }
@@ -289,7 +299,6 @@ struct MobilePanoramaWorkspace: View {
                     } else { Text(String(format: L10n.tr("ipad.6f62f1f9443a"), sensorWidth, sensorHeight)).font(.caption) }
                     }
                     Toggle(L10n.tr("ipad.884e937d3d20"), isOn: $options.matchExposure)
-                    Toggle(L10n.tr("ipad.a55dd8a88660"), isOn: $options.avoidMotion)
                     Slider(value: $options.seamSoftness, in: 0...20) { Text(L10n.tr("ipad.11b8fec683fe")) }
                 }.accessibilityIdentifier("panorama-alignment-options")
                     .id("panorama.alignment").mobileGuideTarget("panorama.alignment",in: guide)
