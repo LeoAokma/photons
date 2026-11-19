@@ -51,6 +51,18 @@ public final class AssetCollectionView: NSCollectionView {
 ///
 /// No Metal (headless/VM): falls back to a plain SDR `CALayer`, so the grid still draws.
 final class ThumbnailEDRView: NSView {
+    /// A panorama can show just the visible portion of its cached preview texture.
+    var sourceWindow: CGRect? {
+        didSet {
+            guard sourceWindow != oldValue else { return }
+            if let surface {
+                surface.sourceWindow = sourceWindow
+            } else {
+                layer?.contentsRect = sourceWindow ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+            }
+        }
+    }
+
     /// 363 — the picture this view is showing, and whether its layer is currently visible.
     ///
     /// Two rules, and the difference between them is the reported flicker:

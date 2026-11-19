@@ -8,12 +8,16 @@ import PhotonsCore
 /// the entire panorama. SwiftUI's ordinary Image would flatten this into an SDR layer.
 struct PanoramaHDRPreview: View {
     let image: CGImage
+    var outputPixels: CGSize? = nil
+    @State private var zoom = PanoramaPreviewZoom()
+    @AppStorage(DoubleClickZoom.key) private var savedTarget = 1.0
     @State private var headroom = DisplayHeadroom.sdr
     @Bindable private var preferences=ApplicationPreferences.shared
 
     var body: some View {
-        PanoramaHDRSurface(image: image) { headroom = $0 }
-            .allowsHitTesting(false)
+        PanoramaHDRSurface(image: image, outputPixels: outputPixels, zoom: $zoom) { headroom = $0 }
+            .allowsHitTesting(outputPixels != nil)
+            .onChange(of: outputPixels) { zoom = PanoramaPreviewZoom() }
             .overlay(alignment: .topLeading) {
                 Button(preferences.hdrPreview ? "HDR":"SDR") {preferences.hdrPreview.toggle()}
                     .buttonStyle(.bordered).padding(12)
@@ -22,6 +26,7 @@ struct PanoramaHDRPreview: View {
             }
             .overlay(alignment: .topTrailing) {
                 PanoramaPreviewHistogram(image:image,hdr:preferences.hdrPreview,headroom:headroom.headroom)
+                    .equatable()
                     .frame(width:230,height:HistogramCardView.contentHeight).padding(6)
                     .background(.regularMaterial,in:RoundedRectangle(cornerRadius:8)).padding(12)
             }
@@ -30,15 +35,55 @@ struct PanoramaHDRPreview: View {
                     .font(.caption).foregroundStyle(.secondary).padding(7)
                     .background(.regularMaterial,in:RoundedRectangle(cornerRadius:6)).padding(8).allowsHitTesting(false)
             }
+            .overlay(alignment: .bottomTrailing) {
+                if outputPixels != nil {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HStack {
+                            if let scale = zoom.scale {
+                                Text(LoupeViewState.percentLabel(of: scale)).monospacedDigit()
+                                Button(L10n.tr("53c9aca4b68c")) { zoom = PanoramaPreviewZoom() }
+                            }
+                            Menu {
+                                ForEach(PhotoZoomTarget.presets, id: \.self) { scale in
+                                    Button(LoupeViewState.percentLabel(of: scale)) { choose(scale) }
+                                }
+                                Button(L10n.tr("ipad.c4e69d543a44")) {
+                                    if let scale = DoubleClickZoom.askForCustomTarget() { choose(scale) }
+                                }
+                            } label: {
+                                Label(LoupeViewState.percentLabel(of: PhotoZoomTarget.range.contains(savedTarget) ? savedTarget : 1),
+                                      systemImage: "plus.magnifyingglass")
+                            }
+                            .help(L10n.tr("zoom.doubleClickTarget"))
+                            .accessibilityLabel(L10n.tr("zoom.doubleClickTarget"))
+                        }
+                        if zoom.scale != nil {
+                            Text(L10n.tr("panorama.preview.lowResolution")).foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.caption).controlSize(.small).padding(7)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6)).padding(8)
+                }
+            }
+    }
+
+    private func choose(_ target: Double) {
+        DoubleClickZoom.target = target
+        if zoom.scale != nil { zoom.scale = target }
     }
 }
 
 private struct PanoramaHDRSurface: NSViewRepresentable {
     let image: CGImage
+    let outputPixels: CGSize?
+    @Binding var zoom: PanoramaPreviewZoom
     let onHeadroom: (DisplayHeadroom) -> Void
     func makeNSView(context: Context) -> PanoramaHDRPreviewView { PanoramaHDRPreviewView() }
     func updateNSView(_ view: PanoramaHDRPreviewView, context: Context) {
         view.onHeadroom = onHeadroom
+        view.outputPixels = outputPixels
+        view.zoom = zoom
+        view.onZoom = { zoom = $0 }
         view.setImage(image)
     }
 }
@@ -46,6 +91,10 @@ private struct PanoramaHDRSurface: NSViewRepresentable {
 @MainActor
 final class PanoramaHDRPreviewView: NSView {
     let surface = ThumbnailEDRView(cornerRadius: 0)
+    var outputPixels: CGSize? { didSet { if oldValue != outputPixels { needsLayout = true } } }
+    var zoom = PanoramaPreviewZoom() { didSet { if oldValue != zoom { needsLayout = true } } }
+    var onZoom: ((PanoramaPreviewZoom) -> Void)?
+    private var photoGestures: PhotoCanvasGestures?
     private var source: CGImage?
     private var timer: Timer?
     private var headroom: DisplayHeadroom?
@@ -56,6 +105,16 @@ final class PanoramaHDRPreviewView: NSView {
     init() {
         super.init(frame: .zero)
         addSubview(surface)
+        photoGestures = PhotoCanvasGestures(view: self, onPinch: { [weak self] factor, point in
+            guard let self, let pixels = interactivePixels else { return }
+            let scale = zoom.scale ?? zoom.fit(pixels, in: bounds.size, backing: backing)
+            applyScale(scale * factor, at: point)
+        }, onDoubleTap: { [weak self] point in self?.toggleZoom(at: point) })
+        let drag = NSPanGestureRecognizer(target: self, action: #selector(dragged(_:)))
+        drag.delaysPrimaryMouseButtonEvents = false
+        drag.allowedTouchTypes = .direct
+        if #available(macOS 27.0, *) { drag.maximumNumberOfTouches = 1 }
+        addGestureRecognizer(drag)
         preferencesObserver = NotificationCenter.default.addObserver(
             forName: .photonsPreferencesDidChange, object: nil, queue: .main) { [weak self] _ in
                 self?.updateHeadroom()
@@ -66,7 +125,59 @@ final class PanoramaHDRPreviewView: NSView {
         timer?.invalidate()
         if let preferencesObserver { NotificationCenter.default.removeObserver(preferencesObserver) }
     }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var isFlipped: Bool { true }
+    private var backing: CGFloat { window?.backingScaleFactor ?? 1 }
+    private var interactivePixels: CGSize? {
+        guard let size = outputPixels, size.width > 0, size.height > 0,
+              bounds.width > 0, bounds.height > 0 else { return nil }
+        return size
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard outputPixels != nil, super.hitTest(point) != nil else { return nil }
+        return self
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { outputPixels != nil }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount > 0 && event.clickCount.isMultiple(of: 2) {
+            toggleZoom(at: convert(event.locationInWindow, from: nil))
+        }
+    }
+
+    func toggleZoom(at point: CGPoint) {
+        if zoom.scale == nil { applyScale(DoubleClickZoom.target, at: point) }
+        else { zoom = PanoramaPreviewZoom(); onZoom?(zoom) }
+    }
+
+    func applyScale(_ scale: CGFloat, at point: CGPoint) {
+        guard let pixels = interactivePixels else { return }
+        zoom.magnify(to: scale, at: point, pixels: pixels, in: bounds.size, backing: backing)
+        onZoom?(zoom)
+    }
+
+    @objc private func dragged(_ drag: NSPanGestureRecognizer) {
+        let delta = drag.translation(in: self)
+        drag.setTranslation(.zero, in: self)
+        pan(by: delta)
+    }
+
+    private func pan(by delta: CGPoint) {
+        guard let pixels = interactivePixels, zoom.scale != nil else { return }
+        zoom.pan(by: delta, pixels: pixels, in: bounds.size, backing: backing)
+        onZoom?(zoom)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard zoom.scale != nil else { super.scrollWheel(with: event); return }
+        pan(by: CGPoint(x: event.scrollingDeltaX, y: event.scrollingDeltaY))
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsLayout = true
+    }
 
     func setImage(_ image: CGImage) {
         guard source !== image else { return }
@@ -91,10 +202,16 @@ final class PanoramaHDRPreviewView: NSView {
     override func layout() {
         super.layout()
         guard let source else { return }
-        let scale = min(bounds.width / CGFloat(source.width), bounds.height / CGFloat(source.height))
-        let size = CGSize(width: CGFloat(source.width) * scale, height: CGFloat(source.height) * scale)
-        surface.frame = CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
-                               width: size.width, height: size.height)
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let pixels = interactivePixels ?? CGSize(width: source.width, height: source.height)
+        let frame = zoom.imageFrame(pixels, in: bounds.size, backing: backing)
+        let visible = frame.intersection(bounds)
+        surface.frame = visible
+        // Sample the visible region of the preview. Its Metal drawable stays within the window,
+        // even when 800% would make the complete stitch hundreds of thousands of pixels wide.
+        surface.sourceWindow = zoom.scale == nil ? nil : CGRect(
+            x: (visible.minX - frame.minX) / frame.width, y: (visible.minY - frame.minY) / frame.height,
+            width: visible.width / frame.width, height: visible.height / frame.height)
         surface.needsLayout = true
     }
 
@@ -122,7 +239,11 @@ final class PanoramaHDRPreviewView: NSView {
 }
 
 /// Bounded preview sampling: changing exposure or proof mode updates the same plot as the editor.
-private struct PanoramaPreviewHistogram:NSViewRepresentable {
+private struct PanoramaPreviewHistogram:NSViewRepresentable, Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.image === rhs.image && lhs.hdr == rhs.hdr && lhs.headroom == rhs.headroom
+    }
+
     let image:CGImage
     let hdr:Bool
     let headroom:Double

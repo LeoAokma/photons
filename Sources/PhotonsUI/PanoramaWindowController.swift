@@ -399,8 +399,9 @@ private struct PanoramaWorkspace: View {
                 VStack(spacing:0) {
                     ZStack {
                         Color(nsColor:.underPageBackgroundColor)
-                        if let cg = model.plan?.preview {
-                            PanoramaHDRPreview(image:cg).padding(18)
+                        if let plan = model.plan, let cg = plan.preview {
+                            PanoramaHDRPreview(image: cg, outputPixels: plan.outputSize)
+                                .padding(18)
                         } else {
                             VStack(spacing:14) {
                                 Image(systemName:"panorama").font(.system(size:52)).foregroundStyle(.secondary)

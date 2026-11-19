@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import SwiftUI
 import CoreImage
 import ImageIO
 import Metal
@@ -71,6 +72,80 @@ final class PanoramaHDRTests: XCTestCase {
         }
         XCTAssertEqual(Float(Float16(bitPattern: pixels[0])), 1.645, accuracy: 0.02)
         XCTAssertGreaterThan(Float(Float16(bitPattern: pixels[(63 * 96) * 4 + 2])), 0.4)
+    }
+
+    func testPanoramaPinchAnchorsFinalOutputPixelsAndBoundsPanning() throws {
+        let pixels = CGSize(width: 24_000, height: 16_000)
+        let view = CGSize(width: 900, height: 600)
+        let anchor = CGPoint(x: 200, y: 150)
+        var zoom = PanoramaPreviewZoom()
+        XCTAssertEqual(zoom.fit(pixels, in: view, backing: 2), 0.075, accuracy: 1e-12)
+        zoom.magnify(to: 0.078, at: anchor, pixels: pixels, in: view, backing: 2)
+        let frame = zoom.imageFrame(pixels, in: view, backing: 2)
+        XCTAssertEqual((anchor.x - frame.minX) / frame.width, anchor.x / view.width, accuracy: 1e-12)
+        XCTAssertEqual((anchor.y - frame.minY) / frame.height, anchor.y / view.height, accuracy: 1e-12)
+        zoom.magnify(to: 1.375, at: anchor, pixels: pixels, in: view, backing: 2)
+        XCTAssertEqual(zoom.imageFrame(pixels, in: view, backing: 2).width, 16_500)
+        zoom.pan(by: CGPoint(x: -100_000, y: 100_000), pixels: pixels, in: view, backing: 2)
+        let edge = zoom.imageFrame(pixels, in: view, backing: 2)
+        XCTAssertEqual(edge.maxX, view.width, accuracy: 1e-8)
+        XCTAssertEqual(edge.minY, 0, accuracy: 1e-8)
+    }
+
+    @MainActor
+    func testZoomedPanoramaSamplesTheCachedHDRPreviewAndDoubleClickRestoresFit() throws {
+        guard ThumbnailMetalRenderer.shared.isAvailable else { throw XCTSkip("no Metal device") }
+        let cg = try XCTUnwrap(CIContext().createCGImage(scene(), from: scene().extent, format: .RGBAh, colorSpace: space))
+        let view = PanoramaHDRPreviewView()
+        view.frame = CGRect(x: 0, y: 0, width: 300, height: 200)
+        view.outputPixels = CGSize(width: 24_000, height: 16_000)
+        view.setImage(cg)
+        let anchor = CGPoint(x: 150, y: 40)
+        view.applyScale(1.375, at: anchor)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(view.zoom.scale, 1.375)
+        XCTAssertEqual(view.surface.frame, view.bounds)
+        let rect = try XCTUnwrap(view.surface.sourceWindow)
+        XCTAssertLessThan(rect.maxY, 0.5)
+        let texture = try XCTUnwrap(view.surface.renderForTesting(width: 2, height: 2))
+        var rgba = [Float16](repeating: 0, count: 16)
+        rgba.withUnsafeMutableBytes {
+            texture.getBytes($0.baseAddress!, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0)
+        }
+        XCTAssertEqual(Float(rgba[0]), 1.645, accuracy: 0.02)
+        XCTAssertEqual(Float(rgba[8]), 1.645, accuracy: 0.02)
+        view.toggleZoom(at: anchor)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertNil(view.zoom.scale)
+        XCTAssertNil(view.surface.sourceWindow)
+        view.toggleZoom(at: anchor)
+        XCTAssertEqual(view.zoom.scale, DoubleClickZoom.target)
+    }
+
+    @MainActor
+    func testHostedPanoramaReceivesWindowDoubleClicks() throws {
+        let cg = try XCTUnwrap(CIContext().createCGImage(scene(), from: scene().extent))
+        let window = TestWindows.make(contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
+                                      styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let host = NSHostingView(rootView: PanoramaHDRPreview(image: cg, outputPixels: CGSize(width: 12000, height: 8000)))
+        window.contentView = host
+        TestWindows.show(window)
+        host.layoutSubtreeIfNeeded()
+        CropUITestSupport.pump(0.05)
+        func canvas(in parent: NSView) -> PanoramaHDRPreviewView? {
+            if let canvas = parent as? PanoramaHDRPreviewView { return canvas }
+            return parent.subviews.lazy.compactMap { canvas(in: $0) }.first
+        }
+        let view = try XCTUnwrap(canvas(in: host))
+        let point = view.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+        for count in 1...4 {
+            window.sendEvent(CropUITestSupport.mouse(.leftMouseDown, at: point, in: window, clickCount: count))
+            window.sendEvent(CropUITestSupport.mouse(.leftMouseUp, at: point, in: window, clickCount: count))
+            CropUITestSupport.pump(0.02)
+            XCTAssertEqual(view.zoom.scale, (2...3).contains(count) ? CGFloat(DoubleClickZoom.target) : nil)
+        }
     }
 
     func testResizingHDRKeepsUnclippedLinearCompanion() throws {

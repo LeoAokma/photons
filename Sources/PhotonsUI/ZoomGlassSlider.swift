@@ -559,7 +559,13 @@ public final class ZoomGlassSlider: NSView {
     }
 
     public override func magnify(with event: NSEvent) {
-        if let target = wheelTarget { target.magnify(with: event) } else { super.magnify(with: event) }
+        if let canvas = wheelTarget as? LoupeCanvasView {
+            canvas.magnifyFromSlider(with: event)
+        } else if let target = wheelTarget {
+            target.magnify(with: event)
+        } else {
+            super.magnify(with: event)
+        }
     }
 }
 

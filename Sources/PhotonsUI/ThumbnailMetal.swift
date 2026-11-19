@@ -97,6 +97,7 @@ final class ThumbnailMetalSurface {
     private var texture: MTLTexture?
     private var textureSource: CGImage?
     private var image: CGImage?
+    var sourceWindow: CGRect? { didSet { if sourceWindow != oldValue { drawIfPossible() } } }
     private var lastDrawableSize = CGSize.zero
     private var drawGeneration = 0
     private var pendingUnhide: (() -> Void)?
@@ -176,7 +177,7 @@ final class ThumbnailMetalSurface {
                                         znear: 0, zfar: 1))
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(texture, index: 0)
-        var params = aspectFillWindow(image: image,
+        var params = samplingWindow(image: image,
                                       drawable: CGSize(width: width, height: height))
         encoder.setFragmentBytes(&params, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
@@ -223,7 +224,7 @@ final class ThumbnailMetalSurface {
         }
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(texture, index: 0)
-        var params = aspectFillWindow(image: image, drawable: layer.drawableSize)
+        var params = samplingWindow(image: image, drawable: layer.drawableSize)
         encoder.setFragmentBytes(&params, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
@@ -248,7 +249,10 @@ final class ThumbnailMetalSurface {
 
     /// The same crop `contentsGravity = .resizeAspectFill` used to apply: the image is already
     /// decoded at the cell's pixel size, so this is normally the unit rectangle.
-    private func aspectFillWindow(image: CGImage, drawable: CGSize) -> SIMD4<Float> {
+    private func samplingWindow(image: CGImage, drawable: CGSize) -> SIMD4<Float> {
+        if let rect = sourceWindow {
+            return SIMD4(Float(rect.minX), Float(rect.minY), Float(rect.width), Float(rect.height))
+        }
         let imageAspect = Double(image.width) / Double(max(1, image.height))
         let viewAspect = Double(drawable.width) / Double(max(1, drawable.height))
         var uv = SIMD4<Float>(0, 0, 1, 1)
