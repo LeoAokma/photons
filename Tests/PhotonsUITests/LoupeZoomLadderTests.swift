@@ -38,8 +38,8 @@ final class LoupeZoomLadderTests: XCTestCase {
         XCTAssertEqual(Array(LoupeViewState.zoomStops.dropFirst()),
                        [0.25, 1.0 / 3.0, 0.5, 2.0 / 3.0, 1, 2, 3, 4].sorted(),
                        "the eight original stops keep their order")
-        XCTAssertEqual(LoupeViewState.minimumZoom, 0.125)
-        XCTAssertEqual(LoupeViewState.maximumZoom, 4)
+        XCTAssertEqual(LoupeViewState.minimumZoom, 0.1)
+        XCTAssertEqual(LoupeViewState.maximumZoom, 8)
         // 1:1 is still a value in the table, and still the same value (§A0's base).
         XCTAssertEqual(LoupeViewState.zoomStops[5], 1)
     }
@@ -108,14 +108,14 @@ final class LoupeZoomLadderTests: XCTestCase {
 
     /// The clamp is the same story at the ends: 0.125 … 4, never outside.
     func testZoomIsClampedToAnEighthThroughFour() {
-        XCTAssertEqual(LoupeViewState.clampZoom(0.01), 0.125)
+        XCTAssertEqual(LoupeViewState.clampZoom(0.01), 0.1)
         XCTAssertEqual(LoupeViewState.clampZoom(0.125), 0.125)
         XCTAssertEqual(LoupeViewState.clampZoom(0.25), 0.25)
         XCTAssertEqual(LoupeViewState.clampZoom(1.0 / 3.0), 1.0 / 3.0)
         XCTAssertEqual(LoupeViewState.clampZoom(4), 4)
-        XCTAssertEqual(LoupeViewState.clampZoom(9), 4)
-        XCTAssertEqual(LoupeViewState.clampZoom(.nan), 0.125)
-        XCTAssertEqual(LoupeViewState.clampZoom(.infinity), 4)
+        XCTAssertEqual(LoupeViewState.clampZoom(9), 8)
+        XCTAssertEqual(LoupeViewState.clampZoom(.nan), 0.1)
+        XCTAssertEqual(LoupeViewState.clampZoom(.infinity), 8)
     }
 
     // MARK: 3. labels

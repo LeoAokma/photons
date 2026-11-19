@@ -28,16 +28,8 @@ public struct LoupeViewState: Equatable, Sendable {
         case actual
     }
 
-    /// The stop ceiling. Above 4:1 a 60 MP frame is being shown through sixteen canvas pixels per
-    /// source pixel — there is no information left to reveal, only interpolation to admire.
-    public static let maximumZoom: Double = 4
-    /// The stop floor: an eighth of 1:1. Below it there is nothing left to see (the whole frame is
-    /// `mode == .fit`, a separate entry, not a number), and 12.5 % is the widest *numeric* stop.
-    ///
-    /// 2026-10-27 用户要求加 12.5% 档 — the floor moved with the ladder, from 25 % to 12.5 %; the
-    /// 1:1 base (§A0: one source pixel per device pixel) is untouched, because a stop is only ever a
-    /// ratio against that same base.
-    public static let minimumZoom: Double = 0.125
+    public static let maximumZoom = PhotoZoomTarget.range.upperBound
+    public static let minimumZoom = PhotoZoomTarget.range.lowerBound
 
     /// The nine numeric stops, ascending — the whole ladder, and the only values a stop change can
     /// name.
@@ -81,11 +73,7 @@ public struct LoupeViewState: Equatable, Sendable {
 
     public var isActualSize: Bool { mode == .actual }
 
-    /// 0.125…4, the interactive domain (fit is a separate mode, not a zoom value).
-    ///
-    /// The ends clamp rather than wrap, and a non-finite value goes to the end it names: `+∞` is
-    /// "past 400 %" → 400 %, `−∞` → 12.5 %, `NaN` → the floor (a number that is not a number cannot
-    /// ask for magnification).
+    /// Bounds an explicit zoom. Fit may be smaller on large images.
     public static func clampZoom(_ zoom: Double) -> Double {
         if zoom.isNaN { return minimumZoom }
         return min(max(zoom, minimumZoom), maximumZoom)

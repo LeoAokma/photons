@@ -23,8 +23,7 @@ enum MobileZoomGeometry {
         min(viewport.width / max(1,pixels.width),viewport.height / max(1,pixels.height)) * screenScale
     }
     static func validPercent(_ text: String) -> Double? {
-        guard let value = Double(text), value.isFinite, (10...800).contains(value) else { return nil }
-        return value / 100
+        PhotoZoomTarget.scale(percent: text)
     }
 }
 
@@ -60,7 +59,7 @@ struct MobilePhotoCanvas: View {
                         .monospacedDigit().accessibilityIdentifier("zoom-state")
                     Button(L10n.tr("53c9aca4b68c")) { command = .init(scale: nil) }.accessibilityIdentifier("zoom-fit")
                     Menu {
-                        ForEach([0.5,1,2],id: \.self) { value in
+                        ForEach(PhotoZoomTarget.presets,id: \.self) { value in
                             Button(String(format: "%.0f%%",value * 100)) { choose(value) }
                         }
                         Button(L10n.tr("ipad.c4e69d543a44")) { customText = String(format: "%.0f",zoomTarget * 100); custom = true }

@@ -1825,5 +1825,7 @@
   "panorama.changeMode": "切换接片模式…",
   "panorama.deghost.label": "防伪影（Deghost）",
   "panorama.deghost.hint": "减少运动物体造成的重影。云层或高光出现硬边时可关闭。开关会更新当前接片，不重新配准或移除 LCC。",
-  "panorama.deghost.updating": "正在更新防伪影"
+  "panorama.deghost.updating": "正在更新防伪影",
+  "zoom.doubleClickTarget": "双击放大倍率",
+  "zoom.customValue": "自定义（{0}）…"
 }

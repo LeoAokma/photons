@@ -2055,20 +2055,24 @@ public final class LoupeController: NSViewController, HeadroomSource {
         }
     }
 
-    /// Double-click: into 1:1 **at the clicked pixel**, or back to fit. (Both halves of the brief:
-    /// a double-click is the "show me this at full size" gesture, and its inverse when already there.)
-    ///
-    /// The clicked pixel is the anchor, not the destination: it stays under the pointer, and the
-    /// picture grows around it. Putting it in the middle of the viewport is the thing this used to do
-    /// and exactly what the user reported as "光标位置动了".
+    /// Double-click alternates between Fit and the preferred scale around the clicked pixel.
     public func handleDoubleClick(at point: CGPoint) {
-        guard framing() != nil else { return }
+        if viewState.isActualSize { zoomToFit() }
+        else { zoomToTarget(DoubleClickZoom.target, at: point) }
+    }
+
+    func chooseDoubleClickZoom(_ scale: Double) {
+        guard PhotoZoomTarget.range.contains(scale) else { return }
+        DoubleClickZoom.target = scale
+        if viewState.isActualSize { zoomToTarget(scale, at: canvasCentrePoint()) }
+    }
+
+    private func zoomToTarget(_ scale: Double, at anchor: CGPoint) {
+        let projection = framing()
+        guard let camera = camera(projection: projection) else { return }
         pinchZoom = nil
-        if viewState.isActualSize {
-            zoomToFit()
-            return
-        }
-        zoomToActualSize(aroundView: point)
+        setViewState(camera.zoomedExactly(to: scale, aroundView: anchor),
+                     anchor: .pointer(viewPoint: anchor, backingScale: backingScale), projection: projection)
     }
 
     /// Drag pan. `delta` is the delta the event reported, in **window** points — the space

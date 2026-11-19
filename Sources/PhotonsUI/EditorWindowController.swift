@@ -350,6 +350,15 @@ public final class EditorWindowController: NSWindowController {
         rootView.loupeController.zoom(to: LoupeController.menuZoomStops[item.tag])
     }
 
+    @objc func chooseDoubleClickZoom(_ item: NSMenuItem) {
+        guard PhotoZoomTarget.presets.indices.contains(item.tag) else { return }
+        rootView.loupeController.chooseDoubleClickZoom(PhotoZoomTarget.presets[item.tag])
+    }
+
+    @objc func customDoubleClickZoom(_ sender: Any?) {
+        if let scale = DoubleClickZoom.askForCustomTarget() { rootView.loupeController.chooseDoubleClickZoom(scale) }
+    }
+
     /// 放大 (⌘=, and ⌘+ on a US keyboard lands here too). Disabled outside the loupe.
     @objc public func zoomInAction(_ sender: Any?) { rootView.loupeController.zoomIn() }
 
@@ -638,6 +647,16 @@ public final class EditorWindowController: NSWindowController {
                 let count = session.metadataTargetIDs.count
                 item.title = count > 1 ? L10n.tr("2e9c71ed45ca" , String(describing: (count))) : L10n.tr("d24cf4a6b02b")
             }
+            return true
+        case #selector(chooseDoubleClickZoom(_:)):
+            guard PhotoZoomTarget.presets.indices.contains(item.tag) else { return false }
+            item.state = DoubleClickZoom.target == PhotoZoomTarget.presets[item.tag] ? .on : .off
+            return true
+        case #selector(customDoubleClickZoom(_:)):
+            let target = DoubleClickZoom.target
+            let custom = !PhotoZoomTarget.presets.contains(target)
+            item.state = custom ? .on : .off
+            item.title = custom ? L10n.tr("zoom.customValue", LoupeViewState.percentLabel(of: target)) : L10n.tr("ipad.c4e69d543a44")
             return true
         case #selector(zoomFitAction(_:)):
             // Ticked when the camera shows the whole frame — the state Z returns to.

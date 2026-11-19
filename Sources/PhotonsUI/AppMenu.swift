@@ -234,6 +234,16 @@ public enum MainMenu {
                          action: #selector(EditorWindowController.zoomFitAction(_:)),
                          keyEquivalent: "0")
         }
+        let targetTitle = L10n.tr("zoom.doubleClickTarget")
+        let targets = NSMenu(title: targetTitle)
+        for (index, scale) in PhotoZoomTarget.presets.enumerated() {
+            let item = targets.addItem(withTitle: LoupeViewState.percentLabel(of: scale),
+                                       action: #selector(EditorWindowController.chooseDoubleClickZoom(_:)), keyEquivalent: "")
+            item.tag = index
+        }
+        targets.addItem(withTitle: L10n.tr("ipad.c4e69d543a44"),
+                        action: #selector(EditorWindowController.customDoubleClickZoom(_:)), keyEquivalent: "")
+        view.addItem(withTitle: targetTitle, action: nil, keyEquivalent: "").submenu = targets
         for (index, stop) in LoupeController.menuZoomStops.enumerated() {
             let item = view.addItem(withTitle: LoupeViewState.percentLabel(of: stop),
                                     action: #selector(EditorWindowController.zoomStopAction(_:)),

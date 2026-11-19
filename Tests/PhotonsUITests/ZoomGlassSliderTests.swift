@@ -389,7 +389,7 @@ final class ZoomGlassSliderTests: XCTestCase {
         }
         edge.pointerUp()
         XCTAssertEqual(out.last, 0.125, "the far left of the track is 12.5 %, never 适应")
-        XCTAssertEqual(edge.zoomStop, LoupeViewState.minimumZoom)
+        XCTAssertEqual(edge.zoomStop, LoupeViewState.zoomStops.first)
         XCTAssertEqual(edge.labelText, "12.5%")
 
         // …and past the right end: 400 %.

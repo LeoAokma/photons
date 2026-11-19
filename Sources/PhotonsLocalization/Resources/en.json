@@ -1825,5 +1825,7 @@
   "panorama.changeMode": "Change panorama mode…",
   "panorama.deghost.label": "Deghost",
   "panorama.deghost.hint": "Reduce ghosts from moving subjects. Turn off if clouds or highlights develop hard boundaries. Changes update the current stitch without realigning or removing LCC.",
-  "panorama.deghost.updating": "Updating deghosting"
+  "panorama.deghost.updating": "Updating deghosting",
+  "zoom.doubleClickTarget": "Double-click magnification",
+  "zoom.customValue": "Custom ({0})…"
 }

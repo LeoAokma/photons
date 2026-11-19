@@ -3442,7 +3442,7 @@ public final class UISmokeRunner {
               && pillFitState.0 == "适应" && pillFitState.2 == 0
               && pillOffLadder.isEmpty
               && pillStops == LoupeController.zoomStops
-              && pillFinal == LoupeViewState.maximumZoom
+              && pillFinal == LoupeViewState.zoomStops.last
               && chipFit.0 && chipFit.1 == "适应" && chipFit.2
               && chipFit.3 >= pill.geometry.thumbLeftLimit - 0.01
               && chipFit.3 <= pill.geometry.thumbRightLimit + 0.01)

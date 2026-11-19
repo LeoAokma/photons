@@ -62,6 +62,30 @@ final class ZoomTwelveHalfPercentTests: XCTestCase {
         return (loupe, session)
     }
 
+    func testDoubleClickUsesPersistentExactTargetAndReturnsToFit() throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: DoubleClickZoom.key)
+        defer { defaults.set(previous, forKey: DoubleClickZoom.key) }
+        defaults.removeObject(forKey: DoubleClickZoom.key)
+        let (loupe, _) = try makeLoupe()
+        let point = CGPoint(x: 180, y: 120)
+        XCTAssertEqual(DoubleClickZoom.target, 1)
+        XCTAssertNil(PhotoZoomTarget.scale(percent: "NaN"))
+        XCTAssertNil(PhotoZoomTarget.scale(percent: "801"))
+        XCTAssertEqual(PhotoZoomTarget.scale(percent: "137,5", locale: Locale(identifier: "fr_FR")), 1.375)
+        for scale in [0.1, 1.375, 8] {
+            loupe.chooseDoubleClickZoom(scale)
+            XCTAssertEqual(loupe.viewState.mode, .fit)
+            loupe.handleDoubleClick(at: point)
+            XCTAssertEqual(loupe.viewState.zoom, scale, accuracy: 1e-12)
+            XCTAssertEqual(loupe.zoomSlider.labelText, LoupeViewState.percentLabel(of: scale))
+            loupe.chooseDoubleClickZoom(0.5)
+            XCTAssertEqual(loupe.viewState.zoom, 0.5)
+            loupe.handleDoubleClick(at: point)
+            XCTAssertEqual(loupe.viewState.mode, .fit)
+        }
+    }
+
     // MARK: - 1. the table, printed
 
     func testTheLadderIsNineStopsWithTwelveAndAHalfFirst() throws {
@@ -79,7 +103,7 @@ final class ZoomTwelveHalfPercentTests: XCTestCase {
         XCTAssertEqual(stops, stops.sorted(), "still ascending")
         // `fit` is still not a rung.
         XCTAssertFalse(labels.contains("适应"))
-        XCTAssertEqual(LoupeViewState.minimumZoom, 0.125, "the interactive floor moved with the ladder")
+        XCTAssertEqual(LoupeViewState.zoomStops.first, 0.125, "the first named stop is an eighth")
     }
 
     // MARK: - 2. ⌘= / ⌘−

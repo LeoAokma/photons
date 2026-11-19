@@ -56,7 +56,12 @@ public struct LoupeCamera: Equatable, Sendable {
 
     /// 1:1 around a canvas point, capped by the crop workspace's ceiling.
     public func actualSize(aroundView point: CGPoint) -> LoupeViewState {
-        let target = min(1, cropLimit ?? Double.infinity)
+        return zoomedExactly(to: 1, aroundView: point)
+    }
+
+    /// Apply a chosen numeric scale around the pointer, including values between menu stops.
+    public func zoomedExactly(to scale: Double, aroundView point: CGPoint) -> LoupeViewState {
+        let target = min(scale, cropLimit ?? Double.infinity)
         return viewport.framing.zooming(state, to: target, aroundView: point,
                                         backingScale: backingScale)
     }
@@ -64,9 +69,7 @@ public struct LoupeCamera: Equatable, Sendable {
     /// A named stop, snapped **down** onto the ladder before the ceiling is applied.
     public func zoomed(to stop: Double, aroundView point: CGPoint) -> LoupeViewState {
         let ladder = LoupeViewState.snappedLevel(for: LoupeViewState.clampZoom(stop)).zoom
-        let target = min(ladder, cropLimit ?? Double.infinity)
-        return viewport.framing.zooming(state, to: target, aroundView: point,
-                                        backingScale: backingScale)
+        return zoomedExactly(to: ladder, aroundView: point)
     }
 
     /// The next rung up, or 400 % from anything between; from `fit`, 1:1 first.
@@ -74,8 +77,7 @@ public struct LoupeCamera: Equatable, Sendable {
         guard state.isActualSize else { return inward ? .actualSize : .none }
         let current = LoupeViewState.clampZoom(state.zoom)
         if inward {
-            let next = LoupeViewState.zoomStops.first { $0 > current + 1e-9 }
-                ?? LoupeViewState.maximumZoom
+            guard let next = LoupeViewState.zoomStops.first(where: { $0 > current + 1e-9 }) else { return .none }
             return .stop(next)
         }
         guard let next = LoupeViewState.zoomStops.last(where: { $0 < current - 1e-9 }) else {
