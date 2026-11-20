@@ -21,7 +21,7 @@ Mac 在机位已修改时暂缓刷新接缝。iPad 在已经配准且仅修改�
 - iPad Pro 13 英寸模拟器上，`testDeghostToggleReusesRegisteredGeometry`、`testCancelledRealignmentDoesNotAcceptAnOldPlan` 和 `testGridInspectorSelectionAndPanoramaWorkflow` 通过。最后一项从触控入口检查防伪影开关、曝光匹配、更新接缝、撤销机位、裁切和导出。该测试也发现了分组覆盖子控件无障碍标识的问题，本提交已修正并复测。
 - 英文、简体中文资源均能解析，`git diff --check` 通过。iPad 使用生成的测试图，未在实体设备上运行。
 
-## PANO-SHARED-02 · 机身朝向选择器
+## PANO-SHARED-02 · 机身朝向选择器 · `00aad7e`
 
 `PhotonsWorkspaceUI/PanoramaBodyOrientationPicker.swift` 统一绘制旋转后的移轴范围和零位十字，处理选择绑定、读屏标签和选中状态。Mac 显示与机身行程对应的不同朝向，使用单行标签；iPad 保留四个可点选的方向，角度和放置说明分行显示。宿主继续处理键盘、鼠标、触控、滚动和导航。以后修改朝向示意图只需改这个共享组件。
 
