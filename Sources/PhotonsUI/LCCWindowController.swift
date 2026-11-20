@@ -3,6 +3,7 @@ import AppKit
 import PhotonsFileAccess
 import SwiftUI
 import PhotonsPanorama
+import PhotonsWorkspaceUI
 
 @MainActor
 public final class LCCWindowController: NSWindowController, NSWindowDelegate {

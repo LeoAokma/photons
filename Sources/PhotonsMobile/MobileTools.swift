@@ -4,6 +4,7 @@ import PhotonsLocalization
 import UniformTypeIdentifiers
 import PhotonsCore
 import PhotonsPanorama
+import PhotonsWorkspaceUI
 
 struct MobileLCCSheet: View {
     @Environment(\.locale) private var interfaceLocale
@@ -38,7 +39,7 @@ struct MobileLCCSheet: View {
                         ForEach(model.profiles) { Text($0.name).tag(Optional($0.id)) }
                     }
                     Picker(L10n.tr("ee38b80c37d9"), selection: $bodyType) { ForEach(PanoramaCameraBody.allCases) { Text($0.name).tag($0) } }
-                    MobileBodyOrientationPicker(cameraBody: bodyType, selection: $orientation)
+                    PanoramaBodyOrientationPicker(cameraBody: bodyType, selection: $orientation)
                     if panorama != nil {
                         Toggle(L10n.tr("ipad.2c1f86e2653a"), isOn: $cropToLCC).toggleStyle(MobileCheckboxStyle()).accessibilityIdentifier("lcc-crop-coverage")
                     }

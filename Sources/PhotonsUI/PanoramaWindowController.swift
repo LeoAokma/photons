@@ -4,6 +4,7 @@ import PhotonsFileAccess
 import SwiftUI
 import UniformTypeIdentifiers
 import PhotonsPanorama
+import PhotonsWorkspaceUI
 
 @MainActor
 public final class PanoramaWindowController: NSWindowController, NSWindowDelegate {

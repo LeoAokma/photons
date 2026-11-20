@@ -2,6 +2,7 @@ import XCTest
 import AppKit
 import SwiftUI
 import PhotonsPanorama
+import PhotonsWorkspaceUI
 @testable import PhotonsUI
 
 @MainActor

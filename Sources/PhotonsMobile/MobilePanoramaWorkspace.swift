@@ -4,6 +4,7 @@ import SwiftUI
 import PhotonsLocalization
 import PhotonsCore
 import PhotonsPanorama
+import PhotonsWorkspaceUI
 
 /// Physical right/up coordinates are independent of screen size and source pixel dimensions.
 enum MobileShiftGeometry {
@@ -223,7 +224,7 @@ struct MobilePanoramaWorkspace: View {
                 VStack(alignment: .leading,spacing: 12) {
                 Text(L10n.tr("ipad.1d5e10d2cfa8")).font(.headline)
                 Picker(L10n.tr("ee38b80c37d9"), selection: $bodyType) { ForEach(PanoramaCameraBody.allCases) { Text($0.name).tag($0) } }
-                MobileBodyOrientationPicker(cameraBody: bodyType, selection: $orientation)
+                PanoramaBodyOrientationPicker(cameraBody: bodyType, selection: $orientation)
                 Text(bodyType.travel(at: orientation).summary).font(.caption).foregroundStyle(.secondary)
                 }.id("panorama.camera").mobileGuideTarget("panorama.camera",in: guide)
                 VStack(alignment: .leading,spacing: 12) {
