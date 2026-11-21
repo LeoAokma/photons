@@ -59,21 +59,22 @@ final class BackgroundTasks:ObservableObject {
         let task=BackgroundTask(PanoramaManifest.defaultName(plan.sources.map(\.url)))
         tasks.append(task);changed()
         // Leases belong to the submitted task, not to its former window.
-        let leases=(plan.sources.map(\.url)+plan.sources.map {$0.url.deletingLastPathComponent()}+[directory]).map {FileAccessStore.shared.access(to:$0)}
+        let sources = plan.sources.map(\.url)
+        let root = PanoramaJob.outputRoot(for: sources, destination: preset.destination, chosenDirectory: directory)
+        let accessURLs = Set(sources + sources.map { $0.deletingLastPathComponent() } + [root])
+        let leases = accessURLs.map { FileAccessStore.shared.access(to: $0) }
         let token=task.token
         work.async { [self] in
             defer {withExtendedLifetime(leases) {}}
             let folder=FileManager.default.temporaryDirectory.appendingPathComponent("photons-job-\(task.id.uuidString)",isDirectory:true)
-            let sourceDirectory=plan.sources.map(\.url).sorted {$0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending}.first?.deletingLastPathComponent()
-            let stagingRoot=preset.destination == .sourceFolder ? (sourceDirectory ?? directory):directory
-            let staging=stagingRoot.appendingPathComponent(".photons-job-\(task.id.uuidString)",isDirectory:true)
+            let staging=root.appendingPathComponent(".photons-job-\(task.id.uuidString)",isDirectory:true)
             defer {try? FileManager.default.removeItem(at:folder);try? FileManager.default.removeItem(at:staging)}
             do {
                 guard !token.isCancelled else {throw CancellationError()}
                 DispatchQueue.main.async {task.state = .running;task.message=L10n.tr("c3bae02b0ab3");self.changed()}
                 try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
                 let bookmarks=try leases.map {try $0.url.bookmarkData(options:[],includingResourceValuesForKeys:nil,relativeTo:nil)}
-                let job=PanoramaJob(snapshot:try PanoramaSnapshot(plan:plan),manifest:manifest,preset:preset,linearDNG:dng,outputDirectory:directory,bookmarks:bookmarks,stagingDirectory:staging)
+                let job=PanoramaJob(snapshot:try PanoramaSnapshot(plan:plan),manifest:manifest,preset:preset,linearDNG:dng,outputDirectory:root,bookmarks:bookmarks,stagingDirectory:staging)
                 let request=folder.appendingPathComponent("request.json")
                 try JSONEncoder().encode(job).write(to:request,options:.atomic)
                 let process=Process(),pipe=Pipe()

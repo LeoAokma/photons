@@ -16,6 +16,13 @@ public struct PanoramaJob: Codable {
     public init(snapshot:PanoramaSnapshot,manifest:PanoramaManifest,preset:ExportPreset,linearDNG:Bool,outputDirectory:URL,bookmarks:[Data],stagingDirectory:URL?=nil) {
         self.snapshot=snapshot;self.manifest=manifest;self.preset=preset;self.linearDNG=linearDNG;self.outputDirectory=outputDirectory;self.bookmarks=bookmarks;self.stagingDirectory=stagingDirectory
     }
+
+    public static func outputRoot(for sources: [URL], destination: ExportDestination, chosenDirectory: URL) -> URL {
+        guard destination == .sourceFolder else { return chosenDirectory }
+        let first = sources.min { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        return first?.deletingLastPathComponent() ?? chosenDirectory
+    }
+
     public func run(progress:@escaping(String,Double?)->Void) throws -> URL? {
         var access:[URL]=[]
         defer {for url in access {url.stopAccessingSecurityScopedResource()}}
@@ -38,9 +45,8 @@ public struct PanoramaJob: Codable {
         progress(L10n.tr("21ce6456ecdb"),0.03)
         let scene=try engine.renderComposite(plan,progress:report)
         var item=ExportItem(id:"panorama",name:PanoramaManifest.defaultName(snapshot.sourceURLs),cameraKey:plan.sources.first?.camera)
-        item.originalDirectory=snapshot.sourceURLs.sorted {$0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending}.first?.deletingLastPathComponent()
         item.panoramaMetadata=try manifest.encoded()
-        let root=preset.destination == .sourceFolder ? (item.originalDirectory ?? outputDirectory):outputDirectory
+        let root = Self.outputRoot(for: snapshot.sourceURLs, destination: preset.destination, chosenDirectory: outputDirectory)
         let subfolder=ExportNaming.subfolder(template:preset.subfolder,item:item)
         let directory=subfolder.isEmpty ? root:root.appendingPathComponent(subfolder,isDirectory:true)
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)

@@ -77,8 +77,8 @@ final class PanoramaExportController {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.directoryURL = model.preset.destination == .sourceFolder
-            ? plan.sources.first?.url.deletingLastPathComponent() : model.outputDirectory
+        panel.directoryURL = PanoramaJob.outputRoot(for: plan.sources.map(\.url), destination: model.preset.destination,
+                                                    chosenDirectory: model.outputDirectory)
         panel.beginSheetModal(for: window) { [weak self] response in
             if response == .OK, let url = panel.url {
                 self?.model.chooseOutputDirectory(url)
@@ -89,8 +89,8 @@ final class PanoramaExportController {
     private func run() {
         do {
             _ = try model.preset.validated()
-            let source=plan.sources.map(\.url).sorted {$0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending}.first
-            let root=model.preset.destination == .sourceFolder ? (source?.deletingLastPathComponent() ?? model.outputDirectory):model.outputDirectory
+            let root = PanoramaJob.outputRoot(for: plan.sources.map(\.url), destination: model.preset.destination,
+                                              chosenDirectory: model.outputDirectory)
             let access=FileAccessStore.shared.access(to:root)
             guard FileManager.default.isWritableFile(atPath:access.url.path) else {
                 throw PanoramaFailure(L10n.tr("e8183b25e9ba"))
