@@ -189,6 +189,24 @@ final class DoubleClickParity415Tests: XCTestCase {
 
     // MARK: - ⑤ the same chain through a real NSEvent and `mouseDown`
 
+    func testWindowDispatchTogglesOnEveryPairInARapidClickSeries() throws {
+        let loupe = try makeLoupe()
+        loupe.reducesMotion = false
+        let window = try XCTUnwrap(windows.last)
+        let point = loupe.canvasView.convert(Self.centre, to: nil)
+
+        // The first six presses share a click chain. AppKit starts the next pair at one.
+        let presses: [(count: Int, zoomed: Bool)] = [
+            (1, false), (2, true), (3, true), (4, false),
+            (5, false), (6, true), (1, true), (2, false)
+        ]
+        for (count, zoomed) in presses {
+            window.sendEvent(CropUITestSupport.mouse(.leftMouseDown, at: point, in: window, clickCount: count))
+            window.sendEvent(CropUITestSupport.mouse(.leftMouseUp, at: point, in: window, clickCount: count))
+            XCTAssertEqual(loupe.viewState.isActualSize, zoomed, "clickCount = \(count)")
+        }
+    }
+
     /// Drives the shipped dispatch (`LoupeCanvasView.mouseDown` → `gestureOwner` → the verb) with
     /// real `NSEvent`s carrying clickCount 1…4. This is the routing half of the parity law; the
     /// window server's own chain reset cannot be synthesised (see the file header).
