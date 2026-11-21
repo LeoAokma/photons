@@ -2,10 +2,18 @@ import XCTest
 import GRDB
 import PhotonsCatalog
 import PhotonsCore
+import PhotonsLocalization
 @testable import PhotonsUI
 
 @MainActor
 final class HistoryPreferencesTests:XCTestCase {
+    func testHistoryDepthLabelsDisplayEachSelectableCount() {
+        for depth in ApplicationPreferences.historyDepthOptions {
+            let expected = L10n.language == "zh-Hans" ? "\(depth) 条记录" : "\(depth) records"
+            XCTAssertEqual(L10n.tr("settings.historyCount", String(depth)), expected)
+        }
+    }
+
     func testPreferenceChoicesPersistAndInvalidValuesFallBack() throws {
         let name="history-preferences-\(UUID())",defaults=try XCTUnwrap(UserDefaults(suiteName:name))
         defer {defaults.removePersistentDomain(forName:name)}

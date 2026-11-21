@@ -1315,7 +1315,7 @@
   "previews.failed": "共 {1} 张，{0} 张预览生成失败",
   "panorama.geometry": "验证几何匹配 {0} ↔ {1}",
   "settings.historyDepth": "历史记录长度",
-  "settings.historyCount": "%@ 条记录",
+  "settings.historyCount": "{0} 条记录",
   "settings.historyHint": "每张照片显示及可撤销的历史记录数，默认 20 条。导入状态单独保留，可在历史记录面板中还原。",
   "history.resetImport": "还原到导入状态",
   "history.resetImportHint": "恢复这张照片导入时的全部编辑参数；此操作可撤销。",

@@ -1315,7 +1315,7 @@
   "previews.failed": "Preview generation failed for {0} of {1} photos",
   "panorama.geometry": "Validate geometry {0} ↔ {1}",
   "settings.historyDepth": "History length",
-  "settings.historyCount": "%@ records",
+  "settings.historyCount": "{0} records",
   "settings.historyHint": "Number of visible, undoable states per photo; 20 by default. The import state remains available from the History panel.",
   "history.resetImport": "Restore Import State",
   "history.resetImportHint": "Restore every editing parameter to its import state. This action can be undone.",
