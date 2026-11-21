@@ -38,33 +38,53 @@ struct PanoramaHDRPreview: View {
             .overlay(alignment: .bottomTrailing) {
                 if outputPixels != nil {
                     VStack(alignment: .trailing, spacing: 4) {
-                        HStack {
-                            if let scale = zoom.scale {
-                                Text(LoupeViewState.percentLabel(of: scale)).monospacedDigit()
-                                Button(L10n.tr("53c9aca4b68c")) { zoom = PanoramaPreviewZoom() }
-                            }
-                            Menu {
-                                ForEach(PhotoZoomTarget.presets, id: \.self) { scale in
-                                    Button(LoupeViewState.percentLabel(of: scale)) { choose(scale) }
-                                }
-                                Button(L10n.tr("ipad.c4e69d543a44")) {
-                                    if let scale = DoubleClickZoom.askForCustomTarget() { choose(scale) }
-                                }
-                            } label: {
-                                Label(LoupeViewState.percentLabel(of: PhotoZoomTarget.range.contains(savedTarget) ? savedTarget : 1),
-                                      systemImage: "plus.magnifyingglass")
-                            }
-                            .help(L10n.tr("zoom.doubleClickTarget"))
-                            .accessibilityLabel(L10n.tr("zoom.doubleClickTarget"))
-                        }
                         if zoom.scale != nil {
-                            Text(L10n.tr("panorama.preview.lowResolution")).foregroundStyle(.secondary)
+                            Text(L10n.tr("panorama.preview.lowResolution"))
+                                .font(.caption2).padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(.ultraThinMaterial, in: Capsule()).allowsHitTesting(false)
                         }
+                        zoomControls
                     }
-                    .font(.caption).controlSize(.small).padding(7)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6)).padding(8)
+                    .fixedSize().padding(8)
                 }
             }
+    }
+
+    private var zoomControls: some View {
+        let fit = L10n.tr("53c9aca4b68c")
+        let target = LoupeViewState.percentLabel(of: PhotoZoomTarget.range.contains(savedTarget) ? savedTarget : 1)
+        return HStack(spacing: 8) {
+            if let scale = zoom.scale {
+                Text(LoupeViewState.percentLabel(of: scale)).monospacedDigit()
+                Button(fit) { zoom = PanoramaPreviewZoom() }
+                    .buttonStyle(.link)
+                    .accessibilityIdentifier("panorama.zoom.fit")
+            } else {
+                Text(fit)
+            }
+            Divider().frame(height: 12)
+            Menu {
+                ForEach(PhotoZoomTarget.presets, id: \.self) { scale in
+                    Button(LoupeViewState.percentLabel(of: scale)) { choose(scale) }
+                }
+                Button(L10n.tr("ipad.c4e69d543a44")) {
+                    if let scale = DoubleClickZoom.askForCustomTarget() { choose(scale) }
+                }
+            } label: {
+                Label(target, systemImage: "plus.magnifyingglass").monospacedDigit()
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
+            .help(L10n.tr("zoom.doubleClickTarget"))
+            .accessibilityLabel(L10n.tr("zoom.doubleClickTarget"))
+            .accessibilityValue(target)
+            .accessibilityIdentifier("panorama.zoom.target")
+        }
+        .font(.caption.weight(.medium)).controlSize(.small)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay { Capsule().strokeBorder(.primary.opacity(0.16), lineWidth: 0.5).allowsHitTesting(false) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("panorama.zoom.controls")
     }
 
     private func choose(_ target: Double) {

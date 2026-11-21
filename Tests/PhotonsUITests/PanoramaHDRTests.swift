@@ -148,6 +148,50 @@ final class PanoramaHDRTests: XCTestCase {
     }
 
     @MainActor
+    func testZoomControlsStayCompactInTheCornerAfterResizingAndZooming() throws {
+        let image = try XCTUnwrap(CIContext().createCGImage(scene(), from: scene().extent))
+        let window = TestWindows.make(contentRect: CGRect(x: 0, y: 0, width: 600, height: 400),
+                                      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        defer { window.close() }
+        let host = NSHostingView(rootView: PanoramaHDRPreview(image: image, outputPixels: CGSize(width: 12000, height: 8000)))
+        window.contentView = host
+        TestWindows.show(window)
+
+        func find<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
+            if let match = view as? T { return match }
+            return view.subviews.lazy.compactMap { find(type, in: $0) }.first
+        }
+        func menuFrame() throws -> CGRect {
+            let menu = try XCTUnwrap(find(NSPopUpButton.self, in: host))
+            return menu.convert(menu.bounds, to: nil)
+        }
+        var compactWidth: CGFloat?
+        for width: CGFloat in [600, 1000] {
+            window.setContentSize(CGSize(width: width, height: 400))
+            host.layoutSubtreeIfNeeded()
+            CropUITestSupport.pump(0.05)
+            let canvas = try XCTUnwrap(find(PanoramaHDRPreviewView.self, in: host))
+            let rect = try menuFrame()
+            XCTAssertLessThan(rect.width, 120)
+            XCTAssertGreaterThan(rect.width, 35)
+            XCTAssertTrue((8...30).contains(width - rect.maxX))
+            XCTAssertTrue((8...25).contains(rect.minY))
+            if let compactWidth { XCTAssertEqual(rect.width, compactWidth, accuracy: 1) }
+            compactWidth = rect.width
+            // The strip formerly intercepted clicks across the bottom of the photo.
+            let point = CGPoint(x: width / 2, y: rect.midY)
+            for count in [2, 4] {
+                XCTAssertTrue(host.hitTest(host.convert(point, from: nil)) === canvas)
+                window.sendEvent(CropUITestSupport.mouse(.leftMouseDown, at: point, in: window, clickCount: count))
+                window.sendEvent(CropUITestSupport.mouse(.leftMouseUp, at: point, in: window, clickCount: count))
+                CropUITestSupport.pump(0.05)
+                XCTAssertEqual(canvas.zoom.scale, count == 2 ? CGFloat(DoubleClickZoom.target) : nil)
+                XCTAssertEqual(try menuFrame().maxX, rect.maxX, accuracy: 1)
+            }
+        }
+    }
+
+    @MainActor
     func testHostedPanoramaReceivesWindowDoubleClicks() throws {
         let cg = try XCTUnwrap(CIContext().createCGImage(scene(), from: scene().extent))
         let window = TestWindows.make(contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
