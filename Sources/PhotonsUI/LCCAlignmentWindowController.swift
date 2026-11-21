@@ -161,17 +161,34 @@ private struct LCCAlignmentView:View {
                             context.stroke(cross,with:.color(.cyan),lineWidth:2)
                         }.frame(width:width,height:height).clipped()
                     }
-                    if model.working {VStack {Spacer();HStack {Spacer();ProgressView(L10n.tr("0cd2df38d720")).padding(10).background(.regularMaterial,in:RoundedRectangle(cornerRadius:8))}}.padding(10)}
                 }.contentShape(Rectangle()).gesture(DragGesture().onChanged { value in
                     if dragOrigin==nil {dragOrigin=CGPoint(x:model.x,y:model.y)}
                     model.x=dragOrigin!.x+value.translation.width/scale*model.sensor.width/model.base.sources[0].size.width
                     model.y=dragOrigin!.y-value.translation.height/scale*model.sensor.height/model.base.sources[0].size.height
                 }.onEnded {_ in dragOrigin=nil})
+                .overlay(alignment: .top) {
+                    if model.working {
+                        ProgressView(L10n.tr("0cd2df38d720")).controlSize(.small).padding(8)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                            .padding(10).allowsHitTesting(false)
+                    }
+                }
+                .overlay {
+                    // On very narrow or shallow panoramas the controls can use the letterbox.
+                    let controlWidth = min(geometry.size.width, max(width, 400))
+                    let controlHeight = min(geometry.size.height, max(height, 250))
+                    Color.clear.allowsHitTesting(false)
+                        .frame(width: controlWidth, height: controlHeight)
+                        .overlay(alignment: .bottom) {
+                            positionControl(.horizontal, length: min(230, controlWidth * 0.31))
+                                .padding(.bottom, 10)
+                        }
+                        .overlay(alignment: .trailing) {
+                            positionControl(.vertical, length: min(160, controlHeight * 0.32))
+                                .padding(.trailing, 10)
+                        }
+                }
             }
-            VStack(spacing:8) {
-                HStack {Text(L10n.tr("98ab61de3e93")).frame(width:60);AdjustmentSlider(value:$model.x,in:-100...100);TextField("mm",value:$model.x,format:.number.precision(.fractionLength(2))).frame(width:85);Text("mm")}
-                HStack {Text(L10n.tr("5e9009b476b1")).frame(width:60);AdjustmentSlider(value:$model.y,in:-100...100);TextField("mm",value:$model.y,format:.number.precision(.fractionLength(2))).frame(width:85);Text("mm")}
-            }.textFieldStyle(.roundedBorder)
             HStack {
                 VStack(alignment:.leading,spacing:4) {
                     Text(model.preview.lccState?.warning ?? L10n.tr("7aeb211ca8bb")).font(.callout).foregroundStyle(model.preview.lccState?.complete == true ? Color.secondary:Color.orange)
@@ -183,5 +200,25 @@ private struct LCCAlignmentView:View {
             }
         }.padding(18)
         .alert(L10n.tr("5836a4495ac1"),isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})) {Button(L10n.tr("f867f3417859")) {model.error=nil}} message: {Text(model.error ?? "")}
+    }
+
+    private func positionControl(_ axis: Axis, length: CGFloat) -> some View {
+        let horizontal = axis == .horizontal
+        let value = horizontal ? $model.x : $model.y
+        let name = L10n.tr(horizontal ? "98ab61de3e93" : "5e9009b476b1")
+        let layout = horizontal ? AnyLayout(HStackLayout(spacing: 8)) : AnyLayout(VStackLayout(spacing: 6))
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return layout {
+            Text(verbatim: horizontal ? "X (mm)" : "Y (mm)").font(.caption.weight(.medium))
+            AdjustmentSlider(value: value, in: -100...100, axis: axis)
+                .frame(width: horizontal ? length : nil, height: horizontal ? nil : length)
+                .accessibilityLabel(name)
+            TextField(name, value: value, format: .number.precision(.fractionLength(2)))
+                .labelsHidden().textFieldStyle(.roundedBorder).controlSize(.small)
+                .multilineTextAlignment(.center).monospacedDigit().frame(width: 56)
+        }
+        .padding(.horizontal, horizontal ? 10 : 7).padding(.vertical, horizontal ? 6 : 8)
+        .background(.ultraThinMaterial, in: shape)
+        .overlay { shape.strokeBorder(.primary.opacity(0.16)).allowsHitTesting(false) }
     }
 }

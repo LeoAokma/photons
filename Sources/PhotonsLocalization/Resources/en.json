@@ -425,7 +425,7 @@
   "3a579ac6686e": "Align LCC Manually",
   "d235647a10ab": "Enter a valid alignment position.",
   "88cedbfbe0da": "Automatic Position · Preview",
-  "5bb313b69db4": "Drag the calibration coverage in the preview or adjust the position below. The preview updates the correction live.",
+  "5bb313b69db4": "Drag the calibration coverage in the preview, use the X and Y sliders, or enter a position in millimetres.",
   "e33473ee7de8": "Show calibration boundary",
   "468d97cef9ed": "Applying alignment…",
   "0cd2df38d720": "Updating preview…",

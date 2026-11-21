@@ -183,6 +183,57 @@ final class PanoramaManualLCCTests: XCTestCase {
         }
     }
 
+    func testPositionSlidersOverlayTheirPhotoEdgesAndTrackRightAndUp() async throws {
+        let model = try workspace()
+        defer { model.cancel() }
+        model.alignLCC()
+        try await wait { !model.busy }
+        let controller = try XCTUnwrap(model.alignmentWindow)
+        let window = try XCTUnwrap(controller.window)
+        let host = try XCTUnwrap(window.contentView)
+        func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
+        func drag(_ slider: NSSlider, by delta: CGVector) throws {
+            let start = slider.convert(CGPoint(x: slider.bounds.midX, y: slider.bounds.midY), to: nil)
+            let end = CGPoint(x: start.x + delta.dx, y: start.y + delta.dy)
+            let parent = try XCTUnwrap(host.superview)
+            XCTAssertTrue(host.hitTest(parent.convert(start, from: nil)) === slider)
+            let cell = try XCTUnwrap(slider.cell as? NSSliderCell)
+            let from = slider.convert(start, from: nil), to = slider.convert(end, from: nil)
+            XCTAssertTrue(cell.startTracking(at: from, in: slider))
+            _ = cell.continueTracking(last: from, current: to, in: slider)
+            cell.stopTracking(last: from, current: to, in: slider, mouseIsUp: true)
+            slider.sendAction(slider.action, to: slider.target)
+        }
+        for size in [CGSize(width: 900, height: 650), CGSize(width: 1120, height: 800)] {
+            window.setContentSize(size)
+            CropUITestSupport.pump(0.05)
+            host.layoutSubtreeIfNeeded()
+            let views = descendants(host), sliders = views.compactMap { $0 as? NSSlider }
+            XCTAssertEqual(sliders.count, 2)
+            let x = try XCTUnwrap(sliders.first { !$0.isVertical })
+            let y = try XCTUnwrap(sliders.first { $0.isVertical })
+            let photo = try XCTUnwrap(views.compactMap { $0 as? PanoramaHDRPreviewView }.first)
+            let image = photo.convert(photo.bounds, to: nil)
+            let h = x.convert(x.bounds, to: nil), v = y.convert(y.bounds, to: nil)
+            XCTAssertTrue(image.contains(h) && image.contains(v))
+            XCTAssertGreaterThan(h.width, h.height * 4)
+            XCTAssertGreaterThan(v.height, v.width * 4)
+            XCTAssertEqual(h.midY, image.minY, accuracy: 40)
+            XCTAssertEqual(v.midX, image.maxX, accuracy: 60)
+            XCTAssertFalse(h.intersects(v))
+        }
+        let sliders = descendants(host).compactMap { $0 as? NSSlider }
+        try drag(XCTUnwrap(sliders.first { !$0.isVertical }), by: CGVector(dx: 35, dy: 0))
+        let manualX = controller.model.x
+        XCTAssertGreaterThan(manualX, 0)
+        XCTAssertEqual(controller.model.y, 0)
+        try drag(XCTUnwrap(sliders.first { $0.isVertical }), by: CGVector(dx: 0, dy: 30))
+        XCTAssertGreaterThan(controller.model.y, 0)
+        XCTAssertEqual(controller.model.x, manualX)
+        try await wait { !controller.model.working }
+        XCTAssertTrue(controller.model.canApply)
+    }
+
     func testHolyoke496Through501ManualPlacementReplacesAutomaticPixels() async throws {
         guard let path = ProcessInfo.processInfo.environment["PHOTONS_HOLYOKE_DIR"] else {
             throw XCTSkip("Set PHOTONS_HOLYOKE_DIR to the external Holyoke RAW fixtures")
