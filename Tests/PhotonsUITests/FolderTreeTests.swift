@@ -82,6 +82,45 @@ final class FolderTreeTests: XCTestCase {
 
     // MARK: row metrics
 
+    func testRestoringTheFolderTreeKeepsCountsInsideTheInitialSidebar() throws {
+        _ = NSApplication.shared
+        let openingSession = CatalogSession()
+        let pane = BrowserPaneController(session: openingSession)
+        let size = NSSize(width: 221.5, height: 744)
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = pane.view
+        defer { window.orderOut(nil) }
+        window.displayIfNeeded()
+
+        // Startup lays out an empty browser before the reopened library populates its outline.
+        try openingSession.open(library)
+        pane.refresh()
+        let outline = pane.sourceTreeForTesting
+        let clip = try XCTUnwrap(outline.enclosingScrollView?.contentView)
+        func checkVisibleCounts(file: StaticString = #filePath, line: UInt = #line) throws {
+            window.displayIfNeeded()
+            XCTAssertEqual(try XCTUnwrap(outline.outlineTableColumn).width, clip.bounds.width,
+                           accuracy: 0.5, file: file, line: line)
+            var countLabels = 0
+            for row in 0..<outline.numberOfRows {
+                let cell = try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true))
+                cell.layoutSubtreeIfNeeded()
+                for field in cell.subviews.compactMap({ $0 as? NSTextField }) where Int(field.stringValue) != nil {
+                    let rect = clip.convert(field.bounds, from: field)
+                    XCTAssertLessThanOrEqual(rect.maxX, clip.bounds.maxX, file: file, line: line)
+                    countLabels += 1
+                }
+            }
+            XCTAssertGreaterThanOrEqual(countLabels, 2, file: file, line: line)
+        }
+        try checkVisibleCounts()
+        outline.expandItem(nil, expandChildren: true)
+        try checkVisibleCounts()
+        window.setContentSize(NSSize(width: WorkspaceLayout.browserWidthMin, height: size.height))
+        try checkVisibleCounts()
+    }
+
     /// The folder name sits **inside** its row and centred in it, in a 28 pt row (021 A).
     ///
     /// `NSOutlineView.style = .sourceList` applies the system's compact row metrics; with the row

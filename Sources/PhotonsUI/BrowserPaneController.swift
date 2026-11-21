@@ -329,6 +329,9 @@ public final class BrowserPaneController: NSViewController, NSTableViewDataSourc
         // 14 pt per level: a `day2/sub` row still leaves ~150 pt for its name at the 212 pt default
         // width, and the indent reads as a hierarchy rather than as a stray gap.
         sourcesOutline.indentationPerLevel = 14
+        // Keep disclosure indentation inside the sidebar's single, viewport-sized column.
+        // Otherwise restoring expanded folders widens the column and clips the trailing counts.
+        sourcesOutline.autoresizesOutlineColumn = false
         sourcesOutline.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("SourceRowCell"))
         col.resizingMask = .autoresizingMask
