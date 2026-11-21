@@ -1,5 +1,7 @@
 import PhotonsLocalization
 import Foundation
+import Darwin
+import os
 import PhotonsCore
 import CoreGraphics
 import CoreText
@@ -77,6 +79,7 @@ public struct BatchExportReport: Sendable {
     /// One entry per request item, in request order.
     public var outcomes: [BatchExportOutcome]
     public var seconds: Double
+    /// Highest worker limit selected during the batch.
     public var requestedConcurrency: Int
     /// What the engine actually reached. Never above `requestedConcurrency`; asserted by a test
     /// because "concurrency 2" is a memory ceiling, not a preference.
@@ -158,12 +161,40 @@ public final class CancellationToken: @unchecked Sendable {
 /// `render` can return any `DisplayImage`.
 public enum BatchExporter {
 
-    public static let defaultConcurrency = 2
-    /// A hard ceiling: two is the design point (memory), and no caller gets to exceed 8 by accident.
+    /// Two simultaneous RAW render graphs are the normal upper bound on a larger Mac.
+    public static var defaultConcurrency: Int {
+        let process = ProcessInfo.processInfo
+        var physicalCores: Int32 = 0
+        var size = MemoryLayout.size(ofValue: physicalCores)
+        let active = process.activeProcessorCount
+        // Intel Hyper-Threading can expose eight logical processors on a four-core Mac.
+        let found = sysctlbyname("hw.physicalcpu", &physicalCores, &size, nil, 0) == 0 && physicalCores > 0
+        return automaticConcurrency(cores: found ? min(active, Int(physicalCores)) : active,
+                                    memory: process.physicalMemory, lowPower: process.isLowPowerModeEnabled,
+                                    thermal: process.thermalState)
+    }
+
+    static func automaticConcurrency(cores: Int, memory: UInt64, lowPower: Bool,
+                                     thermal: ProcessInfo.ThermalState) -> Int {
+        guard cores > 4, memory >= 16 * 1_024 * 1_024 * 1_024,
+              !lowPower, thermal == .nominal || thermal == .fair else { return 1 }
+        return 2
+    }
+
+    /// Callers that explicitly manage their resource budget can request more workers.
     public static let maxConcurrency = 8
 
-    /// Runs to completion. Synchronous on purpose — the CLI is the only caller today and it wants a
-    /// report, not a stream of callbacks.
+    /// A fixed worker count for callers such as the single-item panorama exporter.
+    public static func run(items: [ExportItem], preset: ExportPreset, outputDirectory: URL,
+                           concurrency: Int, cancel: CancellationToken? = nil,
+                           render: @escaping (ExportItem, ExportPreset) throws -> DisplayImage)
+        -> BatchExportReport {
+        run(items: items, preset: preset, outputDirectory: outputDirectory,
+            concurrencyLimit: { concurrency }, cancel: cancel, render: render)
+    }
+
+    /// Recheck the budget between images so a long batch can yield capacity under pressure
+    /// and resume parallel rendering when conditions improve.
     ///
     /// - Parameter render: `(item, preset)` → pixels, rendered at `preset.longEdge` when it is set.
     ///   The engine resamples if the closure ignored the hint (a safety net, not the normal path:
@@ -171,13 +202,13 @@ public enum BatchExporter {
     public static func run(items: [ExportItem],
                            preset: ExportPreset,
                            outputDirectory: URL,
-                           concurrency: Int = defaultConcurrency,
+                           concurrencyLimit: @escaping @Sendable () -> Int = { defaultConcurrency },
                            cancel: CancellationToken? = nil,
                            render: @escaping (ExportItem, ExportPreset) throws -> DisplayImage)
         -> BatchExportReport {
 
         let started = CFAbsoluteTimeGetCurrent()
-        let limit = max(1, min(concurrency, maxConcurrency))
+        let limit = max(1, min(concurrencyLimit(), maxConcurrency))
         guard !items.isEmpty else {
             return BatchExportReport(outcomes: [], seconds: 0, requestedConcurrency: limit,
                                      peakConcurrency: 0)
@@ -190,6 +221,7 @@ public enum BatchExporter {
         queue.name = "photons.batch-export"
         queue.maxConcurrentOperationCount = limit
         queue.qualityOfService = .userInitiated
+        let highestLimit = OSAllocatedUnfairLock(initialState: limit)
 
         for (index, item) in items.enumerated() {
             queue.addOperation {
@@ -202,13 +234,18 @@ public enum BatchExporter {
                                         directory: outputDirectory, allocator: allocator,
                                         cancel: cancel, render: render)
                 collector.leave(outcome)
+                highestLimit.withLock { highest in
+                    let next = max(1, min(concurrencyLimit(), maxConcurrency))
+                    if queue.maxConcurrentOperationCount != next { queue.maxConcurrentOperationCount = next }
+                    highest = max(highest, next)
+                }
             }
         }
         queue.waitUntilAllOperationsAreFinished()
 
         return BatchExportReport(outcomes: collector.outcomes,
                                  seconds: CFAbsoluteTimeGetCurrent() - started,
-                                 requestedConcurrency: limit,
+                                 requestedConcurrency: highestLimit.withLock { $0 },
                                  peakConcurrency: collector.peak)
     }
 

@@ -173,13 +173,11 @@ func cmdExportBatch(_ a: Args) throws {
         return pixels.withLinear(LinearPixels(linear))
     }
 
-    // M5's ceiling is two: the flag exists to *lower* it (serial for debugging), never to raise it.
-    // `BatchExporter` itself accepts up to 8 so a later UI can make a different call.
-    let concurrency = min(max(exportFlag("--concurrency").flatMap(Int.init)
-                             ?? BatchExporter.defaultConcurrency, 1), 2)
+    // An explicit CLI override keeps its historical 1...2 range.
+    let requested = exportFlag("--concurrency").flatMap(Int.init).map { min(max($0, 1), 2) }
     let t0 = CFAbsoluteTimeGetCurrent()
     let report = BatchExporter.run(items: items, preset: preset, outputDirectory: outDir,
-                                   concurrency: concurrency, render: renderer)
+                                   concurrencyLimit: { requested ?? BatchExporter.defaultConcurrency }, render: renderer)
     let wall = CFAbsoluteTimeGetCurrent() - t0
 
     // MARK: report

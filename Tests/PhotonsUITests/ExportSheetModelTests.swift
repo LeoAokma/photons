@@ -52,6 +52,28 @@ final class ExportSheetModelTests: XCTestCase {
 
     // MARK: sections
 
+    func testEconomicalProcessingWritesTheBatchOneImageAtATime() async throws {
+        let defaults = UserDefaults.standard
+        let key = ApplicationPreferences.Key.processing
+        let previous = defaults.object(forKey: key)
+        defer { defaults.set(previous, forKey: key) }
+        defaults.set(ProcessingPolicy.economical.rawValue, forKey: key)
+
+        let sheet = ExportSheetModel(preset: ExportPreset(format: .jpeg, hdrKind: HDRKind.none),
+                                     outputDirectory: scratch, presetStore: ExportPresetStore(directory: scratch),
+                                     draftStore: draftStore)
+        let items = (1...4).map { ExportItem(id: "\($0)", name: "photo-\($0)") }
+        sheet.run(items: items) { _, preset, _ in
+            DisplayImage(width: 8, height: 8, rgba: Array(repeating: 1, count: 8 * 8 * 4),
+                         primaries: preset.colorSpace, bitDepth: 8)
+        }
+        for _ in 0..<100 where sheet.phase == .running { try await Task.sleep(for: .milliseconds(50)) }
+        let report = try XCTUnwrap(sheet.report)
+        XCTAssertEqual(report.written.map(\.id), items.map(\.id))
+        XCTAssertEqual(report.requestedConcurrency, 1)
+        XCTAssertEqual(report.peakConcurrency, 1)
+    }
+
     func testSectionOrderMatchesLightroom() {
         XCTAssertEqual(ExportSheetModel.sectionTitles,
                        ["位置", "文件命名", "文件设置", "图像尺寸", "元数据", "导出"])

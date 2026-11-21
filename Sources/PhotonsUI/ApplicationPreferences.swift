@@ -1,4 +1,5 @@
 import PhotonsLocalization
+import PhotonsExport
 import AppKit
 import Observation
 
@@ -99,11 +100,18 @@ public final class ApplicationPreferences {
 
 /// Nonisolated snapshots for render workers. UserDefaults provides its own synchronization.
 enum ProcessingPreferences {
+    private static var policy: ProcessingPolicy {
+        ProcessingPolicy(rawValue: UserDefaults.standard.string(forKey: "photons.processingPolicy") ?? "") ?? .automatic
+    }
+
+    static var batchExportConcurrency: Int {
+        policy == .economical ? 1 : BatchExporter.defaultConcurrency
+    }
+
     static var hdrPreview: Bool {
         UserDefaults.standard.object(forKey: "photons.hdrPreviewEnabled") as? Bool ?? true
     }
     static var thumbnailConcurrency: Int {
-        let policy = ProcessingPolicy(rawValue: UserDefaults.standard.string(forKey: "photons.processingPolicy") ?? "") ?? .automatic
         let process = ProcessInfo.processInfo
         return policy.thumbnailConcurrency(processors: process.activeProcessorCount,
             memory: process.physicalMemory, lowPower: process.isLowPowerModeEnabled,

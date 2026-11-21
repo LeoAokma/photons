@@ -937,7 +937,7 @@ public final class ExportSheetModel {
             defer { withExtendedLifetime((directoryAccess, sourceAccess)) {} }
             let report = BatchExporter.run(items: items, preset: preset,
                                            outputDirectory: directory,
-                                           concurrency: BatchExporter.defaultConcurrency,
+                                           concurrencyLimit: { ProcessingPreferences.batchExportConcurrency },
                                            cancel: token,
                                            render: render)
             DispatchQueue.main.async { self?.finish(with: report) }

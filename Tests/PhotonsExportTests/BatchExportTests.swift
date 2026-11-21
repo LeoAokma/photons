@@ -2,6 +2,7 @@ import XCTest
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import os
 import PhotonsCore
 @testable import PhotonsExport
 
@@ -280,6 +281,68 @@ final class BatchExportTests: XCTestCase {
     }
 
     // MARK: - 6. concurrency
+
+    func testAutomaticConcurrencyForConstrainedAndLargerDevices() {
+        func limit(_ cores: Int, _ gib: UInt64, lowPower: Bool = false,
+                   thermal: ProcessInfo.ThermalState = .nominal) -> Int {
+            BatchExporter.automaticConcurrency(cores: cores, memory: gib * 1_024 * 1_024 * 1_024,
+                                              lowPower: lowPower, thermal: thermal)
+        }
+        XCTAssertEqual(limit(2, 8), 1)
+        XCTAssertEqual(limit(4, 32), 1)
+        XCTAssertEqual(limit(8, 8), 1)
+        XCTAssertEqual(limit(6, 16, thermal: .fair), 2)
+        XCTAssertEqual(limit(18, 48), 2)
+        XCTAssertEqual(limit(18, 48, lowPower: true), 1)
+        XCTAssertEqual(limit(18, 48, thermal: .serious), 1)
+        XCTAssertEqual(limit(18, 48, thermal: .critical), 1)
+    }
+
+    func testFallingBudgetFinishesCurrentPairThenExportsSingly() {
+        let budget = OSAllocatedUnfairLock(initialState: 2)
+        let initialPair = DispatchGroup()
+        initialPair.enter()
+        initialPair.enter()
+        let lock = NSLock()
+        var started = 0
+        var running = 0
+        let items = (1...8).map { item("pressure-\($0)") }
+
+        let report = BatchExporter.run(items: items, preset: ExportPreset(format: .jpeg),
+                                       outputDirectory: out, concurrencyLimit: { budget.withLock { $0 } }) { _, _ in
+            let index = lock.withLock {
+                started += 1
+                running += 1
+                if started > 2 { XCTAssertEqual(running, 1) }
+                return started
+            }
+            defer { lock.withLock { running -= 1 } }
+            if index <= 2 {
+                budget.withLock { $0 = 1 }
+                initialPair.leave()
+                XCTAssertEqual(initialPair.wait(timeout: .now() + 5), .success)
+            }
+            Thread.sleep(forTimeInterval: 0.02)
+            return self.image(width: 32, height: 24)
+        }
+        XCTAssertEqual(report.requestedConcurrency, 2)
+        XCTAssertEqual(report.peakConcurrency, 2)
+        XCTAssertEqual(report.written.map(\.id), items.map(\.id))
+    }
+
+    func testBatchStartedUnderPressureCanResumeParallelExport() {
+        let budget = OSAllocatedUnfairLock(initialState: 1)
+        let items = (1...6).map { item("recovery-\($0)") }
+        let report = BatchExporter.run(items: items, preset: ExportPreset(format: .jpeg),
+                                       outputDirectory: out, concurrencyLimit: { budget.withLock { $0 } }) { _, _ in
+            budget.withLock { $0 = 2 }
+            Thread.sleep(forTimeInterval: 0.03)
+            return self.image(width: 32, height: 24)
+        }
+        XCTAssertEqual(report.requestedConcurrency, 2)
+        XCTAssertEqual(report.peakConcurrency, 2)
+        XCTAssertEqual(report.written.count, items.count)
+    }
 
     func testConcurrencyNeverExceedsTwo() throws {
         let lock = NSLock()
