@@ -59,6 +59,7 @@ final class PanoramaWindowModel: ObservableObject {
     @Published var profileStatus = L10n.tr("b3ef060e30d6")
     @Published var lccEnabled=false
     @Published var cropToLCC=false
+    @Published private(set) var hasManualLCCPosition = false
     @Published var lccOffset=CGPoint.zero
     @Published var exposureEV=0.0
     @Published var automaticLCCWB=true
@@ -87,7 +88,7 @@ final class PanoramaWindowModel: ObservableObject {
     }
     private func bodyPlacementChanged() {
         alignmentWindow?.close();selectLensProfile();updateHintStatus()
-        if positionReference==nil {estimatedReference=nil;positionExplanation="";lccOffset = .zero}
+        if positionReference == nil && !hasManualLCCPosition { estimatedReference=nil; positionExplanation=""; lccOffset = .zero }
         if lccEnabled {changeLCC(automaticallyLocate:true)}
     }
     var endStopCalibration: LCCEndStopCalibration? {
@@ -108,146 +109,178 @@ final class PanoramaWindowModel: ObservableObject {
         let point = resolvedHints[reference.sourceIndex]?.point ?? reference.positionMM
         return .init(sourceIndex: reference.sourceIndex, positionMM: point)
     }
-    var overviewReference:PanoramaPositionReference? {measuredReference ?? estimatedReference}
+    private func reference(at offset: CGPoint, in plan: PanoramaPlan, sensor: SensorSize) -> PanoramaPositionReference {
+        let r = plan.sensorRect(0)
+        return PanoramaPositionReference(sourceIndex: 0, positionMM: CGPoint(
+            x: (r.midX - plan.size.width / 2) * sensor.width / r.width - offset.x,
+            y: (plan.size.height / 2 - r.midY) * sensor.height / r.height - offset.y))
+    }
+    var overviewReference: PanoramaPositionReference? {
+        if hasManualLCCPosition, let plan, let sensor { return reference(at: lccOffset, in: plan, sensor: sensor) }
+        return measuredReference ?? estimatedReference
+    }
+    func usePositionReference() {
+        guard let reference = measuredReference, let plan, let sensor else { return }
+        hasManualLCCPosition = false
+        estimatedReference = nil
+        positionExplanation = ""
+        lccOffset = reference.profileOffset(in: plan, sensor: sensor)
+        changeLCC()
+    }
     func setShiftHint(index: Int, hint: PanoramaShiftHint, asReference: Bool) {
         alignmentWindow?.close()
         shiftHints[index] = hint == PanoramaShiftHint() ? nil : hint
         if asReference, let point = resolvedHints[index]?.point {
+            hasManualLCCPosition = false
             positionReference = .init(sourceIndex: index, positionMM: point)
         } else if positionReference?.sourceIndex == index {
             positionReference = nil
         }
         estimatedReference = nil
         positionExplanation = ""
-        lccOffset = .zero
+        if !hasManualLCCPosition { lccOffset = .zero }
         updateHintStatus()
         changeLCC(automaticallyLocate: true)
     }
     func clearPosition(_ index: Int) {
         setShiftHint(index: index, hint: .init(), asReference: false)
     }
-    func changeLCC(automaticallyLocate:Bool=false) {
-        guard registrationMode == .shift else {lccEnabled=false;return}
-        guard let current=plan,!busy else {return}
-        guard current.isRegistered else {lccEnabled=false;return}
-        if let reference=measuredReference,let sensor {lccOffset=reference.profileOffset(in:current,sensor:sensor)}
-        if !lccEnabled {
+    func setLCCEnabled(_ enabled: Bool) {
+        lccEnabled = enabled
+        changeLCC(automaticallyLocate: enabled)
+    }
+    func changeLCC(automaticallyLocate: Bool = false) {
+        updateLCC(automaticallyLocate ? .locateAndApply : .apply)
+    }
+    func alignLCC() { updateLCC(.editManually) }
+    func solvePosition() {
+        guard lccEnabled, positionReference == nil else { return }
+        updateLCC(.reviewEstimate)
+    }
+
+    private enum LCCAction { case apply, locateAndApply, editManually, reviewEstimate }
+
+    private func updateLCC(_ action: LCCAction) {
+        guard registrationMode == .shift else { lccEnabled = false; return }
+        guard let current = plan, !busy, alignmentWindow == nil else { return }
+        guard current.isRegistered else { lccEnabled = false; return }
+        if !lccEnabled && action != .editManually {
             guard current.lccState != nil else { return }
-            run {engine,token,_ in try engine.removingLCC(current,cancellation:token)};return
+            run { engine, token, _ in try engine.removingLCC(current, cancellation: token) }
+            return
         }
-        guard let id=UUID(uuidString:selectedLensProfileID),let sensor else {error=L10n.tr("fca735eecc8a");lccEnabled=false;return}
-        let cached=lccSession,profileStore=self.profileStore,offset=lccOffset,crop=cropToLCC,exposure=exposureEV,protect=protectHighlights
-        let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
-        let shouldLocate=automaticallyLocate && positionReference==nil
-        let body=cameraBody,orientation=bodyOrientation,hints=resolvedHints
-        cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
-        busy=true;error=nil;status=shouldLocate ? L10n.tr("6631ec06dcd5"):L10n.tr("299e5b1859ed")
+        guard let id = UUID(uuidString: selectedLensProfileID), let sensor else {
+            error = L10n.tr("fca735eecc8a")
+            if current.lccState == nil { lccEnabled = false }
+            return
+        }
+        let pinned = measuredReference?.profileOffset(in: current, sensor: sensor)
+        let offset = hasManualLCCPosition ? lccOffset : (pinned ?? lccOffset)
+        let shouldLocate = action == .reviewEstimate || (action == .locateAndApply && !hasManualLCCPosition && pinned == nil)
+        let crop = cropToLCC, exposure = exposureEV, protect = protectHighlights
+        let wb: (Float, Float)? = automaticLCCWB ? nil : (Float(lccTemperature), Float(lccTint))
+        let body = cameraBody, orientation = bodyOrientation, hints = resolvedHints
+        let cached = lccSession, store = profileStore, previousStatus = status
+        cancellation.cancel()
+        let token = PanoramaCancellation()
+        cancellation = token
+        busy = true
+        error = nil
+        status = shouldLocate ? L10n.tr("6631ec06dcd5") : L10n.tr("299e5b1859ed")
         queue.async { [weak self] in
-            let engine=PanoramaEngine()
-            let progress:PanoramaEngine.Progress={message in
-                DispatchQueue.main.async {guard (try? token.check()) != nil else {return};self?.status=message}
+            let engine = PanoramaEngine()
+            let progress: PanoramaEngine.Progress = { message in
+                DispatchQueue.main.async {
+                    guard let self, self.busy, self.cancellation === token, (try? token.check()) != nil else { return }
+                    self.status = message
+                }
             }
             do {
-                let session:LCCEditingSession
-                if let cached,cached.profile.id==id,cached.sensor==sensor {session=cached}
-                else {session=try LCCEditingSession(plan:current,profile:profileStore.load(id),sensor:sensor,engine:engine,token:token,progress:progress)}
-                var prepared=current
-                prepared.originalPreviewImages=session.preparedPlan.originalPreviewImages
-                prepared.lccLinearPreviewImages=session.preparedPlan.lccLinearPreviewImages
-                prepared.lccRawPreviews=session.preparedPlan.lccRawPreviews
-                prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
-                var solution:LCCPositionSolution?,locationIssue:String?
+                let session: LCCEditingSession
+                if let cached, cached.profile.id == id, cached.sensor == sensor { session = cached }
+                else {
+                    session = try LCCEditingSession(plan: current, profile: store.load(id), sensor: sensor,
+                                                    engine: engine, token: token, progress: progress)
+                }
+                var prepared = current
+                prepared.originalPreviewImages = session.preparedPlan.originalPreviewImages
+                prepared.lccLinearPreviewImages = session.preparedPlan.lccLinearPreviewImages
+                prepared.lccRawPreviews = session.preparedPlan.lccRawPreviews
+                prepared.lccFlatPreviews = session.preparedPlan.lccFlatPreviews
+                let base = prepared
+                var solution: LCCPositionSolution?, locationIssue: String?
                 if shouldLocate {
-                    do {solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:sensor,cameraBody:body,bodyOrientation:orientation,shiftHints:hints,cancellation:token,progress:progress)}
-                    catch {
+                    do {
+                        solution = try LCCPositionSolver.solve(plan: base, fields: session.fields, sensor: sensor,
+                            cameraBody: body, bodyOrientation: orientation, shiftHints: hints,
+                            cancellation: token, progress: progress)
+                    } catch {
                         try token.check()
-                        // Keep a usable calibrated preview so a partial profile can still be
-                        // aligned manually. Never report a failed estimate as an applied solution.
-                        locationIssue=L10n.tr("2f7403431f62" , String(describing: (error.localizedDescription)))
+                        if action == .reviewEstimate { throw error }
+                        locationIssue = L10n.tr("2f7403431f62", error.localizedDescription)
                     }
                 }
-                let resolvedOffset=solution?.offsetMM ?? offset
-                let result=try engine.applyingLCC(prepared,profile:session.profile,fields:session.fields,offsetMM:resolvedOffset,sensor:sensor,crop:crop,cancellation:token,
-                    exposureEV:exposure,protectHighlights:protect,whiteBalanceOverride:wb,cameraBody:body,bodyOrientation:orientation)
-                try token.check()
+                let resolved = solution?.offsetMM ?? offset, explanation = solution?.explanation
+                let render = { (position: CGPoint, cancellation: PanoramaCancellation) throws -> PanoramaPlan in
+                    try engine.applyingLCC(base, profile: session.profile, fields: session.fields,
+                        offsetMM: position, sensor: sensor, crop: crop, cancellation: cancellation,
+                        exposureEV: exposure, protectHighlights: protect, whiteBalanceOverride: wb,
+                        cameraBody: body, bodyOrientation: orientation)
+                }
+                let editing = action == .editManually || action == .reviewEstimate
+                let result = editing ? nil : try render(resolved, token)
+                let issue = locationIssue
                 DispatchQueue.main.async {
-                    guard let self else {return}
-                    guard (try? token.check()) != nil else {self.busy=false;self.status="";return}
-                    self.lccSession=session;self.plan=result;self.selectLensProfile()
-                    if let solution {
-                        self.lccOffset=solution.offsetMM
-                        let r=result.sensorRect(0)
-                        self.estimatedReference=PanoramaPositionReference(sourceIndex:0,positionMM:CGPoint(
-                            x:(r.midX-result.size.width/2)*sensor.width/r.width-solution.offsetMM.x,
-                            y:(result.size.height/2-r.midY)*sensor.height/r.height-solution.offsetMM.y))
-                        self.positionExplanation=solution.explanation
-                    } else if let locationIssue {self.positionExplanation=locationIssue}
-                    self.busy=false;self.error=locationIssue
-                    self.status=solution != nil ? L10n.tr("a20a67918b78"):L10n.tr("8dc393a05b0d")
+                    guard let self, self.cancellation === token else { return }
+                    self.busy = false
+                    self.status = previousStatus
+                    guard (try? token.check()) != nil else { return }
+                    self.lccSession = session
+                    if let result {
+                        self.lccOffset = resolved
+                        self.plan = result
+                        self.selectLensProfile()
+                        if let explanation {
+                            self.estimatedReference = self.reference(at: resolved, in: result, sensor: sensor)
+                            self.positionExplanation = explanation
+                        } else if let issue { self.positionExplanation = issue }
+                        self.error = issue
+                        self.status = explanation == nil ? L10n.tr("8dc393a05b0d") : L10n.tr("a20a67918b78")
+                    } else {
+                        self.presentAlignment(plan: base, sensor: sensor, offset: resolved,
+                                              explanation: explanation, render: render)
+                    }
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self?.busy=false;self?.status=""
-                    if !(error is CancellationError) {self?.error=error.localizedDescription}
+                    guard let self, self.cancellation === token else { return }
+                    self.busy = false
+                    self.status = previousStatus
+                    if !(error is CancellationError) { self.error = error.localizedDescription }
                 }
             }
         }
     }
 
-    func alignLCC(initialOffset:CGPoint?=nil,explanation:String?=nil,proposal:PanoramaPlan?=nil) {
-        guard let plan,let session=lccSession,lccEnabled,!busy,positionReference==nil else {return}
-        if let alignmentWindow {alignmentWindow.showWindow(nil);return}
-        let base = proposal ?? plan, crop = cropToLCC, exposure = exposureEV, protect = protectHighlights
-        let body = cameraBody, orientation = bodyOrientation
-        let wb: (Float, Float)? = automaticLCCWB ? nil : (Float(lccTemperature), Float(lccTint))
-        let editor = LCCAlignmentModel(plan: base, sensor: session.sensor, offset: initialOffset ?? lccOffset,
-                                       explanation: explanation, renderPreview: { offset, token in
-            try PanoramaEngine().applyingLCC(base, profile: session.profile, fields: session.fields, offsetMM: offset,
-                                             sensor: session.sensor, crop: crop, cancellation: token, exposureEV: exposure,
-                                             protectHighlights: protect, whiteBalanceOverride: wb,
-                                             cameraBody: body, bodyOrientation: orientation)
-        }) { [weak self] result in
-            guard let offset = result.lccState?.offsetMM else { return }
-            guard self?.positionReference==nil else {return}
-            self?.plan=result;self?.lccOffset=offset;self?.status=L10n.tr("b733a8d2ca5b")
-            let r=result.sensorRect(0)
-            self?.estimatedReference=PanoramaPositionReference(sourceIndex:0,positionMM:CGPoint(
-                x:(r.midX-result.size.width/2)*session.sensor.width/r.width-offset.x,
-                y:(result.size.height/2-r.midY)*session.sensor.height/r.height-offset.y))
-            self?.positionExplanation=explanation ?? L10n.tr("1eaba71129bf")
+    private func presentAlignment(plan: PanoramaPlan, sensor: SensorSize, offset: CGPoint, explanation: String?,
+                                  render: @escaping (CGPoint, PanoramaCancellation) throws -> PanoramaPlan) {
+        let editor = LCCAlignmentModel(plan: plan, sensor: sensor, offset: offset, explanation: explanation,
+                                       renderPreview: render) { [weak self] result in
+            guard let self, let state = result.lccState else { return }
+            let acceptedEstimate = explanation != nil && state.offsetMM == offset
+            self.hasManualLCCPosition = !acceptedEstimate
+            self.estimatedReference = acceptedEstimate ? self.reference(at: state.offsetMM, in: result, sensor: sensor) : nil
+            self.positionExplanation = acceptedEstimate ? (explanation ?? "") : ""
+            self.lccOffset = state.offsetMM
+            self.lccEnabled = true
+            self.plan = result
+            self.status = L10n.tr("b733a8d2ca5b")
         }
         let controller = LCCAlignmentWindowController(model: editor)
         controller.onClose = { [weak self] in self?.alignmentWindow = nil }
         alignmentWindow = controller
         if let window, let sheet = controller.window { window.beginSheet(sheet) }
         else { controller.showWindow(nil) }
-    }
-    func solvePosition() {
-        guard let current=plan,let session=lccSession,lccEnabled,!busy,positionReference==nil else {return}
-        cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
-        busy=true;error=nil;status=L10n.tr("3e9efb0180ff")
-        let amount=exposureEV,protect=protectHighlights
-        let body=cameraBody,orientation=bodyOrientation,hints=resolvedHints
-        let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
-        queue.async { [weak self] in
-            do {
-                var prepared=current
-                prepared.lccLinearPreviewImages=session.preparedPlan.lccLinearPreviewImages
-                prepared.lccRawPreviews=session.preparedPlan.lccRawPreviews
-                prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
-                let solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:session.sensor,cameraBody:body,bodyOrientation:orientation,shiftHints:hints,cancellation:token) {message in
-                    DispatchQueue.main.async {self?.status=message}
-                }
-                let proposal=try PanoramaEngine().applyingLCC(prepared,profile:session.profile,fields:session.fields,offsetMM:solution.offsetMM,
-                    sensor:session.sensor,crop:false,cancellation:token,exposureEV:amount,protectHighlights:protect,whiteBalanceOverride:wb,cameraBody:body,bodyOrientation:orientation)
-                try token.check()
-                DispatchQueue.main.async {
-                    guard let self,(try? token.check()) != nil else {return}
-                    self.busy=false;self.status=L10n.tr("a005705ea84c")
-                    self.alignLCC(initialOffset:solution.offsetMM,explanation:solution.explanation,proposal:proposal)
-                }
-            } catch {DispatchQueue.main.async {self?.busy=false;self?.status="";if !(error is CancellationError) {self?.error=error.localizedDescription}}}
-        }
     }
     func refreshLCC() {
         lccCount = LCCPairingStore().records().filter { urls.contains($0.scene) }.count
@@ -300,7 +333,7 @@ final class PanoramaWindowModel: ObservableObject {
     func prepare(mode:PanoramaRegistrationMode?=nil) {
         guard !busy else {return}
         if let mode {registrationMode=mode}
-        choosingMode = false;lccSession=nil;lccEnabled=false;cropToLCC=false;estimatedReference=nil;lccOffset = .zero;alignmentNeedsUpdate=false
+        choosingMode = false;hasManualLCCPosition=false;lccSession=nil;lccEnabled=false;cropToLCC=false;estimatedReference=nil;lccOffset = .zero;alignmentNeedsUpdate=false
         alignmentWindow?.close();editingPosition=nil
         let mode = registrationMode, hints = registrationMode == .shift ? registrationHints : [:]
         appliedRegistrationHints = hints
@@ -368,7 +401,7 @@ final class PanoramaWindowModel: ObservableObject {
         if plan.registrationMode == .perspective {return PanoramaManifest(plan:plan)}
         let profile=lensProfiles.first {$0.id.uuidString==selectedLensProfileID}
         return PanoramaManifest(plan:plan,profileID:profile?.id,profileName:profile?.name,
-            offsetMM:sensor.flatMap { sensor in measuredReference?.profileOffset(in:plan,sensor:sensor) } ?? (estimatedReference != nil ? lccOffset : nil),
+            offsetMM:hasManualLCCPosition ? lccOffset : (sensor.flatMap { measuredReference?.profileOffset(in:plan,sensor:$0) } ?? (estimatedReference != nil ? lccOffset : nil)),
             sensor:sensor,bodyOrientation:bodyOrientation,cameraBody:cameraBody)
     }
     func stitch() {
@@ -550,16 +583,24 @@ private struct PanoramaWorkspace: View {
             } else { Text(L10n.tr("0edf8c27def3")).font(.caption).foregroundStyle(.orange) }
             Divider()
             Text(L10n.tr("7702014ae81a")).font(.headline)
-            Text(model.positionReference == nil ? (model.plan?.optical.explanation ?? L10n.tr("9f661eaa4c1a")) : L10n.tr("93fa020baa18")).font(.caption).foregroundStyle(.secondary)
-            if model.positionReference == nil,let plan = model.plan, let center = plan.optical.center, let sensor = model.sensor {
-                Text(L10n.tr("73281fd9d6f5" , String(format: "%.1f", (center.x-plan.origins[0].x-plan.sources[0].size.width/2)*sensor.width/plan.sources[0].size.width), String(format: "%.1f", (center.y-plan.origins[0].y-plan.sources[0].size.height/2)*sensor.height/plan.sources[0].size.height)))
-                    .font(.caption)
-            }
-            if model.positionReference != nil, let reference=model.overviewReference,let plan=model.plan {
-                Text(L10n.tr("a6805c058eaa" , String(describing: (plan.sources[reference.sourceIndex].url.lastPathComponent)), String(format: "%+.1f", reference.positionMM.x), String(format: "%+.1f", reference.positionMM.y))).font(.caption)
-                Button(L10n.tr("47966d105fad")) {model.positionReference=nil;model.estimatedReference=nil;model.lccOffset = .zero;model.changeLCC(automaticallyLocate:true)}
-            } else if model.estimatedReference != nil {
-                Text(model.positionExplanation).font(.caption).foregroundStyle(.secondary)
+            if model.hasManualLCCPosition {
+                Text(L10n.tr("panorama.lcc.manualPosition", String(format: "%+.2f", model.lccOffset.x),
+                             String(format: "%+.2f", model.lccOffset.y))).font(.caption)
+                if model.positionReference != nil {
+                    Button(L10n.tr("panorama.lcc.useReference")) { model.usePositionReference() }
+                }
+            } else {
+                Text(model.positionReference == nil ? (model.plan?.optical.explanation ?? L10n.tr("9f661eaa4c1a")) : L10n.tr("93fa020baa18")).font(.caption).foregroundStyle(.secondary)
+                if model.positionReference == nil,let plan = model.plan, let center = plan.optical.center, let sensor = model.sensor {
+                    Text(L10n.tr("73281fd9d6f5" , String(format: "%.1f", (center.x-plan.origins[0].x-plan.sources[0].size.width/2)*sensor.width/plan.sources[0].size.width), String(format: "%.1f", (center.y-plan.origins[0].y-plan.sources[0].size.height/2)*sensor.height/plan.sources[0].size.height)))
+                        .font(.caption)
+                }
+                if model.positionReference != nil, let reference=model.overviewReference,let plan=model.plan {
+                    Text(L10n.tr("a6805c058eaa" , String(describing: (plan.sources[reference.sourceIndex].url.lastPathComponent)), String(format: "%+.1f", reference.positionMM.x), String(format: "%+.1f", reference.positionMM.y))).font(.caption)
+                    Button(L10n.tr("47966d105fad")) {model.positionReference=nil;model.estimatedReference=nil;model.lccOffset = .zero;model.changeLCC(automaticallyLocate:true)}
+                } else if model.estimatedReference != nil {
+                    Text(model.positionExplanation).font(.caption).foregroundStyle(.secondary)
+                }
             }
             Picker(L10n.tr("185ffacaf4ad"),selection:$model.selectedLensProfileID) {
                 Text(L10n.tr("d03dcdd057a2")).tag("")
@@ -578,9 +619,11 @@ private struct PanoramaWorkspace: View {
                 }
             }
             Button(L10n.tr("23615da9ada4")) {model.manageLCC(showProfiles:true)}
-            Toggle(L10n.tr("945ac5c3da15"),isOn:$model.lccEnabled).toggleStyle(.checkbox)
+            Toggle(L10n.tr("945ac5c3da15"),isOn: Binding(get: { model.lccEnabled }, set: model.setLCCEnabled)).toggleStyle(.checkbox)
                 .disabled(model.plan?.isRegistered != true)
-                .onChange(of:model.lccEnabled) {_,enabled in model.changeLCC(automaticallyLocate:enabled)}
+            Button(L10n.tr("693a0e217822")) { model.alignLCC() }
+                .disabled(model.plan?.isRegistered != true || model.sensor == nil || model.selectedLensProfileID.isEmpty)
+                .accessibilityIdentifier("panorama.lcc.manual")
             if model.lccEnabled {
                 if let warning=model.plan?.lccState?.warning {
                     Text(warning).font(.caption).foregroundStyle(.orange)
@@ -591,7 +634,6 @@ private struct PanoramaWorkspace: View {
                     Toggle(L10n.tr("61635e357c96"),isOn:$model.cropToLCC).toggleStyle(.checkbox)
                         .onChange(of:model.cropToLCC) {_,_ in model.changeLCC()}
                 }
-                Button(L10n.tr("693a0e217822")) {model.alignLCC()}.disabled(model.positionReference != nil)
                 Button(L10n.tr("45d14f0c4f3d")) {model.solvePosition()}.disabled(model.positionReference != nil)
                 Text(L10n.tr("3b0da2de91ba")).font(.caption)
                 Toggle(L10n.tr("fa9bce35de33"),isOn:$model.automaticLCCWB).toggleStyle(.checkbox)
@@ -609,7 +651,7 @@ private struct PanoramaWorkspace: View {
                     }.textFieldStyle(.roundedBorder)
                     Button(L10n.tr("7d5e9c09c086")) {model.changeLCC()}
                 }
-                Text(model.positionReference == nil ? L10n.tr("571a6cd6f748") : L10n.tr("531e654e1a1e")).font(.caption).foregroundStyle(.secondary)
+                Text(model.hasManualLCCPosition ? L10n.tr("panorama.lcc.manualActive") : L10n.tr(model.positionReference == nil ? "571a6cd6f748" : "531e654e1a1e")).font(.caption).foregroundStyle(.secondary)
             }
     }
 }

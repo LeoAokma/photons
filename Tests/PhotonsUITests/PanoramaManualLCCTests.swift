@@ -66,6 +66,69 @@ final class PanoramaManualLCCTests: XCTestCase {
         return model
     }
 
+    func testManualAlignmentFromDisabledCanOverrideAndRestoreMeasuredReference() async throws {
+        let model = try workspace()
+        let parent = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 750),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        model.window = parent
+        defer { model.cancel(); parent.close() }
+        let hint = PanoramaShiftHint(x: .millimeters(3), y: .millimeters(-1))
+        model.setShiftHint(index: 0, hint: hint, asReference: true)
+        let original = try XCTUnwrap(model.plan?.preview)
+        let reference = try XCTUnwrap(model.positionReference)
+        let measured = reference.profileOffset(in: try XCTUnwrap(model.plan), sensor: try XCTUnwrap(model.sensor))
+
+        model.alignLCC()
+        try await wait { !model.busy }
+        let first = try XCTUnwrap(model.alignmentWindow)
+        XCTAssertTrue(first.window?.sheetParent === parent)
+        XCTAssertFalse(model.lccEnabled)
+        XCTAssertEqual(CGPoint(x: first.model.x, y: first.model.y), measured)
+        first.model.x = 6
+        first.close()
+        XCTAssertNil(model.alignmentWindow)
+        XCTAssertFalse(model.lccEnabled)
+        XCTAssertTrue(model.plan?.preview === original)
+
+        model.alignLCC()
+        try await wait { !model.busy }
+        let editor = try XCTUnwrap(model.alignmentWindow?.model)
+        let manual = CGPoint(x: 5, y: 2)
+        editor.x = manual.x
+        editor.y = manual.y
+        try await wait { !editor.working }
+        editor.apply()
+        XCTAssertTrue(model.lccEnabled)
+        XCTAssertTrue(model.hasManualLCCPosition)
+        XCTAssertEqual(model.shiftHints[0], hint)
+        XCTAssertEqual(model.positionReference, reference)
+        let plan = try XCTUnwrap(model.plan)
+        XCTAssertTrue(plan.preview === editor.preview.preview)
+        XCTAssertEqual(model.overviewReference?.profileOffset(in: plan, sensor: try XCTUnwrap(model.sensor)), manual)
+        XCTAssertEqual(model.exportManifest(for: plan).profileOffsetMM, manual)
+        XCTAssertTrue(model.canStitch)
+
+        model.cropToLCC = true
+        model.changeLCC()
+        try await wait { !model.busy }
+        XCTAssertEqual(model.plan?.lccState?.offsetMM, manual)
+        XCTAssertNotNil(model.plan?.lccState?.cropRect)
+        model.setLCCEnabled(false)
+        try await wait { !model.busy }
+        XCTAssertNil(model.plan?.lccState)
+        model.setLCCEnabled(true)
+        try await wait { !model.busy }
+        XCTAssertTrue(model.canStitch)
+        XCTAssertEqual(model.plan?.lccState?.offsetMM, manual)
+
+        model.usePositionReference()
+        try await wait { !model.busy }
+        XCTAssertFalse(model.hasManualLCCPosition)
+        XCTAssertEqual(model.plan?.lccState?.offsetMM, measured)
+        XCTAssertTrue(model.canStitch)
+    }
+
     func testApplyTransfersVisibleManualPreviewAndExportsItsCropAndPixels() async throws {
         let model = try workspace()
         model.lccEnabled = true
@@ -74,7 +137,9 @@ final class PanoramaManualLCCTests: XCTestCase {
         try await wait { !model.busy }
         XCTAssertNil(model.error)
         let before = try XCTUnwrap(model.plan?.preview)
+        let initialCrop = try XCTUnwrap(model.plan?.lccState?.cropRect)
         model.alignLCC()
+        try await wait { !model.busy }
         let editor = try XCTUnwrap(model.alignmentWindow?.model)
         defer { model.cancel() }
         editor.x = 7
@@ -86,6 +151,7 @@ final class PanoramaManualLCCTests: XCTestCase {
         XCTAssertTrue(editor.canApply, editor.error ?? "")
         let visible = try XCTUnwrap(editor.preview.preview)
         let crop = try XCTUnwrap(editor.preview.lccState?.cropRect)
+        XCTAssertNotEqual(initialCrop, crop)
         XCTAssertEqual(visible.width, Int(crop.width))
         XCTAssertEqual(visible.height, Int(crop.height))
         editor.apply()
