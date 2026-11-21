@@ -212,7 +212,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
         memory.removeAllObjects(); recent.removeAllObjects()
         warmInFlight = nil
         placeholderImages.removeAll(); placeholderOrder.removeAll()
-        displaySizesByDigest.removeAll(); displaySizeOrder.removeAll()
+        displaySizesByDigest = PreviewFIFOIndex(limit: Self.indexLimit)
     }
 
     deinit { if let cacheObserver { NotificationCenter.default.removeObserver(cacheObserver) } }
@@ -224,8 +224,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
     /// The documents behind in-flight HD keys. `ThumbnailProducer` only receives a key and a source
     /// URL, so the edit itself has to ride here from `request` to `produce`. 223 — bounded: this is
     /// a hand-off, not a second store of the library.
-    private var documentsByKey: [String: EditModel] = [:]
-    private var documentOrder: [String] = []
+    private var documentsByKey = PreviewFIFOIndex<EditModel>(limit: ThumbnailProvider.indexLimit)
     /// 311 — the warm request in flight, by key. It is the whole dedupe: an ask for the digest that
     /// is already queued joins it, an ask for a document that moved on cancels it. Deliberately
     /// **not** a set of "already asked" digests: the cache keeps only the newest HD file per photo
@@ -272,14 +271,12 @@ public final class ThumbnailProvider: @unchecked Sendable {
     /// receives a key and a URL. The catalog has known `width`/`height` since import, so the request
     /// that *does* carry the `Asset` hands the number over and the producer stops re-scanning the RAW
     /// for a number it was already told.
-    private var sourceEdges: [String: Int] = [:]
-    private var sourceEdgeOrder: [String] = []
+    private var sourceEdges = PreviewFIFOIndex<Int>(limit: ThumbnailProvider.indexLimit)
     /// How many times the producer had to open the file to learn its edge (351's reading).
     private var sourceProbeCount = 0
     /// 223 — digest → the display size its bitmap was last stored at (the back-compat lookup).
-    private var displaySizesByDigest: [String: ImageSize] = [:]
-    private var displaySizeOrder: [String] = []
-    /// Ceiling for the two bookkeeping maps above (`documentsByKey`, `displaySizesByDigest`).
+    private var displaySizesByDigest = PreviewFIFOIndex<ImageSize>(limit: ThumbnailProvider.indexLimit)
+    /// Maximum resident entries in each preview bookkeeping index.
     static let indexLimit = 4096
     /// `ThumbnailService` holds its producer strongly, so the adapter holds the provider weakly:
     /// that is what keeps provider ↔ service from being a retain cycle.
@@ -456,11 +453,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
     /// digest → the display size it was last remembered at. Tiny (one entry per asset), bounded by
     /// the same FIFO as `documentsByKey` so a 10k-photo library cannot grow it without limit.
     private func rememberDisplaySize(_ display: ImageSize, for digest: String) {
-        if displaySizesByDigest[digest] == nil { displaySizeOrder.append(digest) }
-        displaySizesByDigest[digest] = display
-        while displaySizeOrder.count > ThumbnailProvider.indexLimit {
-            displaySizesByDigest.removeValue(forKey: displaySizeOrder.removeFirst())
-        }
+        displaySizesByDigest.store(display, for: digest)
     }
 
     private func lastDisplaySize(for digest: String) -> ImageSize? {
@@ -503,22 +496,14 @@ public final class ThumbnailProvider: @unchecked Sendable {
 
     func rememberDocument(_ document: EditModel, for digest: String) {
         lock.lock(); defer { lock.unlock() }
-        if documentsByKey[digest] == nil { documentOrder.append(digest) }
-        documentsByKey[digest] = document
-        while documentOrder.count > ThumbnailProvider.indexLimit {
-            documentsByKey.removeValue(forKey: documentOrder.removeFirst())
-        }
+        documentsByKey.store(document, for: digest)
     }
 
     /// Hand the producer the source's long edge so it does not re-open the RAW to measure it (351).
     func rememberSourceEdge(_ edge: Int?, for digest: String) {
         guard let edge, edge > 0 else { return }
         lock.lock(); defer { lock.unlock() }
-        if sourceEdges[digest] == nil { sourceEdgeOrder.append(digest) }
-        sourceEdges[digest] = edge
-        while sourceEdgeOrder.count > ThumbnailProvider.indexLimit {
-            sourceEdges.removeValue(forKey: sourceEdgeOrder.removeFirst())
-        }
+        sourceEdges.store(edge, for: digest)
     }
 
     private func rememberedSourceEdge(_ digest: String) -> Int? {
