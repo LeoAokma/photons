@@ -2,7 +2,7 @@
 
 当前工程使用 SwiftPM，可以通过签名的 `.pkg` 上传 App Store Connect，暂时不需要迁移到 Xcode 工程。准备脚本位于 `scripts/testflight.py`，所有构建、签名产物及描述文件副本均写入被 Git 忽略的 `.build/testflight/`。
 
-默认标识为 `com.leoaokma.photons`，显示名称为 Photons Studio，版本为 `0.3.0 (5)`。创建 App Store Connect 记录前，应确认名称和标识属于自己的账号。之后每次上传使用新的 build number。
+默认标识为 `com.leoaokma.photons`，显示名称为 Photons Studio，产品版本从 Mac 的 Info.plist 读取，当前为 `0.3.5`。创建 App Store Connect 记录前，应确认名称和标识属于自己的账号。之后每次上传使用新的 build number。
 
 ## 当前状态
 
@@ -33,7 +33,7 @@
 在仓库根目录运行：
 
 ```sh
-python3 scripts/testflight.py prepare --version 0.3.0 --build 5
+python3 scripts/testflight.py prepare --build 5
 ```
 
 这会构建主程序与三个独立 helper，生成独立的 `.build/testflight/Photons Studio.app`，加入隐私清单和第三方许可／源码，执行沙盒诊断并保存 dSYM。不会替换现有的 Photons Sandbox.app。仅在刚刚构建过相同源码的 release 产品时，才使用 `--skip-build`。

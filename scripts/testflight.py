@@ -113,7 +113,7 @@ def prepare(args):
     if not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+){2,}', args.bundle_id):
         raise ValueError('Use an explicit reverse-DNS bundle identifier')
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', args.version):
-        raise ValueError('Version must contain three numeric components, for example 0.3.0')
+        raise ValueError('Version must contain three numeric components, for example 0.3.5')
     if not re.fullmatch(r'[1-9][0-9]{0,3}(?:\.[0-9]{1,2}){0,2}', args.build):
         raise ValueError('Build must follow CFBundleVersion limits, for example 4 or 4.1')
     OUT.mkdir(parents=True, exist_ok=True)
@@ -214,7 +214,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('preflight', 'prepare', 'package', 'validate', 'upload'))
     parser.add_argument('--bundle-id', default=setting('BUNDLE_ID') or 'com.leoaokma.photons')
-    parser.add_argument('--version', default=setting('VERSION') or '0.3.0')
+    parser.add_argument('--version', default=setting('VERSION') or read_plist(ROOT / 'scripts/App-Info.plist')['CFBundleShortVersionString'])
     parser.add_argument('--build', default=setting('BUILD_NUMBER') or '5')
     parser.add_argument('--skip-build', action='store_true', help='Use already built release executables')
     args = parser.parse_args()

@@ -21,7 +21,9 @@ At the initial release, the same build was **Ready to Test** in the internal **D
 
 The functional engine/UI checks are recorded in [iPad preview validation](reports/ipad-preview-validation.md); this distribution follow-up changes packaging and signing only. Physical iPad performance, memory and HDR display behaviour remain the subject of this beta.
 
-## Reproduce the archive
+New Debug and Release builds inherit marketing version 0.3.5 from the app target.
+
+## Reproduce the historical 0.1.0 (5) archive
 
 Install an App Store Connect provisioning profile matching this Bundle ID and a locally available Apple Distribution certificate. An iOS App Development profile is not needed for the distribution archive; automatic development provisioning may fail when the team has no registered devices.
 
