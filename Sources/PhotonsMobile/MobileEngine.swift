@@ -70,6 +70,7 @@ actor MobileEngine {
     private(set) var renderCount = 0
     private(set) var panoramaPreviewCount = 0
     private let detailAvailableMemory: @Sendable () -> Double
+    private let exportMemoryBudget: @Sendable () -> Double
     private var previewDirectory: URL { libraryURL.appendingPathComponent("MobilePreviews",isDirectory: true) }
 
     struct CacheUsage: Sendable {
@@ -99,7 +100,14 @@ actor MobileEngine {
         #else
         return Double(os_proc_available_memory())
         #endif
+    }, exportMemoryBudget: @escaping @Sendable () -> Double = {
+        #if targetEnvironment(simulator)
+        return Double(ProcessInfo.processInfo.physicalMemory) * 0.45
+        #else
+        return Double(os_proc_available_memory()) * 0.8
+        #endif
     }) {
+        self.exportMemoryBudget = exportMemoryBudget
         self.libraryURL = libraryURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("iPad Preview.photonslibrary", isDirectory: true)
         self.detailAvailableMemory = detailAvailableMemory
@@ -445,13 +453,14 @@ actor MobileEngine {
         let largestSource = resolvedSizes.map { $0.width*$0.height }.max() ?? 0
         let outputBytes = canvas.width*canvas.height*scale*scale*(settings.format == "dng" && plan != nil ? 0 : 40)
         let estimate = decodedBytes + largestSource*(plan?.lccState == nil ? 8 : 16) + outputBytes + 256_000_000
-        #if targetEnvironment(simulator)
-        let available = Double(ProcessInfo.processInfo.physicalMemory)*0.45
-        #else
-        let available = Double(os_proc_available_memory())*0.8
-        #endif
-        guard estimate < available else {
-            throw MobileError.message(L10n.tr("ipad.7bafa62b2133"))
+        let budget = exportMemoryBudget()
+        let decodedBudget = Double(ProcessInfo.processInfo.physicalMemory) * 0.45
+        if estimate >= budget || (plan != nil && decodedBytes >= decodedBudget) {
+            let sourceLimited = plan != nil && decodedBytes >= decodedBudget && estimate < budget
+            let required = sourceLimited ? decodedBytes : estimate
+            let limit = sourceLimited ? decodedBudget : budget
+            let formatBytes: (Double) -> String = { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .memory) }
+            throw MobileError.message(L10n.tr("ipad.export.memoryBudget", formatBytes(required), formatBytes(limit)))
         }
         let dir = libraryURL.deletingLastPathComponent().appendingPathComponent("Exports", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

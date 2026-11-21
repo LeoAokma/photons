@@ -1608,7 +1608,7 @@
   "ipad.78f0c369e5d9": "Development preview",
   "ipad.7957a4a78ee1": "Social-media slicing and advanced batch export",
   "ipad.7a4721a879cb": "Aqua",
-  "ipad.7bafa62b2133": "This export needs more memory than is currently available. Choose a smaller long edge, or export fewer source photos. The output size has not been reduced automatically.",
+  "ipad.export.memoryBudget": "Estimated memory: {0}. Export budget: {1}. Choose a smaller long edge or use fewer source photos, then retry.",
   "ipad.7eb33a4d6540": "Relative source positions",
   "ipad.81aa08939843": "Exposure (EV)",
   "ipad.837667e77119": "4 RAWs · 43XL profile included",

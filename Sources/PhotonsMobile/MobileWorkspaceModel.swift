@@ -333,7 +333,7 @@ final class MobileWorkspaceModel: ObservableObject {
     private var report: @Sendable (String, Double?) -> Void {
         { [weak self] text,fraction in Task { @MainActor in self?.status = text; self?.progress = fraction } }
     }
-    private func run(_ title: String, work: @escaping @MainActor () async throws -> Void) {
+    private func run(_ title: String, onFailure: ((String) -> Void)? = nil, work: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }
         invalidateDetail()
         stopThumbnailLoading(); previewTask?.cancel(); generation += 1; rendering = false
@@ -341,7 +341,10 @@ final class MobileWorkspaceModel: ObservableObject {
         job = Task {
             do { try await work() }
             catch is CancellationError { status = L10n.tr("a37778f17c5f") }
-            catch { self.error = error.localizedDescription }
+            catch {
+                if let onFailure { onFailure(error.localizedDescription) }
+                else { self.error = error.localizedDescription }
+            }
             busy = false; progress = nil
             status = ""; requestDetail(viewport)
             warmThumbnails()
@@ -445,15 +448,16 @@ final class MobileWorkspaceModel: ObservableObject {
             self.profiles = try await self.engine.profiles()
         }
     }
-    func export(_ settings: MobileExportSettings) {
+    func export(_ settings: MobileExportSettings, onFailure: ((String) -> Void)? = nil, onSaved: @escaping () -> Void = {}) {
         guard !busy else { return }
         let photo = active, edit = edit, plan = plan, manifest = manifest
         panoramaExporting = panoramaReturnToGrid != nil
-        run(L10n.tr("ipad.eb9b51193618")) {
+        run(L10n.tr("ipad.eb9b51193618"), onFailure: onFailure) {
             defer { self.panoramaExporting = false }
             self.output = try await self.engine.export(photo: photo, edit: edit, plan: plan, manifest: manifest,
                 settings: settings, cancellation: self.cancellation, progress: self.report)
             try await self.reload(); self.warmThumbnails()
+            onSaved()
         }
     }
     func memoryWarning() {

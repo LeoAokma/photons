@@ -96,7 +96,7 @@ public struct MobileWorkspaceView: View {
                     case .export: MobileExportSheet(model: model)
                     case .capabilities: MobileCapabilitiesView()
                     }
-                }.toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.tr("3fd47edce45b")) { tool = nil } } }
+                }.toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.tr("3fd47edce45b")) { tool = nil }.disabled(sheet == .export && model.busy) } }
             }.preferredColorScheme(.dark).tint(.orange)
         }
         .sheet(isPresented: $sidebarSheet) {

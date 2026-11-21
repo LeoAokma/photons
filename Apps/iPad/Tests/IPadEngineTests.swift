@@ -717,6 +717,38 @@ final class IPadEngineTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testLowBudgetPanoramaKeepsPlanAndCanRetryExport() async throws {
+        let engine = MobileEngine(libraryURL: folder.appendingPathComponent("Test.photonslibrary"),
+                                  exportMemoryBudget: { 264_000_000 })
+        let urls = try MobileSamples.create(in: folder.appendingPathComponent("budget-input"))
+        _ = try await engine.importPhotos(urls, skipDuplicates: true, progress: { _,_ in })
+        let photos = try await engine.photos()
+        let plan = try await engine.analyze(photos, options: .init(), positions: [:], sensor: nil,
+                                            cancellation: .init(), progress: { _,_ in })
+        let model = MobileWorkspaceModel(engine: engine)
+        model.beginPanorama()
+        model.plan = plan
+        for format in ["dng", "tiff"] {
+            var settings = MobileExportSettings()
+            settings.format = format
+            settings.longEdge = 0
+            let failed = expectation(description: "Full-size budget failure: " + format)
+            model.export(settings, onFailure: { message in
+                XCTAssertTrue(message.contains("MB"))
+                failed.fulfill()
+            }, onSaved: { XCTFail("Failed export dismissed the workspace") })
+            await fulfillment(of: [failed], timeout: 15)
+            XCTAssertNotNil(model.plan)
+            settings.longEdge = 128
+            let saved = expectation(description: "Scaled retry: " + format)
+            model.export(settings, onFailure: { XCTFail($0) }, onSaved: { saved.fulfill() })
+            await fulfillment(of: [saved], timeout: 30)
+            let output = try XCTUnwrap(model.output)
+            XCTAssertEqual(try PanoramaSource(url: output).size.width, 128, accuracy: 1)
+        }
+    }
+
     func testPanoramaAlignmentScaledLosslessExportAndMetadata() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("samples"))
         _ = try await engine.importPhotos(urls, skipDuplicates: true, progress: { _,_ in })

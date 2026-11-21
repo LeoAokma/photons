@@ -85,6 +85,7 @@ struct MobilePanoramaWorkspace: View {
     @State private var appliedSelection = 0
     @State private var appliedProfileID: UUID?
     @State private var export = false
+    @State private var exportSaved = false
     @State private var profileID: UUID?
     @State private var cropToLCC = false
     private var layout: MobilePanoramaLayout {
@@ -160,10 +161,12 @@ struct MobilePanoramaWorkspace: View {
                 rememberLayout()
             }
         }
-        .sheet(isPresented: $export) {
+        .sheet(isPresented: $export, onDismiss: {
+            if exportSaved { dismiss() }
+        }) {
             NavigationStack {
-                MobileExportSheet(model: model, onExport: { dismiss() })
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.tr("3fd47edce45b")) { export = false } } }
+                MobileExportSheet(model: model, onExport: { exportSaved = true })
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.tr("3fd47edce45b")) { export = false }.disabled(model.busy) } }
             }.preferredColorScheme(.dark)
         }
         .alert(L10n.tr("ipad.2be61912014b"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
