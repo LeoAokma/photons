@@ -141,6 +141,43 @@ final class PanoramaTests: XCTestCase {
         XCTAssertNotEqual(on.ownership[50*on.maskWidth+60],0)
         XCTAssertEqual(on.lccState?.profileID,plan.lccState?.profileID)
     }
+    func testDisablingExposureMatchingClearsPreviousGainsAndCanBeReversed() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = PanoramaEngine()
+        let bounds = CGRect(x: 0, y: 0, width: 64, height: 48)
+        let images = [0.2, 0.4].map { level in
+            CIImage(color: CIColor(red: level, green: level, blue: level, alpha: 1,
+                                   colorSpace: PanoramaEngine.linearSpace)!).cropped(to: bounds)
+        }
+        let sources = try images.enumerated().map { i, image in
+            let url = directory.appendingPathComponent("\(i).png")
+            try engine.context.writePNGRepresentation(of: image, to: url, format: .RGBA8, colorSpace: PanoramaEngine.linearSpace)
+            return try PanoramaSource(url: url)
+        }
+        var options = PanoramaOptions()
+        options.avoidMotion = false
+        let input = PanoramaPlan(sources: sources, origins: [.zero, .zero], size: bounds.size,
+                                 registrationScores: [1, 1], whiteBalance: nil, gains: [], ownership: [],
+                                 maskWidth: 0, maskHeight: 0,
+                                 optical: .init(center: nil, confidence: 0, explanation: "", occludedEdges: []),
+                                 options: options, previewScale: 1, previewImages: images, preview: nil)
+        let on = try engine.update(input, options: options)
+        XCTAssertEqual(on.gains[1], 0.5, accuracy: 0.01)
+        XCTAssertEqual(on.photometricGains.count, 2)
+        options.matchExposure = false
+        let off = try engine.update(on, options: options)
+        XCTAssertEqual(off.gains, [1, 1])
+        XCTAssertTrue(off.photometricGains.isEmpty)
+        XCTAssertEqual(off.blendMasks.count, 2)
+        XCTAssertNotNil(off.preview)
+        let restored = try engine.update(off, options: on.options)
+        XCTAssertEqual(restored.gains, on.gains)
+        XCTAssertEqual(restored.ownership, on.ownership)
+        XCTAssertEqual(restored.blendMasks, on.blendMasks)
+    }
+
     func testCancelledWorkStopsBeforeReadingInputs() {
         let token = PanoramaCancellation(); token.cancel()
         XCTAssertThrowsError(try PanoramaEngine().analyze(urls:[URL(fileURLWithPath:"/missing/a"),URL(fileURLWithPath:"/missing/b")],cancellation:token)) { XCTAssertTrue($0 is CancellationError) }

@@ -52,3 +52,25 @@
 该项可用 `git log --oneline --grep=PANO-VOTE-01` 定位。前一项预览缓存提交为 `1d01581`，两者可以独立回退。回归测试 `TranslationConsensusTests` 将生产函数与逐点投票逐项比较。
 
 本次 `PHOTONS_LANGUAGE=zh-Hans swift test --filter 'PhotonsPanoramaTests|PanoramaJobTests'` 共 77 项，67 项通过，10 项因外部 RAW、预生成全景或可选校准生成条件未提供而跳过，零失败。在 iPad Pro 13 英寸模拟器运行 `IPadEngineTests/testPanoramaAlignmentScaledLosslessExportAndMetadata` 通过，覆盖三图配准、预览直方图、缩放与全尺寸导出以及元数据回读。未测旧款设备实机。
+
+
+## PANO-EXPOSURE-01 · 关闭曝光匹配的接缝准备
+
+`PanoramaSeams.prepare` 从已求解的帧向剩余帧搜索重叠最多的下一帧。此前，关闭曝光匹配时也先执行完整搜索，再丢弃结果，并逐像素乘以 1。在 N 张稠密重叠图中，旧循环的跨集合帧对数为 N(N²−1)/6，每对扫描约 S 个采样位置，另有部分中位数排序。关闭选项后直接建立 N 个单位增益，省去所有这些采样和乘法。接缝仍执行光栅化、归属计算及蒙版生成。默认开启曝光匹配时仍走原有求解路径。
+
+隔离实验并排编译原版和候选版的完整接缝准备，使用独立编译的优化版 PhotonsPanorama 及本地 Release 依赖。八组输入包括 1、2、4、8、16 帧、完全不重叠、HDR、运动避让以及曝光匹配关闭和开启。每个输入都预置了旧增益，模拟在已有预览上切换选项。固定 Swift 哈希种子以便在相同条件下复现并列选择。逐一核对全局增益、归属标签、蒙版字节、光学位置、局部增益图、原生半浮点预览及完整合成的半浮点像素。连续八轮均一致。
+
+早期一次使用 Debug 辅助库的实验，在将预览 CGImage 再经 Core Image 转换后发生字节比较差异，原因未重现。最终验证直接逐行读原生 CGImage 像素，排除行末填充，同时保留完整合成像素检查；再次做额外颜色转换的八轮对照也一致。
+
+| 帧数，曝光匹配关闭 | 原接缝准备 | 候选接缝准备 |
+| --- | ---: | ---: |
+| 2 | 9.07 ms | 8.73 ms |
+| 4 | 14.17 ms | 13.10 ms |
+| 8 | 20.61 ms | 18.41 ms |
+| 16 | 43.83 ms | 30.95 ms |
+
+每张源图 140×92，具有曝光差异与纹理。新旧实现各预热一次，七轮交替测量取中位数，计时包含整个接缝准备。等价性验证另行比较输出。此测量针对关闭曝光匹配的选项，未计入完整 RAW 解码或文件导出。
+
+集成后 Mac 的 `testDisablingExposureMatchingClearsPreviousGainsAndCanBeReversed` 从不同亮度的两图产生非单位增益，关闭后验证恢复单位增益及清除局部补偿，再开启后核对增益、接缝归属和蒙版。连同缩略图、配准、渲染和导出工作进程测试，一次执行 65 项，62 项通过，3 个外部 Boston 夹具测试跳过，零失败。本机原型和详细日志在 `local/out/preview-stitch-audit-a20dd64/exposure`。可独立回退；平移投票提交为 `fff6112`。本项的实现提交可用 `git log --oneline --grep=PANO-EXPOSURE-01` 定位。
+
+iPad 模拟器执行 `testPanoramaAlignmentScaledLosslessExportAndMetadata` 和 `testPanoramaToneUpdatesPreviewHistogramAndExport` 均通过。最终 `swift build -c release` 成功。各项的耗时取自 M5 Pro；iPad 模拟器用于验证功能。旧 Mac、旧 iPad 及用户 502–505 原片组合未做实机性能测量。

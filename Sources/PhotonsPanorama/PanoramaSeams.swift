@@ -39,24 +39,27 @@ enum PanoramaSeams {
             if blackEdges > 20 { occluded.append(plan.sources[i].url.lastPathComponent) }
         }
         // Robust gains from scene-identical overlap samples. The same gain is applied to full RAW.
-        var gains = [Double](repeating:1,count:n), solved: Set<Int> = [0]
-        for _ in 1..<n {
-            var candidate: (Int,Double,Int)?
-            for a in solved { for b in 0..<n where !solved.contains(b) {
-                var ratios: [Double] = []
-                for p in stride(from:0,to:count,by:7) where valid[a][p] && valid[b][p] {
-                    let ca = colors[a][p], cb = colors[b][p]
-                    let la = (ca.x+ca.y+ca.z)/3, lb = (cb.x+cb.y+cb.z)/3
-                    if la > 0.005 && lb > 0.005 && la < 0.9 && lb < 0.9 { ratios.append(log(la/lb)) }
-                }
-                if ratios.count > 30, candidate == nil || ratios.count > candidate!.2 {
-                    candidate = (b,gains[a]*exp(median(ratios)),ratios.count)
-                }
-            }}
-            if let c = candidate { gains[c.0] = min(4,max(0.25,c.1)); solved.insert(c.0) }
+        var gains = [Double](repeating:1,count:n)
+        if plan.options.matchExposure {
+            var solved: Set<Int> = [0]
+            for _ in 1..<n {
+                var candidate: (Int,Double,Int)?
+                for a in solved { for b in 0..<n where !solved.contains(b) {
+                    var ratios: [Double] = []
+                    for p in stride(from:0,to:count,by:7) where valid[a][p] && valid[b][p] {
+                        let ca = colors[a][p], cb = colors[b][p]
+                        let la = (ca.x+ca.y+ca.z)/3, lb = (cb.x+cb.y+cb.z)/3
+                        if la > 0.005 && lb > 0.005 && la < 0.9 && lb < 0.9 { ratios.append(log(la/lb)) }
+                    }
+                    if ratios.count > 30, candidate == nil || ratios.count > candidate!.2 {
+                        candidate = (b,gains[a]*exp(median(ratios)),ratios.count)
+                    }
+                }}
+                if let c = candidate { gains[c.0] = min(4,max(0.25,c.1)); solved.insert(c.0) }
+            }
+            for i in 0..<n { for p in 0..<count { colors[i][p] *= gains[i] } }
         }
-        plan.gains = plan.options.matchExposure ? gains : [Double](repeating:1,count:n)
-        for i in 0..<n { for p in 0..<count { colors[i][p] *= plan.gains[i] } }
+        plan.gains = gains
         plan.photometricGains=[]
         if plan.options.matchExposure && plan.lccState == nil {
             func local(_ i:Int,_ p:Int)->CGPoint {
