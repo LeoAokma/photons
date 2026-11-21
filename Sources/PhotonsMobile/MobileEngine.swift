@@ -44,7 +44,8 @@ struct MobileExportSettings: Sendable {
         return ExportPreset(format: f, longEdge: longEdge > 0 ? longEdge : nil,
                             quality: quality, tiffCompression: tiffCompression,
                             bitDepth: f == .tiff ? tiffBitDepth : (f == .png ? 16 : 8),
-                            hdrKind: hdr ? f.defaultHDRKind : .none,
+                            colorSpace: hdr || f == .tiff || format == "dng" ? .rec2020 : .displayP3,
+                            hdrKind: hdr ? f.defaultHDRKind : HDRKind.none,
                             watermarkText: "")
     }
 }
@@ -213,7 +214,7 @@ actor MobileEngine {
         } catch { /* A disposable cache must not make photograph rendering fail. */ }
     }
     private func render(_ url: URL, edit: EditModel, edge: Int, hdr: Bool, histogram: Bool,
-                        linear: Bool = false, detail: MobileDetailRequest? = nil) throws -> RenderResult {
+                        linear: Bool = false, primaries: OutputPrimaries = .displayP3, detail: MobileDetailRequest? = nil) throws -> RenderResult {
         try Task.checkCancellation()
         let signature = try sourceSignature(url)
         let size = try sourceSizes[url] ?? ImageSourceDecoder.size(at: url)
@@ -253,7 +254,7 @@ actor MobileEngine {
         renderCount += 1
         return try graph!.render(edit, options: RenderOptions(
             outputWindow: window,
-            display: .init(primaries: .displayP3, bitDepth: 16, headroom: hdr ? 16 : 1,
+            display: .init(primaries: primaries, bitDepth: 16, headroom: hdr ? 16 : 1,
                            linearOutput: linear, sdrProof: !hdr),
             wantsPixels: true, collectHistogram: histogram, histogramSampleLongEdge: 192))
     }
@@ -468,7 +469,7 @@ actor MobileEngine {
                                                              progress: { progress($0, nil) })
             let packet = try (manifest ?? PanoramaManifest(plan: plan)).encoded()
             if settings.format == "dng" {
-                try LinearDNGWriter.write(image: scene, context: context, to: temporary, manifest: packet,
+                try LinearDNGWriter.write(image: scene, context: context, to: temporary, manifest: packet, primaries: preset.colorSpace,
                                           cancellation: cancellation, progress: { progress($0, nil) })
             } else {
                 let rendered = try PanoramaPixelRenderer.render(scene: scene, preset: preset, progress: progress)
@@ -476,18 +477,18 @@ actor MobileEngine {
             }
         } else if let photo {
             let result = try render(photo.url, edit: edit, edge: settings.longEdge, hdr: settings.hdr,
-                                    histogram: false, linear: settings.hdr || settings.format == "dng")
+                                    histogram: false, linear: settings.hdr || settings.format == "dng", primaries: preset.colorSpace)
             guard let display = result.display else { throw MobileError.message(L10n.tr("ipad.581ba110257c")) }
-            let linear = LinearPixels(width: display.width, height: display.height, rgba: display.rgba, primaries: .displayP3)
+            let linear = LinearPixels(width: display.width, height: display.height, rgba: display.rgba, primaries: display.primaries)
             let packet = try PanoramaManifest.read(from: photo.url)?.encoded()
             if settings.format == "dng" {
                 let data = display.rgba.withUnsafeBytes { Data($0) }
                 let image = CIImage(bitmapData: data, bytesPerRow: display.width * 8, size: CGSize(width: display.width, height: display.height),
-                                    format: .RGBAh, colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3))
+                                    format: .RGBAh, colorSpace: LinearPixels.extendedLinearColorSpace(for: display.primaries))
                 var item = ExportItem(id: photo.id, name: photo.name, edit: edit, sourceURL: photo.url)
                 item.panoramaMetadata = packet
                 let adjusted = try PanoramaExportMetadata.data(for: item, source: nil, trimX: 1, trimY: 1, sourceSize: sourceSizes[photo.url])
-                try LinearDNGWriter.write(image: image, context: context, to: temporary, manifest: adjusted, cancellation: cancellation,
+                try LinearDNGWriter.write(image: image, context: context, to: temporary, manifest: adjusted, primaries: preset.colorSpace, cancellation: cancellation,
                                           progress: { progress($0, nil) })
             } else {
                 let rendered = settings.hdr ? linear.displaySDR(bitDepth: preset.effectiveBitDepth, toneMap: .global) : display

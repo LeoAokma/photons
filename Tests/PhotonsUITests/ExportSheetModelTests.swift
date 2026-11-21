@@ -98,13 +98,13 @@ final class ExportSheetModelTests: XCTestCase {
 
     /// §4.4 + 161 §1/§9 — the default draft, field by field. It is the picture's own size now, at
     /// quality 0.85 (the user's 2026-10-30 口径), and no longer the 2048 「网络 2048」 draft.
-    func testDefaultDraftIsHEICHDRP3At085AndOriginalSize() {
+    func testDefaultDraftIsHEICHDRRec2020At085AndOriginalSize() {
         let preset = ExportSheetModel.defaultPreset
         XCTAssertEqual(preset.format, .heic)
         XCTAssertEqual(preset.hdr?.enabled, true)
         XCTAssertEqual(preset.hdr?.gainMap, .iso)
         XCTAssertEqual(preset.quality, 0.85)
-        XCTAssertEqual(preset.colorSpace, .displayP3)
+        XCTAssertEqual(preset.colorSpace, .rec2020)
         XCTAssertEqual(preset.bitDepth, 8)
         XCTAssertEqual(preset.sdrToneMapping, .global)
         XCTAssertEqual(preset.conflict, .rename)
@@ -124,11 +124,11 @@ final class ExportSheetModelTests: XCTestCase {
         XCTAssertEqual(ExportSizingMode.allCases, [.longEdge, .percent, .none])
     }
 
-    /// §4.5 — the summary says P3 (the 099 summary assertion moved with the default).
-    func testDefaultColourIsP3AndTheSummarySaysSo() {
+    /// HDR starts in Rec.2020 while the SDR JPEG preset keeps its conventional default.
+    func testDefaultHDRColourIsRec2020AndTheSummarySaysSo() {
         let sheet = model()
-        XCTAssertEqual(sheet.preset.colorSpace, .displayP3)
-        XCTAssertTrue(sheet.summaryLine.contains("Display P3"), sheet.summaryLine)
+        XCTAssertEqual(sheet.preset.colorSpace, .rec2020)
+        XCTAssertTrue(sheet.summaryLine.contains("Rec2020"), sheet.summaryLine)
         XCTAssertFalse(sheet.summaryLine.contains("sRGB"), sheet.summaryLine)
         XCTAssertEqual(ExportPreset().colorSpace, .displayP3,
                        "默认色彩从 sRGB 改 P3 是用户 2026-10-29 的口径")
@@ -421,7 +421,7 @@ final class ExportSheetModelTests: XCTestCase {
         XCTAssertFalse(sheet.summaryLine.contains("HDR"))
         // 161 §1: the factory draft is now 原尺寸 (no long edge to report).
         XCTAssertEqual(sheet.summaryLine,
-                       "将导出 2 张 → HEIC · 8 位 · Display P3 · 原尺寸 · 重命名")
+                       "将导出 2 张 → HEIC · 8 位 · Rec2020 · 原尺寸 · 重命名")
     }
 
     // MARK: - 106 layout (measured on the real hosted sheet)

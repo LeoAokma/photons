@@ -64,7 +64,7 @@ public struct PanoramaJob: Codable {
             let resized=scene.transformed(by:CGAffineTransform(scaleX:scale,y:scale))
             let context=CIContext(options:[.workingColorSpace:PanoramaEngine.linearSpace,.cacheIntermediates:false])
             defer {context.clearCaches()}
-            try LinearDNGWriter.write(image:resized,context:context,to:temporary,manifest:item.panoramaMetadata,progress:report)
+            try LinearDNGWriter.write(image:resized,context:context,to:temporary,manifest:item.panoramaMetadata,primaries:preset.colorSpace,progress:report)
         } else {
         var stagedPreset=preset
         stagedPreset.destination = .chosenFolder;stagedPreset.subfolder="";stagedPreset.nameTemplate="{name}";stagedPreset.conflict = .overwrite

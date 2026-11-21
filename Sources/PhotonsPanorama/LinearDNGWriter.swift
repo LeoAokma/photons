@@ -6,10 +6,11 @@ import ImageIO
 import PhotonsExtensions
 
 /// A new, demosaiced linear DNG. Never inherits source CFA, crop, lens opcodes or camera matrices:
-/// those describe camera samples, whereas these samples are in linear sRGB after stitching.
+/// those describe camera samples, whereas these samples are in the chosen scene-linear output primaries.
 public enum LinearDNGWriter {
     public static func write(image: CIImage, context: CIContext, to url: URL,
-                             manifest: Data? = nil, cancellation: PanoramaCancellation = .init(),
+                             manifest: Data? = nil, primaries: OutputPrimaries = .rec2020,
+                             cancellation: PanoramaCancellation = .init(),
                              progress: PanoramaEngine.Progress = { _ in }) throws {
         // Linear DNG has RGB samples and no alpha. Never encode premultiplied RGB: partial
         // coverage at resampled joins would become permanent dark lines in the RAW samples.
@@ -17,8 +18,10 @@ public enum LinearDNGWriter {
         let width = Int(image.extent.width), height = Int(image.extent.height), tile = 256
         guard width>0, height>0, width*height<600_000_000 else { throw PanoramaFailure(L10n.tr("12dd189a96f3")) }
         var maximum = [Float](repeating:0,count:4)
-        let maxImage = image.applyingFilter("CIAreaMaximum",parameters:["inputExtent":CIVector(cgRect:image.extent)])
-        context.render(maxImage,toBitmap:&maximum,rowBytes:16,bounds:CGRect(x:0,y:0,width:1,height:1),format:.RGBAf,colorSpace:PanoramaEngine.linearSpace)
+        guard let space = LinearPixels.extendedLinearColorSpace(for: primaries),
+              let encoded = image.matchedFromWorkingSpace(to: space) else { throw PanoramaFailure(L10n.tr("378062584513")) }
+        let maxImage = encoded.applyingFilter("CIAreaMaximum",parameters:["inputExtent":CIVector(cgRect:image.extent)])
+        context.render(maxImage,toBitmap:&maximum,rowBytes:16,bounds:CGRect(x:0,y:0,width:1,height:1),format:.RGBAf,colorSpace:nil)
         // Store highlight headroom, and restore its scene exposure through BaselineExposure.
         let range = Double(max(1,maximum[0],maximum[1],maximum[2]))
         guard range.isFinite else { throw PanoramaFailure(L10n.tr("378062584513")) }
@@ -46,13 +49,16 @@ public enum LinearDNGWriter {
         text(50708,"Photons Linear Panorama")
         long(50717,[65535,65535,65535]); rationals(50714,[0,0,0])
         rationals(50718,[1,1]); long(50719,[0,0]); long(50720,[UInt32(width),UInt32(height)])
-        rationals(50721,[3.2404542,-1.5371385,-0.4985314,-0.9692660,1.8760108,0.0415560,0.0556434,-0.2040259,1.0572252],signed:true)
+        let rgb = RenderGraph.outputPrimaries(primaries)
+        rationals(50721,rgb.fromXYZ.values,signed:true)
         rationals(50728,[1,1,1]); rationals(50730,[log2(range)],signed:true)
         short(50778,[21]); long(50829,[0,0,UInt32(height),UInt32(width)])
         // Explicit scene-linear camera profile: readers must not substitute their default
-        // contrast/saturation look. ForwardMatrix maps linear sRGB to D50 PCS.
+        // contrast/saturation look. ForwardMatrix maps the encoded primaries to D50 PCS.
         text(50936,"Photons Scene Linear")
-        rationals(50964,[0.4360747,0.3850649,0.1430804,0.2225045,0.7168786,0.0606169,0.0139322,0.0971045,0.7141733],signed:true)
+        let toD50 = WhiteBalanceEstimate.bradfordAdaptation(from: WhiteBalanceEstimate.whitePointXYZ,
+                                                            to: SIMD3(0.9642, 1, 0.8249))
+        rationals(50964,(toD50 * rgb.toXYZ).values,signed:true)
         tags.append(Entry(tag:50940,type:11,count:4,bytes:[Float(0),0,1,1].reduce(Data()) {$0+u32($1.bitPattern)}))
         long(51110,[1]) // DefaultBlackRender: none
         rationals(51109,[0],signed:true)
@@ -123,7 +129,7 @@ public enum LinearDNGWriter {
             // Both TIFF and CIContext's bitmap rows are top-first. Bounds, however, use Core
             // Image's lower-left origin. Walk bounds from top to bottom without reversing rows.
             let rect = CGRect(x:tx*tile,y:height-(ty+1)*tile,width:tile,height:tile)
-            context.render(scaled,toBitmap:&pixels,rowBytes:tile*8,bounds:rect,format:.RGBA16,colorSpace:PanoramaEngine.linearSpace)
+            context.render(scaled,toBitmap:&pixels,rowBytes:tile*8,bounds:rect,format:.RGBA16,colorSpace:space)
             var rgb = [UInt16](repeating:0,count:tile*tile*3)
             for y in 0..<tile { for x in 0..<tile {
                 let src = (y*tile+x)*4, dst = (y*tile+x)*3

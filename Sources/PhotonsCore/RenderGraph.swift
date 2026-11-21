@@ -547,7 +547,7 @@ public struct LinearPixels: Sendable {
 
     /// The extended-range linear space matching the output primaries, so Core Image does no colour
     /// conversion — only the headroom roll-off.
-    static func extendedLinearColorSpace(for primaries: OutputPrimaries) -> CGColorSpace? {
+    public static func extendedLinearColorSpace(for primaries: OutputPrimaries) -> CGColorSpace? {
         switch primaries {
         case .sRGB: return CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
         case .displayP3: return CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
@@ -6920,7 +6920,7 @@ private func dispatchSharpenTile(_ enc: MTLComputeCommandEncoder, _ size: ImageS
 
     /// `ColorPrimaries` → `OutputPrimaries`. Exhaustive on purpose: adding an output target without
     /// teaching this switch about it is a **compile error**, which is the cheap half of 075 §3.2.
-    static func outputPrimaries(_ target: OutputPrimaries) -> ColorPrimaries {
+    public static func outputPrimaries(_ target: OutputPrimaries) -> ColorPrimaries {
         switch target {
         case .sRGB: return .sRGB
         case .displayP3: return .displayP3

@@ -323,6 +323,7 @@ public final class ExportSheetModel {
         } else {
             var initial = preset
             initial.hdr = HDRExport(enabled: false)
+            initial.colorSpace = initial.format == .tiff ? .rec2020 : .displayP3
             initial.sdrToneMapping = .standard
             preset = sdrTabPreset ?? initial
             usesLinearDNG = false
@@ -440,7 +441,7 @@ public final class ExportSheetModel {
     /// and both of these are pure values.
     public nonisolated static var defaultPreset: ExportPreset {
         ExportPreset(name: L10n.tr("844b8cc8dff7"), format: .heic, quality: 0.85,
-                     bitDepth: 8, colorSpace: .displayP3, sdrToneMapping: .global,
+                     bitDepth: 8, sdrToneMapping: .global,
                      hdr: HDRExport(gainMap: .iso), writeXMP: false, nameTemplate: "{name}",
                      sizingMode: ExportSizingMode.none, ppi: 240)
     }
@@ -450,7 +451,7 @@ public final class ExportSheetModel {
     /// the **default** moved.
     public nonisolated static var network2048Preset: ExportPreset {
         ExportPreset(name: L10n.tr("645306984b87"), format: .heic, longEdge: 2048, quality: 0.95,
-                     bitDepth: 8, colorSpace: .displayP3, sdrToneMapping: .global,
+                     bitDepth: 8, sdrToneMapping: .global,
                      hdr: HDRExport(gainMap: .iso), writeXMP: false, nameTemplate: "{name}")
     }
 
@@ -606,6 +607,7 @@ public final class ExportSheetModel {
     /// HDR off. A depth the new container cannot store is clamped, then locked by that kind.
     public func selectFormat(_ format: ExportFormat) {
         guard availableFormats.contains(format) else { return }
+        if format == .tiff && preset.format != .tiff { preset.colorSpace = .rec2020 }
         preset.format = format
         preset.bitDepth = format.clampedBitDepth(preset.bitDepth)
         applyHDR(enabled: hdrPreferredEnabled)
@@ -1370,7 +1372,7 @@ public struct ExportSheetView: View {
             control: {
                 Picker("", selection: Binding(get:{model.usesLinearDNG ? "dng":model.preset.format.rawValue},set:{ value in
                     model.usesLinearDNG = value == "dng"
-                    if value == "dng" {model.setHDR(true)}
+                    if value == "dng" { model.setHDR(true); model.preset.colorSpace = .rec2020 }
                     else if let format=ExportFormat(rawValue:value) {formatBinding.wrappedValue=format}
                 })) {
                     if model.allowsLinearDNG && model.hdrEnabled {Text(L10n.tr("edc6e86229fa")).tag("dng")}

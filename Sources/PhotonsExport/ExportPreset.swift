@@ -435,13 +435,17 @@ public struct ExportPreset: Sendable, Equatable {
     /// 180 — 0…100，0 = 不画。默认 60。
     public var watermarkOpacity: Double
 
+    private static func defaultPrimaries(format: ExportFormat, hdr: HDRKind) -> OutputPrimaries {
+        format == .tiff || hdr != .none ? .rec2020 : .displayP3
+    }
+
     public init(name: String? = nil,
                 format: ExportFormat = .jpeg,
                 longEdge: Int? = nil,
                 quality: Double = 0.92,
                 tiffCompression: TIFFCompression = .zip,
                 bitDepth: Int = 8,
-                colorSpace: OutputPrimaries = .displayP3,
+                colorSpace: OutputPrimaries? = nil,
                 sdrToneMapping: SDRToneMapping = .global,
                 hdr: HDRExport? = nil,
                 hdrKind: HDRKind? = nil,
@@ -464,7 +468,7 @@ public struct ExportPreset: Sendable, Equatable {
         self.tiffCompression = tiffCompression
         self.quality = quality
         self.bitDepth = bitDepth
-        self.colorSpace = colorSpace
+        self.colorSpace = colorSpace ?? Self.defaultPrimaries(format: format, hdr: hdrKind ?? hdr?.kind ?? .none)
         self.sdrToneMapping = sdrToneMapping
         if let hdrKind {
             var h = hdr ?? HDRExport()
@@ -721,17 +725,17 @@ extension ExportPreset: Codable {
             throw ExportPresetError.unknownFormat(rawFormat)
         }
         let rawSpace = try c.decodeIfPresent(String.self, forKey: .colorSpace)
-            ?? OutputPrimaries.displayP3.rawValue
         self.name = try c.decodeIfPresent(String.self, forKey: .name)
         self.format = format
         self.longEdge = try c.decodeIfPresent(Int.self, forKey: .longEdge)
         self.tiffCompression = try c.decodeIfPresent(TIFFCompression.self, forKey: .tiffCompression) ?? .zip
         self.quality = try c.decodeIfPresent(Double.self, forKey: .quality) ?? 0.92
         self.bitDepth = try c.decodeIfPresent(Int.self, forKey: .bitDepth) ?? 8
-        self.colorSpace = OutputPrimaries(presetName: rawSpace) ?? .displayP3
         self.sdrToneMapping = try c.decodeIfPresent(String.self, forKey: .sdrToneMapping)
             .flatMap(SDRToneMapping.init(rawValue:)) ?? .global
         self.hdr = try c.decodeIfPresent(HDRExport.self, forKey: .hdr)
+        self.colorSpace = rawSpace.flatMap(OutputPrimaries.init(presetName:))
+            ?? Self.defaultPrimaries(format: format, hdr: self.hdr?.kind ?? .none)
         self.writeXMP = try c.decodeIfPresent(Bool.self, forKey: .writeXMP) ?? false
         self.nameTemplate = try c.decodeIfPresent(String.self, forKey: .nameTemplate) ?? "{name}"
         self.sizingMode = try c.decodeIfPresent(String.self, forKey: .sizingMode)
