@@ -31,7 +31,7 @@
 | Mac 接片、HDR、降噪 | 接片导出经独立串行队列，每个作业启动一个 helper 并等待退出，再开始下一单。HDR 合成和 Ansel 降噪有各自的子进程入口与会话运行标记。后台缩略图、普通导出和接片之间没有共享的全局配额。 | `PhotonsUI/BackgroundTasks.swift`、`CatalogSession.swift`、`PhotonsExtensions` |
 | iPad | 单个工作区的重图像操作由进程内 `MobileEngine` actor 执行。网格逐张等待缩略图；前台作业暂停预热。细节层按 Metal 纹理上限与可用进程内存选择解码尺寸；真机导出前比较预计用量与进程剩余内存的 80%。 | `PhotonsMobile/MobileWorkspaceModel.swift`、`MobileEngine.swift`、`MobileDetailSizing.swift` |
 
-## EXPORT-SCHED-01
+## EXPORT-SCHED-01 · `f46e0d5`
 
 原 Mac 导出面板与 CLI 默认每批同时处理两张全分辨率照片。现在 `PhotonsExport/BatchExport.swift` 使用当前可用逻辑处理器数与 `hw.physicalcpu` 的较小值；系统未提供物理核心数时回退到可用逻辑处理器数。有效核心数至多 4、物理内存少于 16 GiB、系统低电量或热状态为严重及以上，均一次处理一张，其他情况至多两张。Mac 设置里的经济模式也为一张。
 
@@ -44,3 +44,7 @@
 - 设置 `PHOTONS_LANGUAGE=zh-Hans` 和本地 `PHOTONS_TEST_RAW`，运行 `swift test --filter 'BatchExportTests|BatchExportCancelTests|ExportSheetModelTests|ApplicationPreferencesTests|DoubleClickParity415Tests|LoupeZoomTransitionAnimationTests|HistogramCardHeightTests|PanoramaHDRTests'`。54 项 UI 测试和 33 项导出测试全部通过，无跳过。初次在英文环境运行时，已有用例中的中文字符串断言失败。新增测试覆盖低核、低内存、低电量、过热、运行中降并发与恢复、导出面板经济模式，以及真实写盘结果。
 - 建立临时图书馆，引用仓库两张 HDR bracket DNG，用 `photonsctl export batch` 导出 JPEG。自动模式写出 2 张，报告上限与峰值均为 2。显式 `--concurrency 1` 写出 2 张，上限与峰值均为 1。两次均无失败。
 - `xcodebuild -project Apps/iPad/PhotonsIPad.xcodeproj -scheme 'Photons iPad Preview' -destination 'platform=iOS Simulator,id=0EA297D3-D842-4ABD-B9A5-5F424D9B8457' -onlyUsePackageVersionsFromResolvedFile CODE_SIGNING_ALLOWED=NO build` 成功。此项检查 iPad 模拟器编译兼容性；本次没有运行 iPad UI 测试。
+
+## 本地 Mac 应用
+
+`swift build -c release` 成功。使用仓库打包脚本生成 [Photons.app](../../local/out/mac-main-f46e0d5/Photons.app)，Info.plist 内嵌版本为 `f46e0d5`。主程序为 arm64，适用于 Apple Silicon Mac。两项 vendored helper 已从本地源码构建，包内已核对接片、HDR、Ansel 可执行文件和 Ansel 默认模型。已通过 `plutil -lint` 与 `codesign --verify --deep --strict`。旧应用及其工作目录保留。
