@@ -48,3 +48,19 @@ Mac 普通导出和拼接导出改为从画面四处取样，以所选编码器�
 扩展回归发现两项测试固定假设默认 P3。批量位深测试现在让像素提供器服从请求的色域；全景测试从实际写出的 HEIC 回读 Rec.2020 描述，并同时核对 ISO 增益图。改动仅限 BatchExportTests、PanoramaHDRTests，依赖 6c7c9b2。两套测试本次通过。
 
 扩展回归还有两项已存在的失败。在原始基线 505174f 的独立源码副本上，以同一 Xcode、同一固定依赖重跑并得到相同结果：Apple 单通道增益图重建 39.198 dB（门槛 40），无文字水印的 HDR HEIC 与历史固定 SHA 不同（批处理与直接编码仍逐字节相同）。未放宽两项断言。
+
+## 提交与本地交付
+
+| 追踪编号 | 提交 | 用途 |
+| --- | --- | --- |
+| IPAD-CACHE-02 | 0164752 | iPad 预览字节预算缓存对照实验 |
+| EXPORT-2020-01 | 6c7c9b2 | 双端 HDR/TIFF/DNG 的默认色域、像素与文件描述 |
+| IPAD-ICON-01 | a945981 | iPad 原生系统圆角与全幅图标素材 |
+| IPAD-EXPORT-02 | 811ceaa | 拼接导出进度、可读错误与同页重试 |
+| EXPORT-SIZE-02 | d02944b | 共享试编码测量，Mac 单张、拼接与批量接入 |
+| IPAD-SIZE-01 | ecc5b7d | iPad 单张和拼接文件大小估算 |
+| EXPORT-2020-01V | d25247d | 回读 Mac 全景 HEIC 与默认 TIFF 导出的集成验证 |
+
+补充版本核查：平移投票和关闭曝光匹配时的提前返回在共享 PhotonsPanorama 内，Mac 与 iPad 执行同一实现。Mac 的内存索引与 iPad 的字节预算 LRU 有不同的淘汰语义，比较数据见 IPAD-CACHE-02。
+
+本地 Release 均为 0.3.5 (8)。Mac 通过 swift build -c release、bundle-app.sh、codesign --verify --deep --strict 以及 LaunchServices 启动检查。iPad 使用 Studio.xcconfig 构建 generic iOS arm64 Release，关闭样片打包和代码签名；模拟器安装与 UI 验证使用单独的 Debug 构建。两端本地成品分别在 local/out/studio-035-export/Mac/Photons Studio.app 与 local/out/studio-035-export/iPadOS/Photons Studio.app。扩展的 Mac 导出与相关 UI 回归共 208 项，206 项通过，另两项见 EXPORT-2020-01V。未向 App Store Connect 提交本轮构建。
