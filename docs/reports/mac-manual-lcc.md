@@ -29,3 +29,15 @@
 依赖 MAC-LCC-PREVIEW-01（8cf9f0d）。Mac 手动 LCC 窗口的两个水平滑杆改为贴近图像的两组浮动控件：X 轴横放在底部，Y 轴竖放在右侧，各有独立的毫米输入框。背景使用 macOS 的 ultraThinMaterial。沿用系统 NSSlider 的原生跟踪、键盘与辅助功能，为纵向增加绘制和尺寸支持。极端宽高比可使用预览留边。范围为 LCCAlignmentWindowController、AdjustmentSlider、英中提示和布局回归测试。
 
 本轮 14 项窗口、滑杆及 HDR 预览测试通过。窗口回归覆盖 900 × 650、1120 × 800 两种尺寸，检查滑杆落在对应的图像边缘、互不重叠、鼠标命中和右／上为正。另在有真实 AppKit 事件循环的窗口中分别派发完整的按下、拖动、抬起事件：向右拖 X 后为 (21.90, 0)，向上拖 Y 后为 (21.90, 25.71)，再直接向左下拖图像到 (16.96, 22.50) mm。检查了带照片的原生窗口截图。测试涵盖普通 macOS 鼠标事件，未在外接触控板上实测。
+
+## MAC-LCC-VERIFY-01 · 本地交付
+
+| 追踪编号 | 提交 | 验收范围 |
+| --- | --- | --- |
+| MAC-LCC-PREVIEW-01 | 8cf9f0d | 应用时直接采用编辑器显示的校正、接缝、白平衡和裁切 |
+| EXPORT-2020-TRC-01 | d4af34e | 双端 SDR Rec.2020 文件描述与像素传递曲线一致 |
+| MAC-LCC-MANUAL-01 | 6ca1cbc | 手动入口、位置保留、恢复照片基准 |
+| MAC-LCC-RAW-01 | 7500dd0 | 496–501 六张原始 3FR 的手动与自动结果对照 |
+| MAC-LCC-SLIDERS-01 | d970fb6 | 图内横纵方向滑杆、毛玻璃背景和鼠标交互 |
+
+Mac 执行 `swift build -c release`、`scripts/bundle-app.sh release`、`codesign --verify --deep --strict`，并通过 LaunchServices 打开应用和定时退出。iPad 通过 Studio.xcconfig 构建 generic iOS arm64 Release，使用本地免签名配置。iPad TIFF 回读另在模拟器执行。两个本地成品均为 0.3.5 (8)，分别位于 `local/out/studio-035-manual-lcc/Mac/Photons Studio.app` 和 `local/out/studio-035-manual-lcc/iPadOS/Photons Studio.app`。未在实体 iPad 安装，未提交至 TestFlight。实际 Mac 界面截图位于 `local/out/mac-lcc-manual/slider-preview.png`，该窗口使用既有拍摄预览作布局检查。
