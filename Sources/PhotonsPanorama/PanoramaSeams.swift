@@ -61,7 +61,8 @@ enum PanoramaSeams {
         }
         plan.gains = gains
         plan.photometricGains=[]
-        if plan.options.matchExposure && plan.lccState == nil {
+        // These samples already include any active LCC. Fit only the remaining overlap difference.
+        if plan.options.matchExposure && n > 1 {
             func local(_ i:Int,_ p:Int)->CGPoint {
                 let point=plan.sourcePoint(i,panorama:CGPoint(x:(Double(p%w)+0.5)/sx,y:(Double(p/w)+0.5)/sy))
                 return CGPoint(x:point.x/plan.sources[i].size.width-0.5,y:point.y/plan.sources[i].size.height-0.5)

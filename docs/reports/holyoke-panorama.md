@@ -18,3 +18,7 @@ The intended set is **482–487**. All six RAWs were available. On the original 
 ## LCC-HIGHLIGHT-01 · RAW highlight colour
 
 Local reconstruction now uses the surrounding measured colour for partial and full clipping. With no usable local colours the estimator retains the illuminant fallback. Compared original and candidate in the single corrected 474 frame at the same HDR exposure. At x = 540, 575 and 610 (960-wide frame) the jumps along the sky boundary fell from 0.440 / 0.402 / 0.318 to 0.138 / 0.158 / 0.093. Some variation remains. A clipped sensor channel supplies no absolute colour reference. Shared preview and export implementation in LCCCameraPipeline.swift. Six LCCCameraTests passed including the new blue-neighbour and fallback checks. Baseline investigation commit e092156.
+
+## LCC-OVERLAP-01 · Residual matching after lens calibration
+
+With overlap exposure matching enabled, PanoramaSeams now fits the same bounded RGB residual fields to corrected frames that it previously fitted only to uncorrected frames. Its inputs are the corrected preview pixels. The existing snapshot, manifest and full-size compositor carry those fields. Disabling the option clears them. Per-frame correction and residual matching address different stages. The real-input A/B figures above use the baseline geometry and WB. They do not guarantee neutral absolute sky colour. The isolated 474 highlight fix is 97acbba and can be reverted independently. The shared panorama test selection ran 75 tests, 8 conditional skips, zero failures.

@@ -140,6 +140,7 @@ final class PanoramaTests: XCTestCase {
         let on = try engine.update(off,options:plan.options)
         XCTAssertNotEqual(on.ownership[50*on.maskWidth+60],0)
         XCTAssertEqual(on.lccState?.profileID,plan.lccState?.profileID)
+        XCTAssertEqual(on.photometricGains.count, images.count)
     }
     func testDisablingExposureMatchingClearsPreviousGainsAndCanBeReversed() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
