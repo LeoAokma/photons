@@ -47,7 +47,8 @@ final class PanoramaWindowModel: ObservableObject {
     @Published var sensorWidth = 43.8
     @Published var sensorHeight = 32.9
     @Published var positionReference:PanoramaPositionReference?
-    @Published var knownPositions:[Int:CGPoint]=[:]
+    @Published var shiftHints: [Int: PanoramaShiftHint] = [:]
+    private var appliedRegistrationHints: [Int: PanoramaShiftPosition] = [:]
     @Published var alignmentNeedsUpdate=false
     @Published var estimatedReference:PanoramaPositionReference?
     @Published var positionExplanation=""
@@ -83,31 +84,45 @@ final class PanoramaWindowModel: ObservableObject {
         bodyOrientation=orientation;bodyPlacementChanged()
     }
     private func bodyPlacementChanged() {
-        alignmentWindow?.close();selectLensProfile()
+        alignmentWindow?.close();selectLensProfile();updateHintStatus()
         if positionReference==nil {estimatedReference=nil;positionExplanation="";lccOffset = .zero}
         if lccEnabled {changeLCC(automaticallyLocate:true)}
     }
-    private func physicalPosition(_ reading: CGPoint) -> CGPoint {
-        let profile = lensProfiles.first { $0.id.uuidString == selectedLensProfileID }
-        return profile?.resolvedEndStops?.position(forReading: reading, body: cameraBody, orientation: bodyOrientation) ?? reading
+    var endStopCalibration: LCCEndStopCalibration? {
+        lensProfiles.first { $0.id.uuidString == selectedLensProfileID }?.resolvedEndStops
+    }
+    var resolvedHints: [Int: PanoramaShiftPosition] {
+        shiftHints.mapValues { $0.resolved(body: cameraBody, orientation: bodyOrientation, calibration: endStopCalibration) }
+    }
+    private var registrationHints: [Int: PanoramaShiftPosition] {
+        let all = resolvedHints
+        return all.values.compactMap(\.x).count >= 2 || all.values.compactMap(\.y).count >= 2 ? all : [:]
+    }
+    func updateHintStatus() {
+        alignmentNeedsUpdate = registrationHints != appliedRegistrationHints
     }
     private var measuredReference: PanoramaPositionReference? {
-        positionReference.map { PanoramaPositionReference(sourceIndex: $0.sourceIndex, positionMM: physicalPosition($0.positionMM)) }
+        guard let reference = positionReference else { return nil }
+        let point = resolvedHints[reference.sourceIndex]?.point ?? reference.positionMM
+        return .init(sourceIndex: reference.sourceIndex, positionMM: point)
     }
     var overviewReference:PanoramaPositionReference? {measuredReference ?? estimatedReference}
-    func setPositionReference(index:Int,x:Double,y:Double,asReference:Bool) {
-        guard x.isFinite,y.isFinite,abs(x)<=150,abs(y)<=150 else {error=L10n.tr("2dce53ce7a65");return}
+    func setShiftHint(index: Int, hint: PanoramaShiftHint, asReference: Bool) {
         alignmentWindow?.close()
-        knownPositions[index]=CGPoint(x:x,y:y)
-        if asReference {positionReference=PanoramaPositionReference(sourceIndex:index,positionMM:CGPoint(x:x,y:y));estimatedReference=nil}
-        else if positionReference?.sourceIndex==index {positionReference=nil;estimatedReference=nil;lccOffset = .zero}
-        alignmentNeedsUpdate=knownPositions.count>1
-        changeLCC()
+        shiftHints[index] = hint == PanoramaShiftHint() ? nil : hint
+        if asReference, let point = resolvedHints[index]?.point {
+            positionReference = .init(sourceIndex: index, positionMM: point)
+        } else if positionReference?.sourceIndex == index {
+            positionReference = nil
+        }
+        estimatedReference = nil
+        positionExplanation = ""
+        lccOffset = .zero
+        updateHintStatus()
+        changeLCC(automaticallyLocate: true)
     }
-    func clearPosition(_ index:Int) {
-        knownPositions.removeValue(forKey:index)
-        if positionReference?.sourceIndex==index {positionReference=nil;estimatedReference=nil;lccOffset = .zero;changeLCC()}
-        alignmentNeedsUpdate=knownPositions.count>1
+    func clearPosition(_ index: Int) {
+        setShiftHint(index: index, hint: .init(), asReference: false)
     }
     func changeLCC(automaticallyLocate:Bool=false) {
         guard registrationMode == .shift else {lccEnabled=false;return}
@@ -115,13 +130,14 @@ final class PanoramaWindowModel: ObservableObject {
         guard current.isRegistered else {lccEnabled=false;return}
         if let reference=measuredReference,let sensor {lccOffset=reference.profileOffset(in:current,sensor:sensor)}
         if !lccEnabled {
+            guard current.lccState != nil else { return }
             run {engine,token,_ in try engine.removingLCC(current,cancellation:token)};return
         }
         guard let id=UUID(uuidString:selectedLensProfileID),let sensor else {error=L10n.tr("fca735eecc8a");lccEnabled=false;return}
         let cached=lccSession,offset=lccOffset,crop=cropToLCC,exposure=exposureEV,protect=protectHighlights
         let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
         let shouldLocate=automaticallyLocate && positionReference==nil
-        let body=cameraBody,orientation=bodyOrientation
+        let body=cameraBody,orientation=bodyOrientation,hints=resolvedHints
         cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
         busy=true;error=nil;status=shouldLocate ? L10n.tr("6631ec06dcd5"):L10n.tr("299e5b1859ed")
         queue.async { [weak self] in
@@ -140,7 +156,7 @@ final class PanoramaWindowModel: ObservableObject {
                 prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
                 var solution:LCCPositionSolution?,locationIssue:String?
                 if shouldLocate {
-                    do {solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:sensor,cameraBody:body,bodyOrientation:orientation,cancellation:token,progress:progress)}
+                    do {solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:sensor,cameraBody:body,bodyOrientation:orientation,shiftHints:hints,cancellation:token,progress:progress)}
                     catch {
                         try token.check()
                         // Keep a usable calibrated preview so a partial profile can still be
@@ -195,7 +211,7 @@ final class PanoramaWindowModel: ObservableObject {
         cancellation.cancel();cancellation=PanoramaCancellation();let token=cancellation
         busy=true;error=nil;status=L10n.tr("3e9efb0180ff")
         let amount=exposureEV,protect=protectHighlights
-        let body=cameraBody,orientation=bodyOrientation
+        let body=cameraBody,orientation=bodyOrientation,hints=resolvedHints
         let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
         queue.async { [weak self] in
             do {
@@ -203,7 +219,7 @@ final class PanoramaWindowModel: ObservableObject {
                 prepared.lccLinearPreviewImages=session.preparedPlan.lccLinearPreviewImages
                 prepared.lccRawPreviews=session.preparedPlan.lccRawPreviews
                 prepared.lccFlatPreviews=session.preparedPlan.lccFlatPreviews
-                let solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:session.sensor,cameraBody:body,bodyOrientation:orientation,cancellation:token) {message in
+                let solution=try LCCPositionSolver.solve(plan:prepared,fields:session.fields,sensor:session.sensor,cameraBody:body,bodyOrientation:orientation,shiftHints:hints,cancellation:token) {message in
                     DispatchQueue.main.async {self?.status=message}
                 }
                 let proposal=try PanoramaEngine().applyingLCC(prepared,profile:session.profile,fields:session.fields,offsetMM:solution.offsetMM,
@@ -270,15 +286,16 @@ final class PanoramaWindowModel: ObservableObject {
         if let mode {registrationMode=mode}
         choosingMode = false;lccSession=nil;lccEnabled=false;cropToLCC=false;estimatedReference=nil;lccOffset = .zero;alignmentNeedsUpdate=false
         alignmentWindow?.close();editingPosition=nil
-        let mode=registrationMode,positions=registrationMode == .shift ? knownPositions.mapValues(physicalPosition):[:]
+        let mode = registrationMode, hints = registrationMode == .shift ? registrationHints : [:]
+        appliedRegistrationHints = hints
         let sensor=registrationMode == .shift ? self.sensor:nil
         plan=nil // A failed retry must not leave an older panorama available for export.
         run { [urls,options] engine,token,progress in
-            do {return try engine.analyze(urls:urls,options:options,knownPositions:positions,sensorOverride:sensor,registrationMode:mode,cancellation:token,progress:progress)}
+            do {return try engine.analyze(urls:urls,options:options,shiftHints:hints,sensorOverride:sensor,registrationMode:mode,cancellation:token,progress:progress)}
             catch {
                 try token.check()
                 guard mode == .shift else {throw error}
-                return try engine.alignmentDraft(urls:urls,knownPositions:positions,sensorOverride:sensor,message:error.localizedDescription,cancellation:token)
+                return try engine.alignmentDraft(urls:urls,knownPositions:hints.compactMapValues(\.point),sensorOverride:sensor,message:error.localizedDescription,cancellation:token)
             }
         }
     }
@@ -335,7 +352,7 @@ final class PanoramaWindowModel: ObservableObject {
         if plan.registrationMode == .perspective {return PanoramaManifest(plan:plan)}
         let profile=lensProfiles.first {$0.id.uuidString==selectedLensProfileID}
         return PanoramaManifest(plan:plan,profileID:profile?.id,profileName:profile?.name,
-            offsetMM:positionReference != nil || estimatedReference != nil ? lccOffset:nil,
+            offsetMM:sensor.flatMap { sensor in measuredReference?.profileOffset(in:plan,sensor:sensor) } ?? (estimatedReference != nil ? lccOffset : nil),
             sensor:sensor,bodyOrientation:bodyOrientation,cameraBody:cameraBody)
     }
     func stitch() {
@@ -368,10 +385,11 @@ private struct PanoramaWorkspace: View {
         } message: { Text(model.error ?? "") }
         .sheet(isPresented:Binding(get:{model.editingPosition != nil},set:{if !$0 {model.editingPosition=nil}})) {
             if let index=model.editingPosition,let plan=model.plan,let sensor=model.sensor {
-                let position=model.knownPositions[index] ?? model.overviewReference?.position(of:index,in:plan,sensor:sensor) ?? .zero
-                PanoramaPositionEntry(filename:plan.sources[index].url.lastPathComponent,position:position,
-                    isReference:model.positionReference?.sourceIndex==index || model.positionReference==nil,hasPosition:model.knownPositions[index] != nil) { x,y,asReference in
-                    model.editingPosition=nil;model.setPositionReference(index:index,x:x,y:y,asReference:asReference)
+                let suggestion = model.overviewReference?.position(of:index,in:plan,sensor:sensor) ?? .zero
+                PanoramaPositionEntry(filename: plan.sources[index].url.lastPathComponent, hint: model.shiftHints[index] ?? .init(),
+                    suggestion: suggestion, body: model.cameraBody, orientation: model.bodyOrientation, calibration: model.endStopCalibration,
+                    isReference: model.positionReference?.sourceIndex == index, hasPosition: model.shiftHints[index] != nil) { hint, pinned in
+                    model.editingPosition=nil;model.setShiftHint(index:index,hint:hint,asReference:pinned)
                 } onClear: {model.editingPosition=nil;model.clearPosition(index)} onCancel: {model.editingPosition=nil}
             }
         }
@@ -498,8 +516,8 @@ private struct PanoramaWorkspace: View {
                 Text(model.overviewReference != nil ? L10n.tr("a1d86877af02") : L10n.tr("92edb20a3dbc"))
                     .font(.caption).foregroundStyle(.secondary)
                 if !plan.isRegistered {Text(L10n.tr("de949bd06103")).font(.caption).foregroundStyle(.orange)}
-                Text(L10n.tr("5e76d67d4617" , String(describing: (model.knownPositions.count)))).font(.caption).foregroundStyle(.secondary)
-                if model.knownPositions.count>1 || !plan.isRegistered {
+                Text(L10n.tr("5e76d67d4617" , String(describing: (model.shiftHints.count)))).font(.caption).foregroundStyle(.secondary)
+                if model.shiftHints.count>1 || model.alignmentNeedsUpdate || !plan.isRegistered {
                     Button(L10n.tr("03b1a13cf2c0")) {model.prepare()}
                     if model.alignmentNeedsUpdate {Text(L10n.tr("a41d4452a74e")).font(.caption).foregroundStyle(.orange)}
                 }
@@ -521,16 +539,16 @@ private struct PanoramaWorkspace: View {
                 Text(L10n.tr("73281fd9d6f5" , String(format: "%.1f", (center.x-plan.origins[0].x-plan.sources[0].size.width/2)*sensor.width/plan.sources[0].size.width), String(format: "%.1f", (center.y-plan.origins[0].y-plan.sources[0].size.height/2)*sensor.height/plan.sources[0].size.height)))
                     .font(.caption)
             }
-            if let reference=model.positionReference,let plan=model.plan {
+            if model.positionReference != nil, let reference=model.overviewReference,let plan=model.plan {
                 Text(L10n.tr("a6805c058eaa" , String(describing: (plan.sources[reference.sourceIndex].url.lastPathComponent)), String(format: "%+.1f", reference.positionMM.x), String(format: "%+.1f", reference.positionMM.y))).font(.caption)
-                Button(L10n.tr("47966d105fad")) {model.positionReference=nil;model.estimatedReference=nil;model.lccOffset = .zero;model.changeLCC()}
+                Button(L10n.tr("47966d105fad")) {model.positionReference=nil;model.estimatedReference=nil;model.lccOffset = .zero;model.changeLCC(automaticallyLocate:true)}
             } else if model.estimatedReference != nil {
                 Text(model.positionExplanation).font(.caption).foregroundStyle(.secondary)
             }
             Picker(L10n.tr("185ffacaf4ad"),selection:$model.selectedLensProfileID) {
                 Text(L10n.tr("d03dcdd057a2")).tag("")
                 ForEach(model.lensProfiles) { Text($0.name).tag($0.id.uuidString) }
-            }.onChange(of:model.selectedLensProfileID) { _,_ in model.selectLensProfile(); model.changeLCC() }
+            }.onChange(of:model.selectedLensProfileID) { _,_ in model.selectLensProfile(); model.updateHintStatus(); model.changeLCC(automaticallyLocate:true) }
             Text(model.profileStatus).font(.caption).foregroundStyle(.secondary)
             if let plan=model.plan, !model.selectedLensProfileID.isEmpty {
                 ForEach(plan.sources.indices,id:\.self) { i in
@@ -583,28 +601,38 @@ private struct PanoramaWorkspace: View {
 private struct PanoramaPositionEntry:View {
     let filename:String
     let hasPosition:Bool
-    let onSave:(Double,Double,Bool)->Void
+    let onSave:(PanoramaShiftHint,Bool)->Void
     let onClear:()->Void
     let onCancel:()->Void
-    @State private var x:String
-    @State private var y:String
-    @State private var isReference:Bool
-    init(filename:String,position:CGPoint,isReference:Bool,hasPosition:Bool,onSave:@escaping(Double,Double,Bool)->Void,onClear:@escaping()->Void,onCancel:@escaping()->Void) {
+    let suggestion: CGPoint
+    let bodyType: PanoramaCameraBody
+    let orientation: PanoramaBodyOrientation
+    let calibration: LCCEndStopCalibration?
+    @State private var hint: PanoramaShiftHint
+    @State private var isReference: Bool
+    init(filename:String, hint: PanoramaShiftHint, suggestion: CGPoint, body: PanoramaCameraBody, orientation: PanoramaBodyOrientation,
+         calibration: LCCEndStopCalibration?, isReference:Bool, hasPosition:Bool, onSave:@escaping(PanoramaShiftHint,Bool)->Void,
+         onClear:@escaping()->Void,onCancel:@escaping()->Void) {
         self.filename=filename;self.hasPosition=hasPosition;self.onSave=onSave;self.onClear=onClear;self.onCancel=onCancel
-        _x=State(initialValue:hasPosition ? String(format:"%.2f",position.x):"");_y=State(initialValue:hasPosition ? String(format:"%.2f",position.y):"")
-        _isReference=State(initialValue:isReference)
+        self.suggestion=suggestion;bodyType=body;self.orientation=orientation;self.calibration=calibration
+        _hint=State(initialValue:hint);_isReference=State(initialValue:isReference)
     }
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
             Text(L10n.tr("26de880334ca")).font(.title2.bold())
             Text(filename).font(.headline)
             Text(L10n.tr("5851c578611d")).font(.callout)
-            HStack {Text(L10n.tr("98ab61de3e93"));TextField("mm",text:$x);Text("mm")}
-            HStack {Text(L10n.tr("5e9009b476b1"));TextField("mm",text:$y);Text("mm")}
-            Toggle(L10n.tr("13097721eadb"),isOn:$isReference).toggleStyle(.checkbox)
-            Text(L10n.tr("096e62731d90")).font(.caption).foregroundStyle(.secondary)
-            HStack {Button(L10n.tr("44acfaf249fe"),action:onClear).disabled(!hasPosition);Spacer();Button(L10n.tr("2cd0f3be8738"),action:onCancel);Button(L10n.tr("d977ab79b013")) {if let x=Double(x),let y=Double(y) {onSave(x,y,isReference)}}
-                .buttonStyle(.borderedProminent).disabled((Double(x).map {!$0.isFinite || abs($0)>150} ?? true) || (Double(y).map {!$0.isFinite || abs($0)>150} ?? true))}
+            PanoramaShiftHintEditor(hint:$hint,suggestion:suggestion,body:bodyType,orientation:orientation,calibration:calibration)
+            Text(L10n.tr("panorama.shift.guidance")).font(.caption).foregroundStyle(.secondary)
+            let complete = hint.resolved(body:bodyType,orientation:orientation,calibration:calibration).point != nil
+            if complete { Toggle(L10n.tr("13097721eadb"),isOn:$isReference).toggleStyle(.checkbox) }
+            HStack {
+                Button(L10n.tr("44acfaf249fe"),action:onClear).disabled(!hasPosition)
+                Spacer()
+                Button(L10n.tr("2cd0f3be8738"),action:onCancel)
+                Button(L10n.tr("d977ab79b013")) { onSave(hint, complete && isReference) }
+                    .buttonStyle(.borderedProminent).disabled(hint == PanoramaShiftHint() && !hasPosition)
+            }
         }.padding(24).frame(width:420).textFieldStyle(.roundedBorder)
     }
 }

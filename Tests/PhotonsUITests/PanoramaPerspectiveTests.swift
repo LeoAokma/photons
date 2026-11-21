@@ -39,12 +39,29 @@ final class PanoramaPerspectiveTests:XCTestCase {
             return url
         }
     }
+    func testMacPartialReadingDoesNotCreateAnAbsoluteReference() {
+        let model = PanoramaWindowModel(urls: [])
+        model.setShiftHint(index: 0, hint: .init(x: .negativeMaximum), asReference: true)
+        XCTAssertNil(model.positionReference)
+        XCTAssertNil(model.resolvedHints[0]?.y)
+        XCTAssertFalse(model.alignmentNeedsUpdate)
+        model.setShiftHint(index: 1, hint: .init(x: .positiveMaximum), asReference: false)
+        XCTAssertTrue(model.alignmentNeedsUpdate)
+        model.clearPosition(1)
+        XCTAssertFalse(model.alignmentNeedsUpdate)
+        model.setShiftHint(index: 0, hint: .init(x: .millimeters(4), y: .millimeters(5)), asReference: true)
+        XCTAssertEqual(model.positionReference?.positionMM, CGPoint(x: 4, y: 5))
+        model.clearPosition(0)
+        XCTAssertNil(model.positionReference)
+        XCTAssertTrue(model.resolvedHints.isEmpty)
+    }
+
     func testMacPerspectiveRegistrationAndExportPreserveModeWithoutShiftMetadata() async throws {
         _ = NSApplication.shared
         let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:folder)}
         let model=PanoramaWindowModel(urls:try fixtures(folder))
-        model.knownPositions=[0:.zero,1:CGPoint(x:150,y:150)]
+        model.shiftHints = [0: .init(x: .millimeters(0), y: .millimeters(0)), 1: .init(x: .millimeters(150), y: .millimeters(150))]
         model.positionReference = .init(sourceIndex:0,positionMM:CGPoint(x:4,y:5))
         model.sensorChoice=4;model.sensorWidth=54;model.sensorHeight=40
         model.prepare(mode:.perspective)
