@@ -44,7 +44,7 @@ final class GridEditTargetTests: XCTestCase {
 
     /// Five rows with distinct capture times. The order itself is whatever the session's sort order
     /// produces — every assertion below reads `session.assets`, never a hard-coded index.
-    private func makeSession(count: Int = 5) throws -> (CatalogSession, [String]) {
+    private func makeSession(count: Int = 5, into editorSession: CatalogSession? = nil) throws -> (CatalogSession, [String]) {
         let setup = try Catalog.create(at: packageURL)
         let rootDir = workDir.appendingPathComponent("src", isDirectory: true)
         try FileManager.default.createDirectory(at: rootDir, withIntermediateDirectories: true)
@@ -68,7 +68,7 @@ final class GridEditTargetTests: XCTestCase {
             try setup.dbQueue.write { db in try asset.insert(db) }
             ids.append(asset.id)
         }
-        let session = CatalogSession()
+        let session = editorSession ?? CatalogSession(remembersRecentLibrary: false)
         try session.open(packageURL)
         XCTAssertEqual(Set(session.assets.map(\.id)), Set(ids))
         return (session, ids)
@@ -232,6 +232,101 @@ final class GridEditTargetTests: XCTestCase {
         XCTAssertEqual(session.mode, .loupe)
         XCTAssertEqual(session.anchorID, order[order.count - 1])
         XCTAssertEqual(session.selection, [order[order.count - 1]])
+    }
+
+    func testWindowArrowsNavigateGridPhotoListFilmstripAndDoubleClickedLoupe() throws {
+        let editor = EditorWindowController()
+        let window = try XCTUnwrap(editor.window)
+        windows.append(window)
+        editor.session.remembersRecentLibrary = false
+        let (session, _) = try makeSession(into: editor.session)
+        let order = session.assets.map(\.id)
+        let root = try XCTUnwrap(editor.rootView)
+        let originalBrowser = root.browserMode
+        defer { root.setBrowserMode(originalBrowser) }
+        root.loupeController.autoRenderEnabled = false
+        TestWindows.show(window)
+        root.layoutSubtreeIfNeeded()
+        CropUITestSupport.pump(0.15)
+
+        func arrow(right: Bool) throws {
+            let character = right ? "\u{f703}" : "\u{f702}"
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: [.function, .numericPad], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, characters: character,
+                charactersIgnoringModifiers: character, isARepeat: false, keyCode: right ? 124 : 123))
+            window.sendEvent(event)
+        }
+
+        editor.showGrid()
+        session.selectOnly(order[1])
+        try arrow(right: true)
+        XCTAssertEqual(session.anchorID, order[2])
+
+        editor.showBrowserAsList()
+        let table = root.browserPane.photoListForTesting
+        XCTAssertTrue(window.makeFirstResponder(table))
+        table.selectRowIndexes(IndexSet(integer: 2), byExtendingSelection: false)
+        try arrow(right: false)
+        XCTAssertEqual(session.anchorID, order[1])
+        try arrow(right: true)
+        XCTAssertEqual(session.anchorID, order[2])
+        XCTAssertEqual(session.mode, .grid)
+
+        editor.showBrowserAsFilmstrip()
+        root.layoutSubtreeIfNeeded()
+        XCTAssertTrue(window.makeFirstResponder(root.filmstripController.collectionView))
+        try arrow(right: true)
+        XCTAssertEqual(session.anchorID, order[3])
+        try arrow(right: false)
+        XCTAssertEqual(session.anchorID, order[2])
+
+        editor.showGrid()
+        let grid = root.gridController
+        root.layoutSubtreeIfNeeded()
+        CropUITestSupport.pump(0.1)
+        guard grid.collectionView.numberOfItems(inSection: 0) == order.count else {
+            return XCTFail("Grid did not receive the catalog rows")
+        }
+        let item = try XCTUnwrap(grid.collectionView.layoutAttributesForItem(at: IndexPath(item: 2, section: 0)))
+        grid.activateItem(at: CGPoint(x: item.frame.midX, y: item.frame.midY))
+        CropUITestSupport.pump(0.15)
+        let canvas = root.loupeController.canvasView
+        XCTAssertEqual(session.mode, .loupe)
+        XCTAssertTrue(window.firstResponder === canvas)
+        try arrow(right: true)
+        XCTAssertEqual(session.anchorID, order[3])
+        CropUITestSupport.pump(0.1)
+        canvas.layoutSubtreeIfNeeded()
+        let clickPoint = canvas.convert(CGPoint(x: canvas.bounds.midX, y: canvas.bounds.midY), to: nil)
+        let click = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: clickPoint,
+            modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 1, clickCount: 2, pressure: 1))
+        canvas.mouseDown(with: click)
+        XCTAssertTrue(root.loupeController.viewState.isActualSize)
+        try arrow(right: false)
+        XCTAssertEqual(session.anchorID, order[2])
+        XCTAssertEqual(session.selection, [order[2]])
+        XCTAssertEqual(session.mode, .loupe)
+
+        root.topBar.onModeChange?(.grid)
+        XCTAssertTrue(window.firstResponder === grid.collectionView)
+        root.topBar.onModeChange?(.loupe)
+        XCTAssertTrue(window.firstResponder === canvas)
+        try arrow(right: true)
+        XCTAssertEqual(session.anchorID, order[3])
+
+        session.selectOnly(order[0])
+        try arrow(right: false)
+        XCTAssertEqual(session.anchorID, order[0])
+        let field = NSTextField(string: "123")
+        root.addSubview(field)
+        field.selectText(nil)
+        let fieldEditor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        fieldEditor.setSelectedRange(NSRange(location: 1, length: 0))
+        try arrow(right: true)
+        XCTAssertEqual(fieldEditor.selectedRange().location, 2)
+        XCTAssertEqual(session.anchorID, order[0])
     }
 
     // MARK: - ⑤ switching modes is not a decode

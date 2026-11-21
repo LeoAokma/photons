@@ -572,7 +572,12 @@ public final class WorkspaceRootView: NSView {
         }
         filmstripController.onActivate = { [weak self] id in self?.session.activate(id) }
         topBar.onOpen = { [weak self] in self?.openLibraryPanel() }
-        topBar.onModeChange = { [weak self] mode in self?.session.mode = mode }
+        topBar.onModeChange = { [weak self] mode in
+            guard let self else { return }
+            self.session.mode = mode
+            self.showModule(for: mode)
+            self.focusPhotoCanvas(for: mode)
+        }
         topBar.onToggleFilmstrip = { [weak self] in self?.toggleFilmstrip() }
         // 排序：一个值写进会话，网格/左侧栏/胶片条各自观察它（三个 `observeModel` 都读
         // `session.sortOrder`），按钮文字在 `updateTopBar` 里跟着刷新。
@@ -745,6 +750,21 @@ public final class WorkspaceRootView: NSView {
 
     // MARK: modules
 
+    /// The grid and filmstrip already handle arrows, including Shift-range selection.
+    /// Leave text editors, folder outlines and adjustment controls their native keys.
+    func navigateSelectedPhoto(by delta: Int, responder: NSResponder?) -> Bool {
+        guard session.anchorID != nil,
+              responder == nil || responder === window || responder === self ||
+              responder is PhotoListTableView || responder === loupeController.canvasView else { return false }
+        if session.moveAnchor(by: delta) {
+            switch browserMode {
+            case .list: browserPane.centreForLoupeEntry()
+            case .filmstrip: filmstripController.centreForLoupeEntry()
+            }
+        }
+        return true
+    }
+
     public func showModule(for mode: CatalogSession.Mode) {
         // 253 — leaving the editor (网格) is a workspace switch too: no armed brush / eyedropper may
         // survive behind a canvas that is no longer on screen. The inspector's own workspace switch
@@ -756,12 +776,21 @@ public final class WorkspaceRootView: NSView {
             if mode == .loupe { loupeController.scheduleRender() }
             return
         }
+        let focusedView = window?.firstResponder as? NSView
+        let transferFocus = current.map { focusedView?.isDescendant(of: $0) == true } ?? false
         current?.removeFromSuperview()
         target.frame = canvasHost.bounds
         target.autoresizingMask = [.width, .height]
         canvasHost.addSubview(target)
+        if transferFocus {
+            focusPhotoCanvas(for: mode)
+        }
         if mode == .loupe { loupeController.scheduleRender() }
         updateTopBar()
+    }
+
+    func focusPhotoCanvas(for mode: CatalogSession.Mode) {
+        window?.makeFirstResponder(mode == .loupe ? loupeController.canvasView : gridController.collectionView)
     }
 
     public func setBrowserMode(_ mode: BrowserMode) {

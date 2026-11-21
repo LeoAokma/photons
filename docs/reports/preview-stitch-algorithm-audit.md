@@ -7,6 +7,7 @@
 | PREVIEW-FIFO-01 | 降低 Mac 预览内存索引淘汰成本，保留覆盖、淘汰和清空语义 | 无 |
 | PANO-VOTE-01 | 降低平移配准的位移投票成本，保留入选匹配点及其顺序 | 无 |
 | PANO-EXPOSURE-01 | 在关闭曝光匹配时省去增益求解，保留接缝与输出像素 | 无 |
+| MAC-ARROW-NAV-01 | 在 Mac 各照片浏览模式及大图放大时用左右键切图 | 无 |
 
 ## 审计范围
 
@@ -74,3 +75,14 @@
 集成后 Mac 的 `testDisablingExposureMatchingClearsPreviousGainsAndCanBeReversed` 从不同亮度的两图产生非单位增益，关闭后验证恢复单位增益及清除局部补偿，再开启后核对增益、接缝归属和蒙版。连同缩略图、配准、渲染和导出工作进程测试，一次执行 65 项，62 项通过，3 个外部 Boston 夹具测试跳过，零失败。本机原型和详细日志在 `local/out/preview-stitch-audit-a20dd64/exposure`。可独立回退；平移投票提交为 `fff6112`。本项的实现提交可用 `git log --oneline --grep=PANO-EXPOSURE-01` 定位。
 
 iPad 模拟器执行 `testPanoramaAlignmentScaledLosslessExportAndMetadata` 和 `testPanoramaToneUpdatesPreviewHistogramAndExport` 均通过。最终 `swift build -c release` 成功。各项的耗时取自 M5 Pro；iPad 模拟器用于验证功能。旧 Mac、旧 iPad 及用户 502–505 原片组合未做实机性能测量。
+
+
+## MAC-ARROW-NAV-01 · Mac 左右方向键切图
+
+网格与胶片条已有方向键导航。左侧照片表格和单图画布拿到焦点时，左右键没有切图入口；双击从网格进入大图还会移除原先持有键盘焦点的网格视图。`EditorWindowController` 的主编辑窗口现在将普通左右键交给 `WorkspaceRootView`，后者在照片列表、大图及窗口本身持有焦点时，沿用 `CatalogSession.moveAnchor` 按当前排序和筛选结果移动。双击和工具栏切换视图时将照片焦点交给新画布，浏览区显示对应的当前缩略图。已有修饰键操作、文本光标、文件夹树和调节控件继续由各自的响应器处理。
+
+本次 `PHOTONS_LANGUAGE=zh-Hans swift test --filter 'GridEditTargetTests|GridDoubleClickCentre391Tests|BrowserPaneDoubleClickTests|DoubleClickParity415Tests|ShiftRangeSelection375Tests|StackProjection378Tests|AdjustmentSlider'` 执行 43 项，全部通过。新增窗口测试通过 AppKit 的 `sendEvent` 发送左右键，核对网格、左侧照片列表、胶片条、进入大图后、画布双击放大后及从工具栏切换后的选中照片和浏览模式，并在文本框中核对光标移动。首张照片按左键会停留在首张。范围选择与折叠堆栈导航另由已有用例覆盖。
+
+此项为独立的 Mac 交互改动；提交可由 `git log --oneline --grep=MAC-ARROW-NAV-01` 定位。前三项优化的实现提交分别为 `1d01581`、`fff6112`、`08c9297`。测试使用临时图库，未向 App Store 提交。
+
+最终源代码在 Mac 使用 `swift build -c release` 构建成功；iPad 使用 Studio 配置、Release、`generic/platform=iOS` 和 `CODE_SIGNING_ALLOWED=NO` 为 arm64 设备目标构建成功。iPad 功能验证使用上述模拟器。

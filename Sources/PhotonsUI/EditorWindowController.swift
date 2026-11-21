@@ -4,6 +4,19 @@ import PhotonsCatalog
 import PhotonsCore
 import PhotonsFileAccess
 
+/// Route plain photo arrows before NSTableView or the zoom canvas consumes them.
+private final class PhotoEditorWindow: NSWindow {
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 123 || event.keyCode == 124,
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+           attachedSheet == nil, let root = contentView as? WorkspaceRootView,
+           root.navigateSelectedPhoto(by: event.keyCode == 123 ? -1 : 1, responder: firstResponder) {
+            return
+        }
+        super.sendEvent(event)
+    }
+}
+
 /// One editor window: titlebar contract, the workspace, and the commands the menu dispatches.
 ///
 /// No `NSToolbar` (§2b item 1) and no storyboard/XIB anywhere: the window, its content and its
@@ -72,7 +85,7 @@ public final class EditorWindowController: NSWindowController {
     }
 
     public init(size: NSSize = NSSize(width: 1440, height: 900)) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: size.width, height: size.height),
+        let window = PhotoEditorWindow(contentRect: NSRect(x: 0, y: 0, width: size.width, height: size.height),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered,
                               defer: false)
@@ -156,14 +169,14 @@ public final class EditorWindowController: NSWindowController {
     public func showGrid() {
         session.mode = .grid
         rootView.showModule(for: .grid)
-        window?.makeFirstResponder(rootView.gridController.collectionView)
+        rootView.focusPhotoCanvas(for: .grid)
     }
 
     public func showLoupe() {
         guard let id = session.anchorID else { return }
         session.activate(id)
         rootView.showModule(for: .loupe)
-        window?.makeFirstResponder(rootView.loupeController.canvasView)
+        rootView.focusPhotoCanvas(for: .loupe)
     }
 
     public func toggleFilmstrip() {
