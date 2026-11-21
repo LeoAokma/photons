@@ -123,6 +123,31 @@ final class PanoramaHDRTests: XCTestCase {
     }
 
     @MainActor
+    func testHostedHistogramFitsItsLastReadoutRow() throws {
+        let image = try XCTUnwrap(CIContext().createCGImage(scene(), from: scene().extent))
+        let window = TestWindows.make(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600))
+        defer { window.close() }
+        let host = NSHostingView(rootView: PanoramaHDRPreview(image: image))
+        window.contentView = host
+        TestWindows.show(window)
+        host.layoutSubtreeIfNeeded()
+
+        func histogram(in parent: NSView) -> HistogramCardView? {
+            if let card = parent as? HistogramCardView { return card }
+            return parent.subviews.lazy.compactMap { histogram(in: $0) }.first
+        }
+        let card = try XCTUnwrap(histogram(in: host))
+        let bitmap = try XCTUnwrap(card.bitmapImageRepForCachingDisplay(in: card.bounds))
+        card.cacheDisplay(in: card.bounds, to: bitmap)
+        XCTAssertGreaterThan(card.readoutRowRect.height, 0)
+        XCTAssertEqual(card.bounds.maxY, card.readoutRowRect.maxY, accuracy: 0.5)
+        let frame = card.convert(card.bounds, to: window.contentView)
+        let topInset = host.isFlipped ? frame.minY : host.bounds.maxY - frame.maxY
+        // 12 pt to the overlay plus 6 pt inside its material background.
+        XCTAssertEqual(topInset, 18, accuracy: 0.5)
+    }
+
+    @MainActor
     func testHostedPanoramaReceivesWindowDoubleClicks() throws {
         let cg = try XCTUnwrap(CIContext().createCGImage(scene(), from: scene().extent))
         let window = TestWindows.make(contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
