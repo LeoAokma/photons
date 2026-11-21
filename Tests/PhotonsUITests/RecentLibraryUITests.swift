@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import PhotonsCatalog
 @testable import PhotonsUI
 
@@ -29,6 +30,41 @@ final class RecentLibraryUITests: XCTestCase {
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: workDir)
+    }
+
+    @MainActor
+    func testFileMenuRefreshesRecentLibrariesAndOpensChosenDuplicateName() throws {
+        _ = NSApplication.shared
+        let main = MainMenu.build()
+        let file = try XCTUnwrap(main.items.compactMap(\.submenu).first {
+            $0.items.contains { $0.action == #selector(EditorWindowController.openLibraryAction(_:)) }
+        })
+        XCTAssertTrue(file.items.contains { $0.submenu is RecentLibrariesMenu })
+
+        let store = MemoryStore()
+        let menu = RecentLibrariesMenu(store: store)
+        menu.menuNeedsUpdate(menu)
+        XCTAssertEqual(menu.numberOfItems, 1)
+        XCTAssertFalse(menu.items[0].isEnabled)
+
+        let a = workDir.appendingPathComponent("first/Session.photonslibrary")
+        let b = workDir.appendingPathComponent("second/Session.photonslibrary")
+        _ = try Catalog.create(at: a)
+        _ = try Catalog.create(at: b)
+        RecentLibrary.remember(a, in: store)
+        RecentLibrary.remember(b, in: store)
+        menu.menuNeedsUpdate(menu)
+        XCTAssertEqual(menu.items.map(\.toolTip), [b.path, a.path])
+        XCTAssertNotEqual(menu.items[0].title, menu.items[1].title)
+        let editor = EditorWindowController()
+        editor.session.remembersRecentLibrary = false
+        let selected = menu.items[1]
+        let action = try XCTUnwrap(selected.action)
+        XCTAssertTrue(NSApp.sendAction(action, to: editor, from: selected))
+        XCTAssertEqual(editor.session.libraryURL?.standardizedFileURL.path, a.standardizedFileURL.path)
+        LibraryHistory.remove(b, in: store)
+        menu.menuNeedsUpdate(menu)
+        XCTAssertEqual(menu.items.map(\.title), ["Session"])
     }
 
     // MARK: - the store

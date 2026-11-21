@@ -39,6 +39,8 @@ public enum MainMenu {
         fileItem.submenu = file
         file.addItem(withTitle: L10n.tr("f9af46c99fd4"), action: #selector(EditorWindowController.createLibraryAction(_:)), keyEquivalent: "n")
         file.addItem(withTitle: L10n.tr("e6fe0fd9bc6e"), action: #selector(EditorWindowController.openLibraryAction(_:)), keyEquivalent: "o")
+        let recent = RecentLibrariesMenu()
+        file.addItem(withTitle: recent.title, action: nil, keyEquivalent: "").submenu = recent
         // ⇧⌘I — the shortcut every photo app puts on "import". Grey until a library is open
         // (`validateMenuItem`): the panel would otherwise accept folders and have nowhere to write.
         let importItem = file.addItem(withTitle: L10n.tr("006ed48cea9a"),
@@ -291,6 +293,37 @@ public enum MainMenu {
         NSApp.windowsMenu = windowMenu
 
         return main
+    }
+}
+
+/// Reads the same history as Library Settings whenever AppKit opens the menu.
+@MainActor
+final class RecentLibrariesMenu: NSMenu, NSMenuDelegate {
+    private let store: RecentLibrary.Store
+
+    init(store: RecentLibrary.Store = UserDefaults.standard) {
+        self.store = store
+        super.init(title: L10n.tr("library.openRecent"))
+        delegate = self
+    }
+
+    required init(coder: NSCoder) { fatalError("no nibs in this app") }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        removeAllItems()
+        let entries = LibraryHistory.entries(in: store)
+        if entries.isEmpty {
+            addItem(withTitle: L10n.tr("096585910b99"), action: nil, keyEquivalent: "").isEnabled = false
+            return
+        }
+        let names = Dictionary(grouping: entries) { $0.url.deletingPathExtension().lastPathComponent }
+        for entry in entries {
+            let name = entry.url.deletingPathExtension().lastPathComponent
+            let title = names[name]?.count == 1 ? name : (entry.path as NSString).abbreviatingWithTildeInPath
+            let item = addItem(withTitle: title, action: #selector(EditorWindowController.openRecentLibraryAction(_:)), keyEquivalent: "")
+            item.representedObject = entry.url
+            item.toolTip = entry.path
+        }
     }
 }
 

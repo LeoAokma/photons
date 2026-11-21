@@ -142,7 +142,9 @@ final class ImportUITests: XCTestCase {
 
         let openIndex = try XCTUnwrap(titles.firstIndex(of: "打开库…"))
         let importIndex = try XCTUnwrap(titles.firstIndex(of: "导入照片…"))
-        XCTAssertEqual(importIndex, openIndex + 1, "导入照片… sits directly under 打开库…")
+        let recentIndex = try XCTUnwrap(titles.firstIndex(of: "打开最近的照片库"))
+        XCTAssertEqual(recentIndex, openIndex + 1)
+        XCTAssertEqual(importIndex, recentIndex + 1)
 
         let item = file.items[importIndex]
         XCTAssertEqual(item.action, #selector(EditorWindowController.importAction(_:)))

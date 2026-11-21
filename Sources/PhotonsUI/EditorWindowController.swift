@@ -321,6 +321,12 @@ public final class EditorWindowController: NSWindowController {
 
     @objc public func openLibraryAction(_ sender: Any?) { openLibraryPanel() }
 
+    @objc func openRecentLibraryAction(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        do { try openLibrary(at: url) }
+        catch { presentLibraryAccessError(error) }
+    }
+
     @objc public func showGridAction(_ sender: Any?) { showGrid() }
 
     @objc public func showLoupeAction(_ sender: Any?) { showLoupe() }
