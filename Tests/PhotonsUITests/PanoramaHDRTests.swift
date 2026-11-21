@@ -252,6 +252,7 @@ final class PanoramaHDRTests: XCTestCase {
         XCTAssertEqual(properties[kCGImagePropertyPixelHeight as String] as? Int, 32)
         let gainMap = CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, kCGImageAuxiliaryDataTypeISOGainMap)
         XCTAssertNotNil(gainMap, "default native export must carry an HDR gain map")
-        XCTAssertEqual(model.preset.colorSpace, .displayP3)
+        XCTAssertEqual(model.preset.colorSpace, .rec2020)
+        XCTAssertTrue((properties[kCGImagePropertyProfileName as String] as? String)?.contains("2020") == true)
     }
 }

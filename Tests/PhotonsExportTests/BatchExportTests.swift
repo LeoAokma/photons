@@ -443,7 +443,7 @@ final class BatchExportTests: XCTestCase {
             let report = BatchExporter.run(items: [item("bits")],
                                            preset: ExportPreset(format: .tiff, bitDepth: bits),
                                            outputDirectory: out,
-                                           render: { _, _ in self.image(width: 256, height: 192) })
+                                           render: { _, preset in self.image(width: 256, height: 192, primaries: preset.colorSpace) })
             let url = try XCTUnwrap(report.written.first?.fileURL)
             return (try readBack(url), try fileSize(url))
         }

@@ -42,3 +42,9 @@ Mac 普通导出和拼接导出改为从画面四处取样，以所选编码器�
 ## IPAD-SIZE-01 · iPad 导出表单
 
 单张和拼接表单均显示预计大小，使用实际裁切后的照片尺寸或拼接画布；当前预览可用时使用 EXPORT-SIZE-02 的同一试编码器和文案。选项改变时刷新，开始导出时停止估算。iPadOS 27.2 UI 测试 testPhotoExportShowsSampledEstimateAndRespondsToFormat 实际点击单张导出，从默认格式切到 TIFF，确认测量后的数值改变；testGridInspectorSelectionAndPanoramaWorkflow 核对拼接页出现估算并完成全尺寸样片导出。两项均通过。依赖 d02944b，设备 Release 构建通过，未在实体 M1 运行。
+
+## EXPORT-2020-01V · 全景和批量导出回读
+
+扩展回归发现两项测试固定假设默认 P3。批量位深测试现在让像素提供器服从请求的色域；全景测试从实际写出的 HEIC 回读 Rec.2020 描述，并同时核对 ISO 增益图。改动仅限 BatchExportTests、PanoramaHDRTests，依赖 6c7c9b2。两套测试本次通过。
+
+扩展回归还有两项已存在的失败。在原始基线 505174f 的独立源码副本上，以同一 Xcode、同一固定依赖重跑并得到相同结果：Apple 单通道增益图重建 39.198 dB（门槛 40），无文字水印的 HDR HEIC 与历史固定 SHA 不同（批处理与直接编码仍逐字节相同）。未放宽两项断言。
