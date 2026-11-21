@@ -71,6 +71,32 @@ final class LCCCameraTests:XCTestCase {
         XCTAssertTrue(p.captures[0].grid.floats.allSatisfy {$0>0})
         XCTAssertEqual(try LCCProfileCodec.decode(LCCProfileCodec.encode(p)),p)
     }
+    func testClippedSkyUsesNearbyColourEvenWhenItDiffersFromWhiteBalance() throws {
+        var raw = fixture()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).dng")
+        try raw.dng().data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let source = try PanoramaSource(url: url)
+        let field = try LCCCorrectionField(profile: profile(), orientation: .landscape)
+        let gain = LCCCameraGainMap(field: field, source: source, origin: .zero, panoramaSize: source.size,
+                                    sensor: SensorSize(width: 36, height: 24, source: "test"), offset: .zero)
+        for y in 0..<raw.height {
+            for x in 0..<raw.width {
+                let channel = raw.pattern[(y % 2) * 2 + x % 2]
+                if channel == 2 { raw.samples[y * raw.width + x] *= 1.8 }
+                if abs(x - raw.width / 2) < 12 && abs(y - raw.height / 2) < 12 {
+                    raw.samples[y * raw.width + x] = 1
+                }
+            }
+        }
+        let map = LCCClippedColorMap(raw: raw, gain: gain, fallback: neutral)
+        let local = map.neutral(0.5, 0.5)
+        XCTAssertEqual(local.z, neutral.z * 1.8, accuracy: 0.03)
+        raw.samples = Array(repeating: 1, count: raw.samples.count)
+        let empty = LCCClippedColorMap(raw: raw, gain: gain, fallback: neutral)
+        XCTAssertEqual(empty.neutral(0.5, 0.5).z, neutral.z, accuracy: 0.00001)
+    }
+
     func testSensorClippingRecoveryDoesNotTintUnclippedPixels() {
         let original=SIMD4<Float>(0.7,0.5,0.3,0.5),corrected=original*2
         XCTAssertEqual(LCCCameraPipeline.recoverClipped(original:original,corrected:corrected,neutral:neutral),corrected)

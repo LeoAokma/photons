@@ -134,7 +134,7 @@ enum LCCCameraPipeline {
                     let p=(y+site/2)*raw.width+x+site%2,c=raw.pattern[site]
                     original[c]=raw.samples[p];evidence[c]=(raw.clipping?[p] ?? 0)>0 ? 1:original[c]
                 }
-                let corrected=evidence.max()>0.97 ? Self.recoverClipped(original:evidence,corrected:original*g,neutral:evidence.min()>0.97 ? highlightNeutral:highlightColors.neutral((Double(x)+1)/Double(raw.width),(Double(y)+1)/Double(raw.height))):original*g
+                let corrected=evidence.max()>0.97 ? Self.recoverClipped(original:evidence,corrected:original*g,neutral:highlightColors.neutral((Double(x)+1)/Double(raw.width),(Double(y)+1)/Double(raw.height))):original*g
                 peak=max(peak,Double(corrected.max()))
                 for site in 0..<4 {
                     let c=raw.pattern[site],divisor=(c==1 || c==3) ? common:g[c]
@@ -158,7 +158,7 @@ enum LCCCameraPipeline {
 
 /// Propagate colour ratios from unsaturated neighbours into clipped regions. This supplies
 /// local colour (e.g. blue sky), instead of forcing every reconstructed highlight to neutral.
-fileprivate struct LCCClippedColorMap {
+struct LCCClippedColorMap {
     let width=96,height=72
     var colors:[SIMD3<Double>]
     init(raw:CameraMosaic,gain:LCCCameraGainMap,fallback:SIMD3<Double>?) {
@@ -172,9 +172,7 @@ fileprivate struct LCCClippedColorMap {
             guard !clipped,c.max()<0.95,c.min()>0.001 else {continue}
             c *= gain.gain((Double(x)+1)/Double(raw.width),(Double(y)+1)/Double(raw.height))
             let green=Double(c.y+c.w)/2
-            guard green>0.03,
-                  abs(log(Double(c.x)/green/base.x))<0.25,
-                  abs(log(Double(c.z)/green/base.z))<0.25 else {continue}
+            guard green>0.03 else {continue}
             let p=min(height-1,y*height/raw.height)*width+min(width-1,x*width/raw.width)
             sums[p] += SIMD3(log(Double(c.x)/green),0,log(Double(c.z)/green));counts[p] += 1
         }}
