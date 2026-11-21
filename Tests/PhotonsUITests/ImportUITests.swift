@@ -135,6 +135,41 @@ final class ImportUITests: XCTestCase {
 
     // MARK: - 1. menu
 
+    func testEmptyWorkspaceActionsFollowLibraryCountThroughImportAndFilter() throws {
+        let controller = EditorWindowController()
+        controller.session.remembersRecentLibrary = false
+        let actions = controller.rootView.emptyLibraryActions
+        let buttons = actions.arrangedSubviews.compactMap { $0 as? NSButton }
+        XCTAssertFalse(actions.isHidden)
+        XCTAssertEqual(buttons.map { $0.accessibilityIdentifier() }, ["library.empty.open", "library.empty.recent"])
+        XCTAssertEqual(buttons.first?.action, #selector(EditorWindowController.openLibraryAction(_:)))
+        XCTAssertTrue(buttons.last?.menu is RecentLibrariesMenu)
+
+        let library = libraryURL()
+        _ = try Catalog.create(at: library)
+        try controller.openLibrary(at: library)
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertFalse(actions.isHidden)
+        XCTAssertGreaterThan(actions.frame.width, 0)
+
+        let photo = try makeJPEG(at: workDir.appendingPathComponent("sample.jpg"), seed: 2)
+        let importer = try XCTUnwrap(controller.session.makeImportService())
+        _ = try importer.run(sources: [photo], options: .init(mode: .reference))
+        controller.session.reload()
+        pump(until: { actions.isHidden }, timeout: 3)
+        XCTAssertTrue(actions.isHidden)
+        controller.session.applyFilter(CatalogFilter(slots: [FilterSlot(dimension: .rating, values: ["5"])]))
+        XCTAssertTrue(controller.session.assets.isEmpty)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(actions.isHidden, "An empty filter result is still a populated library")
+
+        let empty = libraryURL("Other")
+        _ = try Catalog.create(at: empty)
+        try controller.openLibrary(at: empty)
+        pump(until: { !actions.isHidden }, timeout: 3)
+        XCTAssertFalse(actions.isHidden)
+    }
+
     func testFileMenuOffersImportPhotoAtShiftCommandI() throws {
         let menu = MainMenu.build()
         let file = try XCTUnwrap(menu.items.first { $0.submenu?.title == "文件" }?.submenu)

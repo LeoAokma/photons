@@ -398,6 +398,7 @@ public final class WorkspaceRootView: NSView {
     public let forwardCompatNotice = NSTextField(labelWithString: "")
 
     private let canvasHost = NSView()
+    let emptyLibraryActions = NSStackView()
     private let browserDivider = WorkspaceDivider()
     private let inspectorDivider = WorkspaceDivider()
     private let inspectorBackdrop = StudioPanelView()
@@ -492,7 +493,7 @@ public final class WorkspaceRootView: NSView {
         //
         // 402 — 胶片条缺的是底板而不是层次：`filmstripBackdrop` 插在 `filmstripController.view`
         // 之前、`canvasHost` 之后，让那块透明滚动视图底下终于有不透明像素。
-        for v: NSView in [canvasHost,
+        for v: NSView in [canvasHost, emptyLibraryActions,
                           headerGlass, topBar,
                           browserPane.view, browserDivider,
                           inspectorDivider, inspectorBackdrop, inspectorHost,
@@ -500,6 +501,29 @@ public final class WorkspaceRootView: NSView {
                           importProgressBar, forwardCompatNotice] {
             addSubview(v)
         }
+
+        let openLibrary = NSButton(title: L10n.tr("library.empty.open"), target: nil,
+                                   action: #selector(EditorWindowController.openLibraryAction(_:)))
+        let recent = NSButton(title: L10n.tr("library.empty.recent"), target: self,
+                              action: #selector(showRecentLibraries(_:)))
+        recent.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
+        recent.imagePosition = .imageTrailing
+        recent.menu = RecentLibrariesMenu()
+        openLibrary.setAccessibilityIdentifier("library.empty.open")
+        recent.setAccessibilityIdentifier("library.empty.recent")
+        emptyLibraryActions.spacing = 8
+        emptyLibraryActions.orientation = .vertical
+        for button in [openLibrary, recent] {
+            button.bezelStyle = .rounded
+            emptyLibraryActions.addArrangedSubview(button)
+        }
+        emptyLibraryActions.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            emptyLibraryActions.centerXAnchor.constraint(equalTo: canvasHost.centerXAnchor),
+            emptyLibraryActions.centerYAnchor.constraint(equalTo: canvasHost.centerYAnchor),
+            recent.widthAnchor.constraint(equalTo: openLibrary.widthAnchor)
+        ])
+        updateEmptyLibraryActions()
 
         forwardCompatNotice.font = ForwardCompatNotice.font
         forwardCompatNotice.textColor = ForwardCompatNotice.textColor
@@ -664,6 +688,7 @@ public final class WorkspaceRootView: NSView {
         bridge.observe({ [weak self] in
             guard let self else { return }
             _ = self.session.mode
+            _ = self.session.stats?.total
             _ = self.session.assets.count
             _ = self.session.selection
             _ = self.session.libraryURL
@@ -681,7 +706,17 @@ public final class WorkspaceRootView: NSView {
             self.showModule(for: self.session.mode)
             self.updateTopBar()
             self.updateForwardCompatNotice()
+            self.updateEmptyLibraryActions()
         })
+    }
+
+    private func updateEmptyLibraryActions() {
+        emptyLibraryActions.isHidden = session.isOpen && session.stats?.total != 0
+    }
+
+    @objc private func showRecentLibraries(_ button: NSButton) {
+        let below = button.isFlipped ? button.bounds.maxY : button.bounds.minY
+        button.menu?.popUp(positioning: nil, at: NSPoint(x: button.bounds.minX, y: below), in: button)
     }
 
     private func updateTopBar() {

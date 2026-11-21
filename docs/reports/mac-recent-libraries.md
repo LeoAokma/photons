@@ -10,3 +10,9 @@
 在 AppMenu 的“打开库…”下添加最近照片库子菜单。每次展开时从 LibraryHistory 读取记录，最近使用的排在最前面，同名时显示路径。菜单项目携带库 URL，通过响应链交给当前 EditorWindowController，沿用现有的书签与错误处理。没有记录时显示禁用的提示。中英文文案随应用语言切换。
 
 本次运行 `PHOTONS_LANGUAGE=zh-Hans swift test --filter 'RecentLibraryUITests|OutputModeAndLibraryTests|ImportUITests'`，24 项全部通过。在临时目录创建两份同名图库，核对菜单顺序、按路径区分、移除后的更新及选中后打开的真实库。验证了原有导入快捷键。未用个人图库进行写入测试。此项可独立回退，空白图库入口复用了这里的菜单。
+
+## LIB-RECENT-02
+
+在 Mac 工作区的空白画布中央加入“打开图片库”和“打开最近”。前者打开原有的系统选择器；后者复用 LIB-RECENT-01（`442d75e`）的动态菜单。WorkspaceRootView 按全库照片总数更新按钮，未打开库和全库零照片时均可切换，导入第一张照片后隐藏。一个非空图库经过筛选得到零行时仍然保留筛选视图。
+
+本次运行 `PHOTONS_LANGUAGE=zh-Hans swift test --filter 'RecentLibraryUITests|ImportUITests|OutputModeAndLibraryTests|LayoutContractTests'`，43 项全部通过。测试在临时图库中实际导入 JPEG、应用零匹配筛选，再切换到另一个空库，验证两个按钮的显示和菜单接线。`swift build -c release` 成功。该项的实现提交为包含本节的 commit，可用 `git log --grep=LIB-RECENT-02` 定位。此次交付限于 Mac 本机版。

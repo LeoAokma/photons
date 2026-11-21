@@ -976,6 +976,8 @@
   "d32bd5a0edfe": "隐藏其他",
   "cbec1c499c29": "退出 {0}",
   "39932f24fe11": "文件",
+  "library.empty.open": "打开图片库",
+  "library.empty.recent": "打开最近",
   "library.openRecent": "打开最近的照片库",
   "e6fe0fd9bc6e": "打开库…",
   "006ed48cea9a": "导入照片…",
