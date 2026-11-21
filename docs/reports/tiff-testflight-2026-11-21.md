@@ -21,3 +21,21 @@
 在内置浏览器保存中英文测试说明，把构建加入 Developer Beta 和 Private Beta 并提交外测审核。02:20 在两个组各自的 Builds 清单核实，iOS 0.3.0 (8) 均显示 **Testing**。已开启获批后自动通知。未在实体 iPad 上安装 TestFlight 包。部署提交可用 git log --grep=TF-IPAD-01 定位，回退记录不撤销 Apple 的分发。
 
 [iPad 构建](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835570029/testflight/ios/8a5ce869-eed6-456e-a31a-2aca0a44a77c) · [Developer Beta](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835570029/testflight/groups/80db453c-65e8-44c3-a63e-7a1e5f461aa9/builds) · [Private Beta](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835570029/testflight/groups/f5df1ef4-8e90-459a-9fb3-8b23a2f39624/builds)
+
+## TF-MAC-01
+
+从 TIFF-COMP-01（`22e3cf1`）构建 Mac Release 与两个 vendored helper，由 scripts/testflight.py 组装沙盒应用并使用 Apple Distribution 签名。构建为 0.3.0 (8)，面向 arm64 Mac，最低 macOS 14。沙盒诊断和接片 worker 均通过，归档中主程序与三个 helper 的 dSYM UUID 均匹配，已核对签名、描述文件与两份镜头配置。纽约时间 02:16:17，xcodebuild -exportArchive 返回 Upload succeeded。
+
+在内置浏览器保存中英文测试说明，同一次分组选中 Developer Beta 和 Private Beta，勾选自动通知并提交审核。02:21 在两组 Builds 清单再次核实，macOS 0.3.0 (8) 的 DB 状态为 **Testing**，PB 状态为 **Waiting for Review**。外测开放时间由 Apple 决定。本次未在另一台 Mac 安装 TestFlight 版本。
+
+[Mac 构建](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835570029/testflight/macos/db9ce37d-2a17-4566-a57d-771d14c9850f) · [Developer Beta](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835570029/testflight/groups/80db453c-65e8-44c3-a63e-7a1e5f461aa9/builds) · [Private Beta](https://appstoreconnect.apple.com/teams/a2137f83-9ab5-439c-b535-cc9bbff7703c/apps/6835570029/testflight/groups/f5df1ef4-8e90-459a-9fb3-8b23a2f39624/builds)
+
+## 提交与产物
+
+| 编号 | Git 提交 |
+| --- | --- |
+| TIFF-COMP-01 | `22e3cf1` |
+| TF-IPAD-01 | `8f78e7c` |
+| TF-MAC-01 | 包含本节的部署记录，可用 git log --grep=TF-MAC-01 定位 |
+
+两份签名归档保存在本地 .build/tiff-beta-20261121，上传日志保存在 local/tiff-beta-20261121。回退部署记录不会撤销 TestFlight 分发。
