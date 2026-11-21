@@ -1,11 +1,12 @@
 # 预览生成与全景拼接算法审计
 
-基线为 fork main 的 `a20dd64`。两项可以独立验收与回退。用 `git log --oneline --grep=<追踪编号>` 可定位各项实现。测试数据来自仓库夹具和生成的场景。以下时间在 Apple M5 Pro、Swift 6.4.2 上测得。
+基线为 fork main 的 `a20dd64`。各项可以独立验收与回退。用 `git log --oneline --grep=<追踪编号>` 可定位各项实现。测试数据来自仓库夹具和生成的场景。以下时间在 Apple M5 Pro、Swift 6.4.2 上测得。
 
 | 追踪编号 | 验收目标 | 依赖 |
 | --- | --- | --- |
 | PREVIEW-FIFO-01 | 降低 Mac 预览内存索引淘汰成本，保留覆盖、淘汰和清空语义 | 无 |
 | PANO-VOTE-01 | 降低平移配准的位移投票成本，保留入选匹配点及其顺序 | 无 |
+| PANO-EXPOSURE-01 | 在关闭曝光匹配时省去增益求解，保留接缝与输出像素 | 无 |
 
 ## 审计范围
 
@@ -30,3 +31,24 @@
 每组新旧交替测七轮，使用相同键与校验和。独立实验保存在本机 `local/out/preview-stitch-audit-a20dd64/preview`。
 
 集成验证使用 `PHOTONS_LANGUAGE=zh-Hans PHOTONS_TEST_RAW="$PWD/Tests/Fixtures/hdr-bracket-b.dng" swift test --filter 'PreviewFIFOIndexTests|PreviewCacheManagementTests|ThumbnailHDRCacheTests|ThumbnailRefreshTests|ThumbnailServiceTests'`。本次 52 个测试全部通过，无跳过。另用较暗的 bracket-a 运行 HDR 测试，有两例达不到要求的高光阈值。在基线的 ThumbnailProvider 上重跑这两例，三项读数完全相同（0.7783203125、1.0、0.74951171875）。采用明亮的 bracket-b 时，14 个 HDR 测试全部通过。
+
+
+## PANO-VOTE-01 · 平移配准
+
+改动位于 `TranslationRegistration.align` 的无先验位移路径，输入是整数角点的位移。旧实现以每个匹配为中心，重新过滤全部 M 个匹配，分配临时数组并逐点求距离，时间 O(M²)。按 y 行分组、按 x 排序后，可在相邻七行各用一对单向指针计数。开圆盘半径仍为 4，行间距 0 到 2 时横向允许 3 像素，行间距 3 时允许 2 像素。排序使最坏时间为 O(M log M)（按通常字典查找成本），其余扫描为 O(M)，空间 O(M)。最后按原输入顺序解决票数并列、提取内点。最少五点、锚点抽样及后续亚像素拟合沿用原规则。
+
+先在独立可执行程序中并排编译完整的新旧平移实现。第一种候选按每个唯一位移查哈希邻域，64 个分散匹配时用了 60.4 µs，旧实现为 8.2 µs，因此舍弃。按行的候选在 1,410 组输入上与逐点参考返回完全相同的有序索引，涵盖负位移、重复、并列、边界和最多 900 点。9 对完整配准输入包含生成纹理、空白、不相关照片和从仓库 DNG 裁出的重叠视图，共 7 对通过、2 对拒绝。两套实现的结果逐一吻合，位移与评分的浮点位模式、内点数和锚点序列均相同。
+
+| 输入 | 匹配数 | 参考投票 | 按行投票 |
+| --- | ---: | ---: | ---: |
+| DNG 重叠裁片 | 198 | 129.16 µs | 4.44 µs |
+| 分散匹配 | 16 | 0.80 µs | 1.99 µs |
+| 分散匹配 | 64 | 8.26 µs | 7.56 µs |
+| 分散匹配 | 900 | 1,196.14 µs | 107.18 µs |
+| 集中匹配混入离群点 | 900 | 2,411.28 µs | 44.90 µs |
+
+使用 `xcrun swiftc -O -whole-module-optimization`，七轮交替测量取中位数。投票对照中参考实现按原距离规则返回索引。整对图像的对照直接调用原版及候选版的完整配准函数。同一 DNG 的两块 256×200 裁片，整对配准从 6.089 ms 到 5.954 ms；多数时间花在角点提取、描述子比较与亚像素拟合。16 个分散点时，按行分组的固定开销约多 1.2 µs。整套四张或更多 RAW 的拼接速度仍需单独测量。本机实验保存在 `local/out/preview-stitch-audit-a20dd64/pano`。
+
+该项可用 `git log --oneline --grep=PANO-VOTE-01` 定位。前一项预览缓存提交为 `1d01581`，两者可以独立回退。回归测试 `TranslationConsensusTests` 将生产函数与逐点投票逐项比较。
+
+本次 `PHOTONS_LANGUAGE=zh-Hans swift test --filter 'PhotonsPanoramaTests|PanoramaJobTests'` 共 77 项，67 项通过，10 项因外部 RAW、预生成全景或可选校准生成条件未提供而跳过，零失败。在 iPad Pro 13 英寸模拟器运行 `IPadEngineTests/testPanoramaAlignmentScaledLosslessExportAndMetadata` 通过，覆盖三图配准、预览直方图、缩放与全尺寸导出以及元数据回读。未测旧款设备实机。

@@ -63,17 +63,43 @@ enum TranslationRegistration {
         return pairs
     }
 
+    /// Corner coordinates are integers. In the open four-pixel disk each row spans
+    /// x ± 3, except the outermost rows (y ± 3), which span x ± 2.
+    static func consensusIndices(_ offsets: [SIMD2<Int>]) -> [Int] {
+        guard !offsets.isEmpty else { return [] }
+        let rows = Dictionary(grouping: offsets.indices) { offsets[$0].y }
+            .mapValues { $0.sorted { offsets[$0].x < offsets[$1].x } }
+        var votes = [Int](repeating: 0, count: offsets.count)
+        for (y, seeds) in rows {
+            for dy in -3...3 {
+                guard let neighbors = rows[y + dy] else { continue }
+                let radius = abs(dy) == 3 ? 2 : 3
+                var left = 0, right = 0
+                for seed in seeds {
+                    let x = offsets[seed].x
+                    while left < neighbors.count, offsets[neighbors[left]].x < x - radius { left += 1 }
+                    while right < neighbors.count, offsets[neighbors[right]].x <= x + radius { right += 1 }
+                    votes[seed] += right - left
+                }
+            }
+        }
+        var winner = 0
+        for index in votes.indices where votes[index] > votes[winner] { winner = index }
+        return offsets.indices.filter { index in
+            let delta = offsets[index] &- offsets[winner]
+            return abs(delta.y) <= 3 && abs(delta.x) <= (abs(delta.y) == 3 ? 2 : 3)
+        }
+    }
+
     static func align(_ a: GrayRaster, _ b: GrayRaster, cancellation: PanoramaCancellation) throws -> Match? {
         let pairs = try correspondences(a,b,cancellation:cancellation)
-        let offsets = pairs.map { (offset:CGPoint(x:$0.a.x-$0.b.x,y:$0.a.y-$0.b.y),anchor:$0.a) }
-        var cluster: [(offset: CGPoint, anchor: CGPoint)] = []
-        for seed in offsets {
-            let near = offsets.filter { hypot($0.offset.x-seed.offset.x,$0.offset.y-seed.offset.y) < 4 }
-            if near.count > cluster.count { cluster = near }
-        }
+        guard pairs.count >= 5 else { return nil }
+        let offsets = pairs.map { SIMD2(Int($0.a.x - $0.b.x), Int($0.a.y - $0.b.y)) }
+        let cluster = consensusIndices(offsets)
         guard cluster.count >= 5 else { return nil }
-        let initial = CGPoint(x:median(cluster.map { Double($0.offset.x) }), y:median(cluster.map { Double($0.offset.y) }))
-        let anchors = stride(from: 0, to: cluster.count, by: max(1, cluster.count / 64)).map { cluster[$0].anchor }
+        let initial = CGPoint(x: median(cluster.map { Double(offsets[$0].x) }),
+                              y: median(cluster.map { Double(offsets[$0].y) }))
+        let anchors = stride(from: 0, to: cluster.count, by: max(1, cluster.count / 64)).map { pairs[cluster[$0]].a }
         let refined = refine(a,b,offset:initial,radius:3,anchors:anchors)
         guard refined.score > 0.72 else { return nil }
         return Match(offset:refined.offset,score:refined.score,inliers:cluster.count,anchors:anchors)
