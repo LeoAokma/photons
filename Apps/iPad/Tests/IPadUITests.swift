@@ -617,6 +617,16 @@ final class IPadUITests: XCTestCase {
             let start = controls.coordinate(withNormalizedOffset: CGVector(dx: 0.98,dy: 0.85))
             start.press(forDuration: 0.05,thenDragTo: controls.coordinate(withNormalizedOffset: CGVector(dx: 0.98,dy: 0.2)))
         }
+        let xHint = app.buttons["panorama-shift-x"], yHint = app.buttons["panorama-shift-y"]
+        if !xHint.isHittable { scrollControls() }
+        let unknownY = yHint.value as? String
+        xHint.tap()
+        app.buttons["Maximum right"].tap()
+        XCTAssertEqual(yHint.value as? String, unknownY)
+        XCTAssertFalse(app.buttons["panorama-export"].isEnabled)
+        // Clear the new hint and restore the display positions produced by registration.
+        revert.tap()
+        XCTAssertTrue(app.buttons["panorama-export"].isEnabled)
         scrollControls()
         let deghost = app.switches["panorama-deghost"]
         if !deghost.isHittable { scrollControls() }

@@ -1,7 +1,6 @@
 #if os(iOS)
 import PhotonsLocalization
 import SwiftUI
-import PhotonsLocalization
 import PhotonsCore
 import PhotonsPanorama
 import PhotonsWorkspaceUI
@@ -18,6 +17,8 @@ enum MobileShiftGeometry {
 /// The last successfully applied physical layout. Selection alone does not invalidate alignment.
 struct MobilePanoramaLayout: Equatable {
     var positions: [Int: CGPoint]
+    var hints: [Int: PanoramaShiftHint] = [:]
+    var resolvedHints: [Int: PanoramaShiftPosition] = [:]
     var body: PanoramaCameraBody
     var orientation: PanoramaBodyOrientation
     var sensorWidth: Double
@@ -71,6 +72,7 @@ struct MobilePanoramaWorkspace: View {
     private let mode: PanoramaRegistrationMode
     @State private var sources: [PanoramaSource] = []
     @State private var positions: [Int: CGPoint] = [:]
+    @State private var hints: [Int: PanoramaShiftHint] = [:]
     @State private var selectedFrame = 0
     @State private var bodyType = PanoramaCameraBody.alpa12Max
     @State private var orientation = PanoramaBodyOrientation.degrees0
@@ -81,11 +83,12 @@ struct MobilePanoramaWorkspace: View {
     @State private var guided = false
     @State private var appliedLayout: MobilePanoramaLayout?
     @State private var appliedSelection = 0
+    @State private var appliedProfileID: UUID?
     @State private var export = false
     @State private var profileID: UUID?
     @State private var cropToLCC = false
     private var layout: MobilePanoramaLayout {
-        .init(positions: positions, body: bodyType, orientation: orientation, sensorWidth: sensorWidth,
+        .init(positions: positions, hints: hints, resolvedHints: activeHints, body: bodyType, orientation: orientation, sensorWidth: sensorWidth,
               sensorHeight: sensorHeight, manualSensor: manualSensor, guided: guided)
     }
     private var previewStatus: PanoramaPreviewStatus {
@@ -238,7 +241,13 @@ struct MobilePanoramaWorkspace: View {
                 }
                 if validSensor {
                     MobileDraggablePositions(names: photos.map(\.name), sensor: sensor, travel: bodyType.travel(at: orientation),
-                        positions: $positions, selected: $selectedFrame, changed: { guided = true })
+                        positions: $positions, selected: $selectedFrame, changed: { index, start, end in
+                            var hint = hints[index] ?? .init()
+                            if end.x != start.x { hint.x = .millimeters(end.x) }
+                            if end.y != start.y { hint.y = .millimeters(end.y) }
+                            hints[index] = hint
+                            guided = true
+                        })
                         .frame(height: 310)
                 }
                 Text(L10n.tr("ipad.e8b944b7ea4c"))
@@ -260,12 +269,18 @@ struct MobilePanoramaWorkspace: View {
                 }
                 if photos.indices.contains(selectedFrame) {
                     Text(L10n.tr("ipad.03ccf7f28574")).font(.caption.weight(.semibold))
-                    MobilePositionFields(position: Binding(get: { positions[selectedFrame] ?? .zero }, set: { positions[selectedFrame] = $0; guided = true }))
+                    PanoramaShiftHintEditor(hint: Binding(get: { hints[selectedFrame] ?? .init() }, set: { hint in
+                        hints[selectedFrame] = hint == PanoramaShiftHint() ? nil : hint
+                        let resolved = hint.resolved(body: bodyType, orientation: orientation, calibration: endStops)
+                        let current = positions[selectedFrame] ?? .zero
+                        positions[selectedFrame] = CGPoint(x: resolved.x ?? current.x, y: resolved.y ?? current.y)
+                        guided = !hints.isEmpty
+                    }), suggestion: positions[selectedFrame] ?? .zero, body: bodyType, orientation: orientation, calibration: endStops)
                 }
                 }.id("panorama.coordinates").mobileGuideTarget("panorama.coordinates",in: guide)
                 VStack(alignment: .leading,spacing: 12) {
                 Toggle(L10n.tr("ipad.1451cd3ff100"), isOn: $guided).accessibilityIdentifier("position-guidance")
-                Text(guided ? L10n.tr("ipad.1e6c54d4cfc9") : L10n.tr("ipad.eb13eb208f76")).font(.caption).foregroundStyle(.secondary)
+                Text(guided ? L10n.tr("panorama.shift.guidance") : L10n.tr("ipad.eb13eb208f76")).font(.caption).foregroundStyle(.secondary)
                 }.id("panorama.guidance").mobileGuideTarget("panorama.guidance",in: guide)
                 } else {
                     VStack(alignment: .leading,spacing: 12) {
@@ -317,8 +332,8 @@ struct MobilePanoramaWorkspace: View {
                 Text(L10n.tr("ipad.70ddfa521391")).font(.caption).foregroundStyle(.secondary)
                 Button(L10n.tr("ipad.08b90bbe8907")) {
                     guard let profileID, let plan = model.plan else { return }
-                    let offset = guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: physicalPosition(positions[selectedFrame] ?? .zero)).profileOffset(in: plan, sensor: sensor) : nil
-                    model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation, cropToCoverage: cropToLCC)
+                    let offset = selectedReference?.profileOffset(in: plan, sensor: sensor)
+                    model.correctPanorama(profileID: profileID, offset: offset, body: bodyType, orientation: orientation, shiftHints: activeHints, sensor: sensor, cropToCoverage: cropToLCC)
                 }.disabled(model.busy || previewStatus != .current || profileID == nil).accessibilityIdentifier("panorama-lcc")
                 if let lcc = model.plan?.lccState { Label(lcc.profileName, systemImage: "checkmark.seal"); Text(String(format: L10n.tr("ipad.0858f5e8bf0a"), lcc.coveredFraction * 100)).font(.caption) }
                 if let note = model.lccPositionNote { Text(note).font(.caption).foregroundStyle(.orange) }
@@ -334,9 +349,15 @@ struct MobilePanoramaWorkspace: View {
             }
         }
     }
-    private func physicalPosition(_ reading: CGPoint) -> CGPoint {
-        let profile = model.profiles.first { $0.id == profileID }
-        return profile?.resolvedEndStops?.position(forReading: reading, body: bodyType, orientation: orientation) ?? reading
+    private var endStops: LCCEndStopCalibration? {
+        model.profiles.first { $0.id == profileID }?.resolvedEndStops
+    }
+    private var activeHints: [Int: PanoramaShiftPosition] {
+        guard mode == .shift, guided else { return [:] }
+        return hints.mapValues { $0.resolved(body: bodyType, orientation: orientation, calibration: endStops) }
+    }
+    private var selectedReference: PanoramaPositionReference? {
+        activeHints[selectedFrame]?.point.map { .init(sourceIndex: selectedFrame, positionMM: $0) }
     }
     private func align() {
         guard validSensor, !model.busy else { return }
@@ -345,11 +366,11 @@ struct MobilePanoramaWorkspace: View {
             return
         }
         model.error = nil
-        model.stitch(options: options, positions: mode == .shift && guided ? positions.mapValues(physicalPosition) : [:],
+        model.stitch(options: options, positions: [:], shiftHints: activeHints,
                      sensor: mode == .shift && manualSensor ? sensor : nil, registrationMode: mode, onAligned: accept)
     }
     private func accept(_ plan: PanoramaPlan) {
-        let anchor = mode == .shift && guided ? PanoramaPositionReference(sourceIndex: selectedFrame, positionMM: physicalPosition(positions[selectedFrame] ?? .zero)) : nil
+        let anchor = selectedReference
         let offset = anchor?.profileOffset(in: plan, sensor: sensor) ?? .zero
         positions = framePositions(plan, offset: offset)
         // Measured absolute reference survives an uncorrected export for later LCC.
@@ -357,11 +378,15 @@ struct MobilePanoramaWorkspace: View {
         rememberLayout()
     }
     private func rememberLayout() {
-        appliedLayout = layout; appliedSelection = selectedFrame
+        appliedLayout = layout; appliedSelection = selectedFrame; appliedProfileID = profileID
     }
     private func revertLayout() {
         guard let saved = appliedLayout, !model.busy else { return }
-        positions = saved.positions; bodyType = saved.body; orientation = saved.orientation
+        if saved.guided {
+            let restored = saved.hints.mapValues { $0.resolved(body: saved.body, orientation: saved.orientation, calibration: endStops) }
+            if restored != saved.resolvedHints { profileID = appliedProfileID }
+        }
+        positions = saved.positions; hints = saved.hints; bodyType = saved.body; orientation = saved.orientation
         sensorWidth = saved.sensorWidth; sensorHeight = saved.sensorHeight; manualSensor = saved.manualSensor
         guided = saved.guided; selectedFrame = appliedSelection
         model.error = nil
@@ -383,7 +408,7 @@ struct MobileDraggablePositions: View {
     let travel: PanoramaShiftRange
     @Binding var positions: [Int: CGPoint]
     @Binding var selected: Int
-    let changed: () -> Void
+    let changed: (Int, CGPoint, CGPoint) -> Void
     @Namespace private var canvasSpace
     var body: some View {
         let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
@@ -426,7 +451,7 @@ private struct MobileDraggableFrame: View {
     let scale: Double
     let zero: CGPoint
     let coordinateSpace: Namespace.ID
-    let changed: () -> Void
+    let changed: (Int, CGPoint, CGPoint) -> Void
     @GestureState private var translation = CGSize.zero
 
     var body: some View {
@@ -449,7 +474,11 @@ private struct MobileDraggableFrame: View {
                 .onChanged { _ in selected = index }
                 .onEnded { value in
                     let moved = MobileShiftGeometry.dragged(position, translation: value.translation, pointsPerMM: scale, travel: travel)
-                    if moved != position { position = moved; changed() }
+                    if moved != position {
+                        let start = position
+                        position = moved
+                        changed(index, start, moved)
+                    }
                 })
             .onTapGesture { selected = index }
             .position(x: zero.x + center.x * scale, y: zero.y - center.y * scale)

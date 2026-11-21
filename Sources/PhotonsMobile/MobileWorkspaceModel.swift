@@ -361,11 +361,11 @@ final class MobileWorkspaceModel: ObservableObject {
     func importProfile(_ url: URL) {
         run(L10n.tr("ipad.fd4d52fa1e2c")) { try await self.engine.importProfile(url); self.profiles = try await self.engine.profiles() }
     }
-    func stitch(options: PanoramaOptions, positions: [Int: CGPoint], sensor: SensorSize?,
+    func stitch(options: PanoramaOptions, positions: [Int: CGPoint], shiftHints: [Int: PanoramaShiftPosition] = [:], sensor: SensorSize?,
                 registrationMode: PanoramaRegistrationMode, onAligned: @escaping (PanoramaPlan) -> Void) {
         let sources = selectedPhotos, tone = plan?.tone ?? .panoramaDefault
         run(L10n.tr("ipad.29baca75d5da")) {
-            let result = try await self.engine.analyze(sources, options: options, positions: positions, sensor: sensor, registrationMode: registrationMode,
+            let result = try await self.engine.analyze(sources, options: options, positions: positions, shiftHints: shiftHints, sensor: sensor, registrationMode: registrationMode,
                                                        tone: tone,cancellation: self.cancellation, progress: self.report)
             let frame = try await self.engine.frame(result, hdr: self.hdr)
             try Task.checkCancellation()
@@ -415,11 +415,12 @@ final class MobileWorkspaceModel: ObservableObject {
                 bodyOrientation: previous?.bodyOrientation ?? .degrees0, cameraBody: previous?.cameraBody)
         }
     }
-    func correctPanorama(profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody, orientation: PanoramaBodyOrientation, cropToCoverage: Bool = false) {
+    func correctPanorama(profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody, orientation: PanoramaBodyOrientation,
+                         shiftHints: [Int: PanoramaShiftPosition] = [:], sensor: SensorSize? = nil, cropToCoverage: Bool = false) {
         guard let plan else { return }
         run(L10n.tr("ipad.9d9a557acc3c")) {
             let updated = try await self.engine.correctPanorama(plan, profileID: profileID, offset: offset, body: body,
-                orientation: orientation, cropToCoverage: cropToCoverage, cancellation: self.cancellation, progress: self.report)
+                orientation: orientation, shiftHints: shiftHints, sensor: sensor, cropToCoverage: cropToCoverage, cancellation: self.cancellation, progress: self.report)
             let frame = try await self.engine.frame(updated, hdr: self.hdr)
             try Task.checkCancellation()
             self.plan = updated

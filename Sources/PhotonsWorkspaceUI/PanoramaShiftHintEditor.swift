@@ -51,6 +51,7 @@ public struct PanoramaShiftHintEditor: View {
                 Text(L10n.tr(horizontal ? "panorama.shift.leftMax" : "panorama.shift.downMax")).tag(Choice.negative)
                 Text(L10n.tr(horizontal ? "panorama.shift.rightMax" : "panorama.shift.upMax")).tag(Choice.positive)
             }.pickerStyle(.menu)
+            .accessibilityIdentifier(horizontal ? "panorama-shift-x" : "panorama-shift-y")
             if case .millimeters = axis.wrappedValue {
                 TextField("mm", value: Binding(get: {
                     if case .millimeters(let number) = axis.wrappedValue { return number }

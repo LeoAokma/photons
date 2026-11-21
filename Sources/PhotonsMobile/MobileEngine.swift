@@ -348,13 +348,13 @@ actor MobileEngine {
         _ = try LCCProfileStore().importProfile(profile, keepingBoth: true)
     }
     func sourceInfo(_ photos: [MobilePhoto]) throws -> [PanoramaSource] { try photos.map { try PanoramaSource(url: $0.url) } }
-    func analyze(_ photos: [MobilePhoto], options: PanoramaOptions, positions: [Int: CGPoint],
+    func analyze(_ photos: [MobilePhoto], options: PanoramaOptions, positions: [Int: CGPoint], shiftHints: [Int: PanoramaShiftPosition] = [:],
                  sensor: SensorSize?, registrationMode: PanoramaRegistrationMode = .shift,
                  tone: PanoramaToneSettings = .panoramaDefault, cancellation: PanoramaCancellation,
                  progress: @Sendable @escaping (String, Double?) -> Void) throws -> PanoramaPlan {
         releaseWorkingMemory()
         let engine = PanoramaEngine()
-        let plan = try engine.analyze(urls: photos.map(\.url), options: options, knownPositions: positions,
+        let plan = try engine.analyze(urls: photos.map(\.url), options: options, knownPositions: positions, shiftHints: shiftHints,
             sensorOverride: sensor, registrationMode: registrationMode, cancellation: cancellation, progress: { progress($0, nil) })
         return try engine.applyingTone(plan,settings: tone,cancellation: cancellation)
     }
@@ -390,15 +390,16 @@ actor MobileEngine {
         try PanoramaEngine().update(plan, options: options, cancellation: cancellation)
     }
     func correctPanorama(_ plan: PanoramaPlan, profileID: UUID, offset: CGPoint?, body: PanoramaCameraBody,
-                         orientation: PanoramaBodyOrientation, cropToCoverage: Bool = false, cancellation: PanoramaCancellation,
+                         orientation: PanoramaBodyOrientation, shiftHints: [Int: PanoramaShiftPosition] = [:], sensor override: SensorSize? = nil,
+                         cropToCoverage: Bool = false, cancellation: PanoramaCancellation,
                          progress: @Sendable @escaping (String, Double?) -> Void) throws -> PanoramaPlan {
         guard plan.registrationMode != .perspective else { throw MobileError.message(PanoramaRegistrationMode.perspectiveLCCNotice) }
-        guard let sensor = plan.sources.first?.sensor else { throw MobileError.message(L10n.tr("ipad.e9baccefa276")) }
+        guard let sensor = override ?? plan.sources.first?.sensor else { throw MobileError.message(L10n.tr("ipad.e9baccefa276")) }
         let engine = PanoramaEngine(), profile = try LCCProfileStore().load(profileID)
         let fields = try LCCCorrectionEngine.fields(profile, cancellation: cancellation)
         let prepared = try engine.prepareLCCImages(plan, cancellation: cancellation, progress: { progress($0, nil) })
         let origin = try offset ?? LCCPositionSolver.solve(plan: prepared, fields: fields, sensor: sensor,
-            cameraBody: body, bodyOrientation: orientation, cancellation: cancellation, progress: { progress($0, nil) }).offsetMM
+            cameraBody: body, bodyOrientation: orientation, shiftHints: shiftHints, cancellation: cancellation, progress: { progress($0, nil) }).offsetMM
         return try engine.applyingLCC(prepared, profile: profile, fields: fields, offsetMM: origin,
             sensor: sensor, crop: cropToCoverage, cancellation: cancellation, cameraBody: body, bodyOrientation: orientation)
     }

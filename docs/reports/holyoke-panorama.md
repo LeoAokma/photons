@@ -38,3 +38,15 @@ Each frame can specify either axis independently as unknown, a signed millimetre
 ## SHIFT-AXIS-MAC-01 · Mac position sheet
 
 Click a photo in the shift diagram. Each axis has independent Unknown, Specific value and two directional Maximum choices. End stops display their resolved millimetres. The optional explicit absolute reference requires both axes; partial hints go to the automatic LCC solver. Clearing a hint removes it from subsequent matches. Shared SwiftUI editor, Mac window model, English and Simplified Chinese resources. Tested with 4 Mac workspace tests and 3 shared guidance tests, all passed. Depends on 1fda4c6. Pending edits are per stitch session.
+
+## SHIFT-AXIS-IPAD-01 · iPad position controls
+
+The iPad diagram keeps its inferred positions separate from user-entered axes. Its selected frame uses the shared editor. Dragging updates the axes that actually moved. Revert restores the applied layout. The LCC and registration workers receive only supplied axes and end-stop measurements are resolved with the selected profile. The existing explicit full-position anchor is available when both axes of the selected frame are supplied. Depends on 1fda4c6 and the editor in 53c33f4.
+
+On the 13-inch iPad Pro simulator the engine alignment/export and physical dragging tests passed. The workspace UI workflow also passed, including choosing Maximum right, retaining the other axis, reverting, adjusting seams and exporting. A generic iPadOS Release device build succeeded with signing disabled. No physical iPad was exercised.
+
+## Cross-checks
+
+- Holding geometry and calibration fixed, switching only scene WB to the as-shot WB changed sky colour substantially. In 496–501 the scene estimate was 9109 K / +8.86 versus as-shot 6189 K / −13.42. The scene setting raised the median linear R/G by 50% and lowered B/G by 17% in smooth blue samples of 496/497. For 482–487 the estimates were 10423 K / +7.74 and 5770 K / −12.10; the corresponding changes were +66% and −29% in 486/487. This establishes sensitivity to the illuminant estimate, without a neutral reference to choose between them.
+- The integrated build with horizontal end stops alone registered 464–469, 482–487 and 496–501. Repeating the sky residual comparison on these final 482 and 496 layouts yielded median values of 2.98 and 1.40 log-percent.
+- Serialized and reopened the actual worker snapshot on 474–475 and 496–501. Rendered from full-resolution CFA sources into scaled linear half-float TIFFs of 1500 × 609 and 1500 × 1426. All inspected output values were finite; linear peaks were 3.50 and 2.52. These were scaled output checks.
