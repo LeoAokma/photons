@@ -3,6 +3,7 @@ import SwiftUI
 import PhotonsLocalization
 import UniformTypeIdentifiers
 import PhotonsCore
+import PhotonsExport
 import PhotonsPanorama
 import PhotonsWorkspaceUI
 
@@ -170,14 +171,29 @@ struct MobileExportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var settings = MobileExportSettings()
     @State private var exportError: String?
+    @State private var sampledSize: (ExportSizeRequest, ExportFileSizeEstimate)?
+    private var contentSize: ImageSize? {
+        if let size = model.plan?.outputSize { return ImageSize(width: Int(size.width), height: Int(size.height)) }
+        if let size = model.frame?.fullSize { return size }
+        guard let photo = model.active, photo.width > 0, photo.height > 0 else { return nil }
+        return model.edit.geometry.outputPixels(in: ImageSize(width: photo.width, height: photo.height))
+    }
     private var tiffChoices: [TIFFCompression] {
-        let edge: Int
-        if let size = model.plan?.outputSize {
-            edge = Int(ceil(max(size.width, size.height)))
-        } else {
-            edge = max(model.active?.width ?? 0, model.active?.height ?? 0)
-        }
-        return settings.tiffChoices(sourceLongEdge: edge)
+        let size = contentSize
+        return settings.tiffChoices(sourceLongEdge: max(size?.width ?? 0, size?.height ?? 0))
+    }
+    private var estimatedSizeLabel: some View {
+        let request = ExportSizeRequest(contents: contentSize.map { [$0] } ?? [], preset: settings.preset,
+                                        linearDNG: settings.format == "dng", preview: model.frame?.image ?? model.plan?.preview)
+        let estimate = sampledSize?.0 == request ? sampledSize?.1 : ExportFileSizeEstimator.estimate(
+            contents: request.contents, preset: request.preset, linearDNG: request.linearDNG)
+        return Text(ExportFileSizeText.summary(estimate))
+            .font(.subheadline).monospacedDigit().accessibilityIdentifier("export-size-estimate")
+            .task(id: request) {
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+                let result = await request.measure()
+                if let result, !Task.isCancelled { sampledSize = (request, result) }
+            }
     }
     var body: some View {
         let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
@@ -189,7 +205,7 @@ struct MobileExportSheet: View {
                     ForEach(settings.hdr ? ["heic", "jpeg", "tiff", "png", "dng"] : ["jpeg", "heic", "tiff", "png"], id: \.self) {
                         Text($0 == "dng" ? L10n.tr("ipad.d593198f3a9f") : $0.uppercased()).tag($0)
                     }
-                }
+                }.accessibilityIdentifier("export-format")
                 if settings.format == "tiff" {
                     if !settings.hdr {
                         Picker(L10n.tr("09220325fb3e"), selection: $settings.tiffBitDepth) {
@@ -217,6 +233,7 @@ struct MobileExportSheet: View {
             .disabled(model.busy)
             Section {
                 Text(L10n.tr("ipad.d153ac56fa98", Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Photons"))
+                if !model.busy { estimatedSizeLabel }
                 if let exportError {
                     Text(exportError).foregroundStyle(.orange).accessibilityIdentifier("export-error")
                 }

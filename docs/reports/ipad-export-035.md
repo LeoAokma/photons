@@ -38,3 +38,7 @@ HDR、TIFF、线性 DNG 的初始色域为 Rec.2020。Mac 保留显式指定的�
 Mac 普通导出和拼接导出改为从画面四处取样，以所选编码器试写最多 512 × 512 像素，分别计算像素载荷与固定开销。DNG 单独计算嵌入式 RGB 预览和瓦片目录。批量最多抽首、中、末三张，再根据各张输出像素折算合计。无压缩 TIFF 可直接按 3 或 4 通道与实际位深计算。后台任务随选项变更取消；无法取得样本时继续显示按尺寸估计的范围。面向双端的共享测量和文案在 PhotonsExport，Mac 接入在 ExportSheet 和 PanoramaExport。使用 EXPORT-2020-01 的导出路径。
 
 将 Holyoke 496–501 和 474–475 的既有 1500 px 线性拼接图作为内容，独立完整编码，并与局部试编码推算对照。覆盖线性 DNG、ZIP/LZW/无压缩 TIFF、PQ TIFF、JPEG、HDR HEIC、16 位 PNG。16 项实测相对误差均低于 5%。以 496–501 为例，JPEG 为 862543 / 898319 字节（估计 / 实际），ZIP TIFF 为 9426205 / 9848854 字节。旧范围的中点对这张 JPEG 高估约 127%。另有合成纹理、缩放、批量合计与界面 11 项回归。命令见 SampledExportSizeTests、ExportFileSizeEstimateTests、ExportSizeAndWatermarkTests。限制：缩小的预览无法呈现原尺寸的全部噪点、锐化、局部纹理或水印；上述误差为同分辨率实测，不是数亿像素输出误差上限。
+
+## IPAD-SIZE-01 · iPad 导出表单
+
+单张和拼接表单均显示预计大小，使用实际裁切后的照片尺寸或拼接画布；当前预览可用时使用 EXPORT-SIZE-02 的同一试编码器和文案。选项改变时刷新，开始导出时停止估算。iPadOS 27.2 UI 测试 testPhotoExportShowsSampledEstimateAndRespondsToFormat 实际点击单张导出，从默认格式切到 TIFF，确认测量后的数值改变；testGridInspectorSelectionAndPanoramaWorkflow 核对拼接页出现估算并完成全尺寸样片导出。两项均通过。依赖 d02944b，设备 Release 构建通过，未在实体 M1 运行。

@@ -532,6 +532,28 @@ final class IPadUITests: XCTestCase {
         selection("Not selected")
     }
     @MainActor
+    func testPhotoExportShowsSampledEstimateAndRespondsToFormat() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"
+        app.launch()
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60))
+        first.tap()
+        app.buttons["export-photo"].tap()
+        let label = app.staticTexts["export-size-estimate"]
+        XCTAssertTrue(label.waitForExistence(timeout: 10))
+        let measured = NSPredicate(format: "label BEGINSWITH 'Estimated size:' AND NOT (label CONTAINS '–') AND NOT (label CONTAINS '—')")
+        let initial = XCTNSPredicateExpectation(predicate: measured, object: label)
+        XCTAssertEqual(XCTWaiter.wait(for: [initial], timeout: 30), .completed)
+        let previous = label.label
+        app.buttons["export-format"].tap()
+        app.buttons["TIFF"].tap()
+        let changed = NSCompoundPredicate(andPredicateWithSubpredicates: [measured, NSPredicate(format: "label != %@", previous)])
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: changed, object: label)], timeout: 30), .completed)
+    }
+
+    @MainActor
     func testGridInspectorSelectionAndPanoramaWorkflow() throws {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
@@ -659,6 +681,7 @@ final class IPadUITests: XCTestCase {
         XCTAssertTrue(app.buttons["panorama-export"].isEnabled)
         let workspace = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); workspace.name = "Large panorama workspace"; workspace.lifetime = .keepAlways; add(workspace)
         app.buttons["panorama-export"].tap()
+        XCTAssertTrue(app.staticTexts["export-size-estimate"].waitForExistence(timeout: 5))
         app.buttons["export-size"].tap()
         app.buttons["Full resolution"].tap()
         app.buttons["confirm-export"].tap()
