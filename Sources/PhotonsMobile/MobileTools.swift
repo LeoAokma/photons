@@ -169,6 +169,15 @@ struct MobileExportSheet: View {
     var onExport: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @State private var settings = MobileExportSettings()
+    private var tiffChoices: [TIFFCompression] {
+        let edge: Int
+        if let size = model.plan?.outputSize {
+            edge = Int(ceil(max(size.width, size.height)))
+        } else {
+            edge = max(model.active?.width ?? 0, model.active?.height ?? 0)
+        }
+        return settings.tiffChoices(sourceLongEdge: edge)
+    }
     var body: some View {
         let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         Form {
@@ -180,6 +189,21 @@ struct MobileExportSheet: View {
                         Text($0 == "dng" ? L10n.tr("ipad.d593198f3a9f") : $0.uppercased()).tag($0)
                     }
                 }
+                if settings.format == "tiff" {
+                    if !settings.hdr {
+                        Picker(L10n.tr("09220325fb3e"), selection: $settings.tiffBitDepth) {
+                            ForEach([8, 16], id: \.self) { depth in
+                                Text(L10n.tr("60dcc1d0f458", String(depth))).tag(depth)
+                            }
+                        }
+                    }
+                    Picker(L10n.tr("tiff.compression"), selection: $settings.tiffCompression) {
+                        ForEach(tiffChoices, id: \.self) { mode in Text(mode.displayName).tag(mode) }
+                    }
+                    .onChange(of: tiffChoices, initial: true) { _, choices in
+                        if !choices.contains(settings.tiffCompression) { settings.tiffCompression = .zip }
+                    }
+                }
                 Picker(L10n.tr("dc4ffb23c9a3"), selection: $settings.longEdge) {
                     Text(L10n.tr("ipad.961306829a55")).tag(0)
                     Text(L10n.tr("ipad.650d29374447")).tag(2048); Text(L10n.tr("ipad.a4cc512bd538")).tag(4096); Text(L10n.tr("ipad.f702ee55003d")).tag(6000)
@@ -187,7 +211,7 @@ struct MobileExportSheet: View {
                 if settings.longEdge == 0, let size = model.plan?.outputSize {
                     Text(L10n.tr("ipad.e637f11069bb", String(describing: (Int(size.width))), String(describing: (Int(size.height))))).font(.caption).foregroundStyle(.secondary)
                 }
-                if settings.format == "jpeg" || settings.format == "heic" { Slider(value: $settings.quality, in: 0.5...1) { Text(L10n.tr("55847d2e5bed")) } }
+                if settings.format == "jpeg" || settings.format == "heic" || (settings.format == "tiff" && settings.tiffCompression == .jpeg) { Slider(value: $settings.quality, in: 0.5...1) { Text(L10n.tr("55847d2e5bed")) } }
             } footer: { Text(L10n.tr("ipad.112c02e83fc1")) }
             Section {
                 Text(L10n.tr("ipad.d153ac56fa98", Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Photons"))

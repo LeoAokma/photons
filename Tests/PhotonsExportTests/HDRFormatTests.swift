@@ -79,6 +79,49 @@ final class HDRFormatTests: XCTestCase {
         return out
     }
 
+    func testTIFFCompressionTagsDepthAndDecodedPixels() throws {
+        let modes: [(TIFFCompression, Int)] = [(.uncompressed, 1), (.zip, 8), (.lzw, 5), (.jpeg, 7)]
+        let input = try write(ExportPreset(format: .tiff, tiffCompression: .lzw), "lzw-source.tif")
+        let metadata = ExportMetadataContext(source: SourceMetadata.read(from: input), edit: .neutral, embedXMP: true)
+        for kind in [HDRKind.none, .pq, .hlg] {
+            for depth in (kind == .none ? [8, 16] : [16]) {
+                var referencePixels: Data?
+                for (mode, tag) in modes where mode != .jpeg || depth == 8 {
+                    let preset = ExportPreset(format: .tiff, tiffCompression: mode, bitDepth: depth, hdrKind: kind)
+                    let output = try write(preset, "compression.tif", metadata: metadata)
+                    let file = try Data(contentsOf: output)
+                    let memory = try Exporter.data(image(), options: preset.exportOptions)
+                    for data in [file, memory] {
+                        let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+                        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+                        let tiff = try XCTUnwrap(properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any])
+                        XCTAssertEqual(tiff[kCGImagePropertyTIFFCompression] as? Int, tag)
+                        let decoded = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+                        XCTAssertEqual(decoded.bitsPerComponent, depth)
+                        let pixels = try XCTUnwrap(decoded.dataProvider?.data) as Data
+                        if mode != .jpeg {
+                            if let referencePixels { XCTAssertEqual(pixels, referencePixels) }
+                            else { referencePixels = pixels }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testTIFFCompressionPresetMigrationAndJPEGEligibility() throws {
+        let legacy = try JSONEncoder().encode(ExportPreset(format: .tiff))
+        XCTAssertFalse(String(decoding: legacy, as: UTF8.self).contains("tiffCompression"))
+        XCTAssertEqual(try JSONDecoder().decode(ExportPreset.self, from: legacy).exportOptions.tiffCompression, .zip)
+        for mode in TIFFCompression.allCases {
+            let data = try JSONEncoder().encode(ExportPreset(format: .tiff, tiffCompression: mode))
+            XCTAssertEqual(try JSONDecoder().decode(ExportPreset.self, from: data).exportOptions.tiffCompression, mode)
+        }
+        XCTAssertTrue(TIFFCompression.choices(bitDepth: 8, longEdge: 30_000).contains(.jpeg))
+        XCTAssertFalse(TIFFCompression.choices(bitDepth: 8, longEdge: 30_001).contains(.jpeg))
+        XCTAssertThrowsError(try Exporter.data(image(), options: .init(format: .tiff, bitDepth: 16, tiffCompression: .jpeg)))
+    }
+
     // MARK: - 1. the combination table
 
     func testFormatHDRKindTable() {

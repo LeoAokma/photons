@@ -82,7 +82,7 @@ final class PanoramaTests: XCTestCase {
         let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(tiffSource,0,nil) as? [String:Any])
         XCTAssertEqual(properties[kCGImagePropertyDepth as String] as? Int,16)
         let tags = properties[kCGImagePropertyTIFFDictionary as String] as? [String:Any]
-        XCTAssertEqual(tags?[kCGImagePropertyTIFFCompression as String] as? Int,5)
+        XCTAssertEqual(tags?[kCGImagePropertyTIFFCompression as String] as? Int,8)
         try Data([1,2,3]).write(to:sources[0].url)
         XCTAssertThrowsError(try sources[0].checkUnchanged())
     }

@@ -35,7 +35,7 @@ final class ExportFileSizeEstimateTests: XCTestCase {
     }
 
     func testTIFFDepthAndCompressedFormats() throws {
-        var preset = ExportPreset(format: .tiff, bitDepth: 8)
+        var preset = ExportPreset(format: .tiff, tiffCompression: .uncompressed, bitDepth: 8)
         let eight = try XCTUnwrap(ExportFileSizeEstimator.file(output: photo, preset: preset))
         preset.bitDepth = 16
         let sixteen = try XCTUnwrap(ExportFileSizeEstimator.file(output: photo, preset: preset))

@@ -1,4 +1,5 @@
 import PhotonsLocalization
+import PhotonsCore
 import Foundation
 import CoreImage
 import CoreGraphics
@@ -289,6 +290,7 @@ public final class PanoramaEngine {
 
     public enum OutputFormat: String, CaseIterable { case dng, tiff }
     public func export(_ plan: PanoramaPlan, to destination: URL, format: OutputFormat,
+                       tiffCompression: TIFFCompression = .zip,
                        cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws {
         guard !plan.sources.contains(where: { $0.url.standardizedFileURL == destination.standardizedFileURL }) else {
             throw PanoramaFailure(L10n.tr("dfcc7af61de8"))
@@ -308,7 +310,9 @@ public final class PanoramaEngine {
                   let destination = CGImageDestinationCreateWithURL(temp as CFURL,"public.tiff" as CFString,1,nil) else {
                 throw PanoramaFailure(L10n.tr("b4cd18cf7cdc"))
             }
-            CGImageDestinationAddImageAndMetadata(destination,cg,try manifest.metadata(),[kCGImagePropertyTIFFDictionary:[kCGImagePropertyTIFFCompression:5]] as CFDictionary)
+            var properties: [CFString: Any] = [:]
+            try tiffCompression.apply(to: &properties, bitDepth: 16, longEdge: max(cg.width, cg.height), quality: 1)
+            CGImageDestinationAddImageAndMetadata(destination, cg, try manifest.metadata(), properties as CFDictionary)
             guard CGImageDestinationFinalize(destination) else { throw PanoramaFailure(L10n.tr("8f86e5986392")) }
         }
         try cancellation.check()

@@ -698,6 +698,22 @@ public final class ExportSheetModel {
         preset.quality = (clamped * 100).rounded() / 100
     }
 
+    public var availableTIFFCompressions: [TIFFCompression] {
+        var sizing = preset
+        if sizing.sizingMode == .none { sizing.longEdge = nil }
+        let contents = selectionContents.isEmpty ? selectionNatives : selectionContents
+        let largestEdge = contents.map { content in
+            let size = ExportSizing.outputSize(content: content, scale: sizing.renderScale(content: content))
+            return max(size.width, size.height)
+        }.max() ?? 0
+        return TIFFCompression.choices(bitDepth: preset.effectiveBitDepth, longEdge: largestEdge)
+    }
+
+    public var selectedTIFFCompression: TIFFCompression {
+        get { availableTIFFCompressions.contains(preset.tiffCompression) ? preset.tiffCompression : .zip }
+        set { preset.tiffCompression = newValue }
+    }
+
     /// The exact struct handed to `BatchExporter`. A defensive normalisation as well as the panel
     /// write: a saved/legacy preset with `sizingMode == .none` *and* a stale `longEdge` must not
     /// render at 2048 just because it did not pass through `selectSizingMode`.
@@ -705,6 +721,7 @@ public final class ExportSheetModel {
         var out = preset
         if out.sizingMode == .none { out.longEdge = nil }
         if !out.isHDR { out.sdrToneMapping = .standard }
+        if out.format == .tiff { out.tiffCompression = selectedTIFFCompression }
         if usesLinearDNG { out.watermarkText = "" }
         return out
     }
@@ -1290,6 +1307,24 @@ public struct ExportSheetView: View {
     @ViewBuilder
     private var residentRows: some View {
         formatRow
+        if model.preset.format == .tiff && !model.usesLinearDNG {
+            ExportRowGridRow(
+                rowID: "export.tiffCompression",
+                label: { rowLabel(L10n.tr("tiff.compression")) },
+                control: {
+                    Picker("", selection: $model.selectedTIFFCompression) {
+                        ForEach(model.availableTIFFCompressions, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .exportControlFont("export.tiffCompression", kind: .picker)
+                    .frame(maxWidth: ExportRowGrid.menuWidth, alignment: .leading)
+                    .disabled(model.phase == .running)
+                },
+                value: { EmptyView() }, unit: { EmptyView() }, accessory: { EmptyView() })
+        }
         if model.usesLinearDNG {
             Text(L10n.tr("27d6867d773e")).font(.caption).foregroundStyle(.secondary)
         }
@@ -1302,7 +1337,8 @@ public struct ExportSheetView: View {
         exportSliderRow(label: L10n.tr("55847d2e5bed"), value: model.preset.quality * 100,
                         range: 10 ... 100, format: "%.0f", decimals: 0,
                         unit: "%", enabled: model.phase != .running
-                            && model.preset.format.supportsQuality && !model.usesLinearDNG,
+                            && (model.preset.format.supportsQuality || (model.preset.format == .tiff && model.selectedTIFFCompression == .jpeg))
+                            && !model.usesLinearDNG,
                         axID: "export.quality") { typed in
             model.setQuality(typed / 100)
         }

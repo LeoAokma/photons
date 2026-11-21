@@ -220,14 +220,17 @@ public enum HDREncoding {
         }
         var properties = metadata.properties(outputWidth: image.width, outputHeight: image.height,
                                              format: options.format)
-        if options.format.supportsQuality {
+        if options.format == .tiff {
+            try options.tiffCompression.apply(to: &properties, bitDepth: cg.bitsPerComponent,
+                                              longEdge: max(cg.width, cg.height), quality: options.quality)
+        } else if options.format.supportsQuality {
             // AVIF's HDR path rejects quality 1.0 (`CGImageDestinationFinalize` returns false);
             // 0.99 is still visually lossless and keeps the file writable.
             let quality = options.format == .avif ? min(options.quality, 0.99) : options.quality
             properties[kCGImageDestinationLossyCompressionQuality] = quality
         }
         if let xmp = metadata.xmpMetadata(outputWidth: image.width,
-                                          outputHeight: image.height) {
+                                          outputHeight: image.height, format: options.format) {
             CGImageDestinationAddImageAndMetadata(dest, cg, xmp, properties as CFDictionary)
         } else {
             CGImageDestinationAddImage(dest, cg, properties as CFDictionary)

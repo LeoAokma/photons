@@ -388,7 +388,8 @@ public struct ExportPreset: Sendable, Equatable {
     /// Long edge of the output in pixels, or `nil` for "the picture's own size" (scale 1).
     /// Never upscales: a 3000 px picture stays 3000 px with `longEdge = 6000`.
     public var longEdge: Int?
-    /// Lossy quality 0…1. Ignored by TIFF/PNG (they are lossless).
+    public var tiffCompression: TIFFCompression
+    /// Quality for lossy codecs, including JPEG-compressed TIFF.
     public var quality: Double
     /// 8 or 16 bits per channel. Coerced to 8 for formats that cannot carry 16 (JPEG, AVIF).
     public var bitDepth: Int
@@ -438,6 +439,7 @@ public struct ExportPreset: Sendable, Equatable {
                 format: ExportFormat = .jpeg,
                 longEdge: Int? = nil,
                 quality: Double = 0.92,
+                tiffCompression: TIFFCompression = .zip,
                 bitDepth: Int = 8,
                 colorSpace: OutputPrimaries = .displayP3,
                 sdrToneMapping: SDRToneMapping = .global,
@@ -459,6 +461,7 @@ public struct ExportPreset: Sendable, Equatable {
         self.name = name
         self.format = format
         self.longEdge = longEdge
+        self.tiffCompression = tiffCompression
         self.quality = quality
         self.bitDepth = bitDepth
         self.colorSpace = colorSpace
@@ -554,7 +557,7 @@ public struct ExportPreset: Sendable, Equatable {
 
     public var exportOptions: ExportOptions {
         ExportOptions(format: format, quality: quality, bitDepth: effectiveBitDepth,
-                      hdr: hdrKind == .none ? nil : hdr)
+                      hdr: hdrKind == .none ? nil : hdr, tiffCompression: tiffCompression)
     }
 
     /// True when this preset asks for any HDR path the renderer has to feed a linear frame to.
@@ -703,6 +706,7 @@ public struct ExportPreset: Sendable, Equatable {
 extension ExportPreset: Codable {
 
     enum CodingKeys: String, CodingKey {
+        case tiffCompression
         case name, format, longEdge, quality, bitDepth, colorSpace, hdr, writeXMP, nameTemplate
         case sizingMode, noUpscale, percent, subfolder, conflict, metadataLevel, removeLocation, destination
         case ppi
@@ -721,6 +725,7 @@ extension ExportPreset: Codable {
         self.name = try c.decodeIfPresent(String.self, forKey: .name)
         self.format = format
         self.longEdge = try c.decodeIfPresent(Int.self, forKey: .longEdge)
+        self.tiffCompression = try c.decodeIfPresent(TIFFCompression.self, forKey: .tiffCompression) ?? .zip
         self.quality = try c.decodeIfPresent(Double.self, forKey: .quality) ?? 0.92
         self.bitDepth = try c.decodeIfPresent(Int.self, forKey: .bitDepth) ?? 8
         self.colorSpace = OutputPrimaries(presetName: rawSpace) ?? .displayP3
@@ -755,6 +760,7 @@ extension ExportPreset: Codable {
         try c.encodeIfPresent(name, forKey: .name)
         try c.encode(format.rawValue, forKey: .format)
         try c.encodeIfPresent(longEdge, forKey: .longEdge)
+        if tiffCompression != .zip { try c.encode(tiffCompression, forKey: .tiffCompression) }
         try c.encode(quality, forKey: .quality)
         try c.encode(bitDepth, forKey: .bitDepth)
         try c.encode(colorSpace.rawValue, forKey: .colorSpace)

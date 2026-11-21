@@ -31,10 +31,19 @@ struct MobileExportSettings: Sendable {
     var hdr = true
     var longEdge = 4096
     var quality = 0.92
+    var tiffBitDepth = 16
+    var tiffCompression = TIFFCompression.zip
+
+    func tiffChoices(sourceLongEdge: Int) -> [TIFFCompression] {
+        let edge = longEdge > 0 ? min(longEdge, sourceLongEdge) : sourceLongEdge
+        return TIFFCompression.choices(bitDepth: hdr ? 16 : tiffBitDepth, longEdge: edge)
+    }
+
     var preset: ExportPreset {
         let f = ExportFormat(rawValue: format) ?? .heic
         return ExportPreset(format: f, longEdge: longEdge > 0 ? longEdge : nil,
-                            quality: quality, bitDepth: f == .tiff || f == .png ? 16 : 8,
+                            quality: quality, tiffCompression: tiffCompression,
+                            bitDepth: f == .tiff ? tiffBitDepth : (f == .png ? 16 : 8),
                             hdrKind: hdr ? f.defaultHDRKind : .none,
                             watermarkText: "")
     }

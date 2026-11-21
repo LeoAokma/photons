@@ -85,9 +85,18 @@ public enum ExportFileSizeEstimator {
                 lower = raw * 0.25
                 upper = raw * 1.05
             case .tiff:
-                // ImageIO's default TIFF is uncompressed; allow RGB/RGBX storage and directory overhead.
-                lower = pixels * 3 * depthFactor
-                upper = pixels * 4 * depthFactor + 65_536
+                let raw = pixels * 3 * depthFactor
+                switch preset.tiffCompression {
+                case .uncompressed:
+                    lower = raw
+                    upper = pixels * 4 * depthFactor + 65_536
+                case .zip, .lzw:
+                    lower = raw * 0.25
+                    upper = pixels * 4 * depthFactor * (preset.tiffCompression == .lzw ? 1.4 : 1.05)
+                case .jpeg:
+                    lower = pixels * jpegRate * 0.35
+                    upper = pixels * jpegRate * 2 + 65_536
+                }
             }
         }
         func bytes(_ value: Double) -> Int64 {

@@ -159,7 +159,7 @@ public struct ExportMetadataContext {
     }
 
     /// The XMP packet to embed, or `nil` when this export must not carry one.
-    public func xmpMetadata(outputWidth width: Int, outputHeight height: Int) -> CGImageMetadata? {
+    public func xmpMetadata(outputWidth width: Int, outputHeight height: Int, format: ExportFormat? = nil) -> CGImageMetadata? {
         let metadata: CGMutableImageMetadata
         if level == .all, embedXMP, let edit,
            let built = try? XMPWriter.makeMetadata(for:edit, existing:source?.xmp,
@@ -167,6 +167,10 @@ public struct ExportMetadataContext {
            let copy = CGImageMetadataCreateMutableCopy(built) { metadata = copy }
         else if panoramaData != nil { metadata = CGImageMetadataCreateMutable() }
         else { return nil }
+        if format == .tiff {
+            // ImageIO gives embedded XMP precedence over encoder properties. Compression describes this output.
+            CGImageMetadataRemoveTagWithPath(metadata, nil, "tiff:Compression" as CFString)
+        }
         if let panoramaData {
             CGImageMetadataRegisterNamespaceForPrefix(metadata, "https://photons.app/ns/panorama/1.0/" as CFString,
                                                        "photonsPano" as CFString, nil)

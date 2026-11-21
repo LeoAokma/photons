@@ -225,6 +225,21 @@ final class ExportSheetModelTests: XCTestCase {
         XCTAssertNoThrow(try sheet.preset.validated())
     }
 
+    func testTIFFCompressionPickerFollowsTheLargestExportAndBitDepth() {
+        let sheet = model()
+        sheet.preset = ExportPreset(format: .tiff, bitDepth: 8, hdrKind: HDRKind.none)
+        sheet.selectionContents = [.init(width: 1000, height: 1000), .init(width: 30_001, height: 12)]
+        XCTAssertFalse(sheet.availableTIFFCompressions.contains(.jpeg))
+        sheet.preset.sizingMode = .longEdge
+        sheet.preset.longEdge = 2048
+        XCTAssertTrue(sheet.availableTIFFCompressions.contains(.jpeg))
+        sheet.selectedTIFFCompression = .jpeg
+        XCTAssertEqual(sheet.effectivePreset.exportOptions.tiffCompression, .jpeg)
+        sheet.selectBitDepth(16)
+        XCTAssertEqual(sheet.selectedTIFFCompression, .zip)
+        XCTAssertEqual(sheet.effectivePreset.exportOptions.tiffCompression, .zip)
+    }
+
     /// §1 / 108 — the depth row only offers legal values and clamps on a format switch. 216 — TIFF/PNG
     /// now start on PQ, whose depth is locked at 16; turning HDR off gives the container's menu back.
     func testBitDepthRowFollowsTheFormat() {

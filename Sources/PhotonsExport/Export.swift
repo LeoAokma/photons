@@ -186,13 +186,15 @@ public struct ExportOptions: Sendable {
     public var bitDepth: Int          // 8, 10 or 16
     /// 100/111 — the HDR path. `nil` = the pre-HDR encoder path, byte for byte.
     public var hdr: HDRExport?
+    public var tiffCompression: TIFFCompression
     /// 206 — TPDF dither before the 8-bit quantiser. **On by default** (a smooth gradient must not
     /// band); `false` keeps the exact pre-206 truncation for callers that need the old bytes.
     /// Only the 8-bit path reads it — 10/16-bit are untouched.
     public var dither8Bit: Bool
 
     public init(format: ExportFormat = .jpeg, quality: Double = 0.95, bitDepth: Int = 8,
-                hdr: HDRExport? = nil, dither8Bit: Bool = true) {
+                hdr: HDRExport? = nil, dither8Bit: Bool = true, tiffCompression: TIFFCompression = .zip) {
+        self.tiffCompression = tiffCompression
         self.format = format
         self.quality = quality
         self.bitDepth = bitDepth
@@ -403,11 +405,14 @@ public enum Exporter {
         }
         var properties = metadata.properties(outputWidth: image.width, outputHeight: image.height,
                                              format: options.format)
-        if options.format.supportsQuality {
+        if options.format == .tiff {
+            try options.tiffCompression.apply(to: &properties, bitDepth: cg.bitsPerComponent,
+                                              longEdge: max(cg.width, cg.height), quality: options.quality)
+        } else if options.format.supportsQuality {
             properties[kCGImageDestinationLossyCompressionQuality] = options.quality
         }
         if let xmp = metadata.xmpMetadata(outputWidth: image.width,
-                                          outputHeight: image.height) {
+                                          outputHeight: image.height, format: options.format) {
             CGImageDestinationAddImageAndMetadata(dest, cg, xmp, properties as CFDictionary)
         } else {
             CGImageDestinationAddImage(dest, cg, properties as CFDictionary)
@@ -470,7 +475,10 @@ public enum Exporter {
             throw ExportError.destinationFailed(URL(fileURLWithPath: "<memory>"))
         }
         var properties: [CFString: Any] = [:]
-        if options.format.supportsQuality {
+        if options.format == .tiff {
+            try options.tiffCompression.apply(to: &properties, bitDepth: cg.bitsPerComponent,
+                                              longEdge: max(cg.width, cg.height), quality: options.quality)
+        } else if options.format.supportsQuality {
             properties[kCGImageDestinationLossyCompressionQuality] = options.quality
         }
         CGImageDestinationAddImage(dest, cg, properties as CFDictionary)

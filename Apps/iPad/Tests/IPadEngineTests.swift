@@ -690,6 +690,32 @@ final class IPadEngineTests: XCTestCase {
         XCTAssertEqual(try catalog.assets().first { $0.filename == "small.dng" }?.width,96)
     }
 
+    func testTIFFCompressionOnPhotoExport() async throws {
+        let worker = engine()
+        let urls = try MobileSamples.create(in: folder.appendingPathComponent("tiff-input"))
+        _ = try await worker.importPhotos([urls[0]], skipDuplicates: true, progress: { _, _ in })
+        let photos = try await worker.photos()
+        let photo = try XCTUnwrap(photos.first)
+        var settings = MobileExportSettings()
+        settings.format = "tiff"
+        settings.hdr = false
+        settings.longEdge = 160
+        XCTAssertEqual(settings.tiffCompression, .zip)
+        let cases: [(TIFFCompression, Int, Int)] = [(.zip, 16, 8), (.lzw, 16, 5), (.uncompressed, 8, 1), (.jpeg, 8, 7)]
+        for (mode, depth, tag) in cases {
+            settings.tiffCompression = mode
+            settings.tiffBitDepth = depth
+            XCTAssertTrue(settings.tiffChoices(sourceLongEdge: photo.width).contains(mode))
+            let output = try await worker.export(photo: photo, edit: .neutral, plan: nil, manifest: nil,
+                                                 settings: settings, cancellation: .init(), progress: { _, _ in })
+            let source = try XCTUnwrap(CGImageSourceCreateWithURL(output as CFURL, nil))
+            let props = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+            let tiff = try XCTUnwrap(props[kCGImagePropertyTIFFDictionary] as? [CFString: Any])
+            XCTAssertEqual(tiff[kCGImagePropertyTIFFCompression] as? Int, tag)
+            XCTAssertEqual(props[kCGImagePropertyDepth] as? Int, depth)
+        }
+    }
+
     func testPanoramaAlignmentScaledLosslessExportAndMetadata() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("samples"))
         _ = try await engine.importPhotos(urls, skipDuplicates: true, progress: { _,_ in })
