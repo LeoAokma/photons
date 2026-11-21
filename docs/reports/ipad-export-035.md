@@ -20,3 +20,9 @@
 HDR、TIFF、线性 DNG 的初始色域为 Rec.2020。Mac 保留显式指定的预设色域，iPad 按格式自动设置。iPad 单张导出在选定色域渲染，DNG 的 16 位像素和 D65 颜色矩阵、D50 前向矩阵使用同一组基色，缩略图使用 sRGB。修改涉及 PhotonsCore、Export、Panorama、Jobs、UI 与 Mobile，无前置功能依赖。
 
 本次 Mac 执行 HDRColorSpaceTests、ExportPresetTests、ExportSheetModelTests 和全景 DNG 回读测试。iPadOS 模拟器实际导出并读回四种 TIFF 压缩选项的位深、压缩标记和 Rec.2020 描述，拼接 DNG 缩放及元数据测试通过。未进行物理屏幕色彩测量。
+
+## IPAD-ICON-01 · iPad 主屏图标
+
+原 1024 像素 PNG 把四边黑底和 Mac 圆角一起烘进了图片。iPad 应用目标现在直接引用已有的 Resources/AppIcon.icon 分层图稿，Xcode 为 iPad 编译外观和旧系统的 76 pt 图标。移除仅含旧 PNG 的 iPad 资源目录。Mac 图稿无修改。独立改动。
+
+本次 xcodebuild 模拟器构建成功，安装 Studio 后在 iPadOS 27.2 主屏截屏验证。屏上同时有使用旧图标的 Photons Preview 和新 Studio，前者有黑框，新版黄色底色延伸至系统圆角。截图 local/out/ipad-export-035/home.png。未运行 iPadOS 18 真机。
