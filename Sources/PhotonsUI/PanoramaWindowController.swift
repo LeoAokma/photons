@@ -66,16 +66,18 @@ final class PanoramaWindowModel: ObservableObject {
     @Published var lccTint=0.0
     @Published var protectHighlights=true
     private var lccSession:LCCEditingSession?
-    private var alignmentWindow:LCCAlignmentWindowController?
+    private(set) var alignmentWindow:LCCAlignmentWindowController?
     private var lccWindow: LCCWindowController?
     private var exportWindow: PanoramaExportController?
     private var cancellation = PanoramaCancellation()
     private let queue = DispatchQueue(label:"Photons.panorama",qos:.userInitiated)
-    init(urls: [URL]) {
+    private let profileStore: LCCProfileStore
+    init(urls: [URL], profileStore: LCCProfileStore = LCCProfileStore()) {
+        self.profileStore = profileStore
         sourceAccess = urls.map { FileAccessStore.shared.access(to: $0) }
         self.urls = sourceAccess.map(\.url); refreshLCC()
     }
-    func cancel() { cancellation.cancel(); exportWindow?.dismiss() }
+    func cancel() { cancellation.cancel(); alignmentWindow?.close(); exportWindow?.dismiss() }
     func setBody(_ body:PanoramaCameraBody) {
         cameraBody=body;bodyOrientation=body.canonicalOrientation(bodyOrientation);bodyPlacementChanged()
     }
@@ -134,7 +136,7 @@ final class PanoramaWindowModel: ObservableObject {
             run {engine,token,_ in try engine.removingLCC(current,cancellation:token)};return
         }
         guard let id=UUID(uuidString:selectedLensProfileID),let sensor else {error=L10n.tr("fca735eecc8a");lccEnabled=false;return}
-        let cached=lccSession,offset=lccOffset,crop=cropToLCC,exposure=exposureEV,protect=protectHighlights
+        let cached=lccSession,profileStore=self.profileStore,offset=lccOffset,crop=cropToLCC,exposure=exposureEV,protect=protectHighlights
         let wb:(Float,Float)?=automaticLCCWB ? nil:(Float(lccTemperature),Float(lccTint))
         let shouldLocate=automaticallyLocate && positionReference==nil
         let body=cameraBody,orientation=bodyOrientation,hints=resolvedHints
@@ -148,7 +150,7 @@ final class PanoramaWindowModel: ObservableObject {
             do {
                 let session:LCCEditingSession
                 if let cached,cached.profile.id==id,cached.sensor==sensor {session=cached}
-                else {session=try LCCEditingSession(plan:current,profileID:id,sensor:sensor,engine:engine,token:token,progress:progress)}
+                else {session=try LCCEditingSession(plan:current,profile:profileStore.load(id),sensor:sensor,engine:engine,token:token,progress:progress)}
                 var prepared=current
                 prepared.originalPreviewImages=session.preparedPlan.originalPreviewImages
                 prepared.lccLinearPreviewImages=session.preparedPlan.lccLinearPreviewImages
@@ -195,7 +197,17 @@ final class PanoramaWindowModel: ObservableObject {
     func alignLCC(initialOffset:CGPoint?=nil,explanation:String?=nil,proposal:PanoramaPlan?=nil) {
         guard let plan,let session=lccSession,lccEnabled,!busy,positionReference==nil else {return}
         if let alignmentWindow {alignmentWindow.showWindow(nil);return}
-        let c=LCCAlignmentWindowController(plan:proposal ?? plan,session:session,offset:initialOffset ?? lccOffset,crop:cropToLCC,explanation:explanation) { [weak self] result,offset in
+        let base = proposal ?? plan, crop = cropToLCC, exposure = exposureEV, protect = protectHighlights
+        let body = cameraBody, orientation = bodyOrientation
+        let wb: (Float, Float)? = automaticLCCWB ? nil : (Float(lccTemperature), Float(lccTint))
+        let editor = LCCAlignmentModel(plan: base, sensor: session.sensor, offset: initialOffset ?? lccOffset,
+                                       explanation: explanation, renderPreview: { offset, token in
+            try PanoramaEngine().applyingLCC(base, profile: session.profile, fields: session.fields, offsetMM: offset,
+                                             sensor: session.sensor, crop: crop, cancellation: token, exposureEV: exposure,
+                                             protectHighlights: protect, whiteBalanceOverride: wb,
+                                             cameraBody: body, bodyOrientation: orientation)
+        }) { [weak self] result in
+            guard let offset = result.lccState?.offsetMM else { return }
             guard self?.positionReference==nil else {return}
             self?.plan=result;self?.lccOffset=offset;self?.status=L10n.tr("b733a8d2ca5b")
             let r=result.sensorRect(0)
@@ -204,7 +216,11 @@ final class PanoramaWindowModel: ObservableObject {
                 y:(result.size.height/2-r.midY)*session.sensor.height/r.height-offset.y))
             self?.positionExplanation=explanation ?? L10n.tr("1eaba71129bf")
         }
-        c.onClose={ [weak self] in self?.alignmentWindow=nil };alignmentWindow=c;c.showWindow(nil);c.window?.makeKeyAndOrderFront(nil)
+        let controller = LCCAlignmentWindowController(model: editor)
+        controller.onClose = { [weak self] in self?.alignmentWindow = nil }
+        alignmentWindow = controller
+        if let window, let sheet = controller.window { window.beginSheet(sheet) }
+        else { controller.showWindow(nil) }
     }
     func solvePosition() {
         guard let current=plan,let session=lccSession,lccEnabled,!busy,positionReference==nil else {return}

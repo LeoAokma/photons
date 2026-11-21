@@ -427,7 +427,7 @@
   "468d97cef9ed": "Applying alignment…",
   "0cd2df38d720": "Updating preview…",
   "7aeb211ca8bb": "LCC calibration covers the current panorama.",
-  "8c1e47e38eb8": "Position is relative to the panorama center, with right/up positive. Cyan marks calibration coverage; orange dashes mark the fully correctable crop. Preview uses fixed white balance.",
+  "8c1e47e38eb8": "Position is relative to the panorama center, positive right and up. Cyan shows calibration coverage and the dashed orange line shows the supported crop. The preview includes the current white balance, seams and crop.",
   "4cc3885c182e": "Center",
   "c5160c4ce0c4": "Apply alignment",
   "5836a4495ac1": "LCC Alignment",
