@@ -36,7 +36,8 @@ public final class PanoramaEngine {
         renderPreview(&plan);return plan
     }
 
-    public func analyze(urls: [URL], options: PanoramaOptions = .init(),knownPositions:[Int:CGPoint]=[:],sensorOverride:SensorSize?=nil,
+    public func analyze(urls: [URL], options: PanoramaOptions = .init(),knownPositions:[Int:CGPoint]=[:],
+                        shiftHints:[Int:PanoramaShiftPosition]=[:],sensorOverride:SensorSize?=nil,
                         registrationMode:PanoramaRegistrationMode = .shift,
                         cancellation: PanoramaCancellation = .init(), progress: Progress = { _ in }) throws -> PanoramaPlan {
         guard urls.count >= 2 else { throw PanoramaFailure(urls.isEmpty ? L10n.tr("977f178f562a") : L10n.tr("2e0b7140c7cc")) }
@@ -62,16 +63,16 @@ public final class PanoramaEngine {
         }
         struct Edge { let a: Int; let b: Int; let transform: PanoramaTransform; let score: Double; var probes: [CGPoint] = [] }
         var edges: [Edge] = []
+        let positions = knownPositions.mapValues(PanoramaShiftPosition.init).merging(shiftHints) { _, hint in hint }
         if registrationMode == .shift {
         for a in 0..<sources.count-1 { for b in a+1..<sources.count {
             try cancellation.check(); progress(L10n.tr("ffa317474694" , String(describing: (a+1)), String(describing: (b+1))))
             let match:TranslationRegistration.Match?
-            if let pa=knownPositions[a],let pb=knownPositions[b],let sensor=sensorOverride ?? first.sensor {
-                progress(L10n.tr("421e14fe1c2b" , String(describing: (a+1)), String(describing: (b+1))))
-                let expected=CGPoint(x:(pb.x-pa.x)/sensor.width*Double(coarse[a].width),y:-(pb.y-pa.y)/sensor.height*Double(coarse[a].height))
-                match=try TranslationRegistration.align(coarse[a],coarse[b],near:expected,
-                    radius:max(Double(coarse[a].width)/sensor.width,Double(coarse[a].height)/sensor.height)*1.5,cancellation:cancellation)
-            } else {match=try TranslationRegistration.align(coarse[a],coarse[b],cancellation:cancellation)}
+            if let pa = positions[a], let pb = positions[b], let sensor = sensorOverride ?? first.sensor {
+                let scale = CGSize(width: Double(coarse[a].width) / sensor.width, height: Double(coarse[a].height) / sensor.height)
+                match = try TranslationRegistration.align(coarse[a], coarse[b], expected: pb.difference(from: pa, pixelsPerMM: scale),
+                                                          radius: max(scale.width, scale.height) * 1.5, cancellation: cancellation)
+            } else { match = try TranslationRegistration.align(coarse[a], coarse[b], cancellation: cancellation) }
             if let match {
                 let initial = CGPoint(x:match.offset.x*Double(grays[a].width)/Double(coarse[a].width),
                                       y:match.offset.y*Double(grays[a].height)/Double(coarse[a].height))
@@ -96,11 +97,6 @@ public final class PanoramaEngine {
                 progress(L10n.tr("panorama.geometry",String(a+1),String(b+1)))
                 guard let match=try ProjectiveRegistration.align(coarse[a],coarse[b],fineA:grays[a],fineB:grays[b],cancellation:cancellation) else {continue}
                 let h=PanoramaTransform.scale(1/scale,1/scale).multiplied(by:match.transform).multiplied(by:.scale(scale,scale))
-                if registrationMode == .shift, let pa=knownPositions[a],let pb=knownPositions[b],let sensor=sensorOverride ?? first.sensor {
-                    let center=CGPoint(x:first.size.width/2,y:first.size.height/2),mapped=h.point(center)
-                    let expected=CGPoint(x:(pb.x-pa.x)/sensor.width*first.size.width,y:-(pb.y-pa.y)/sensor.height*first.size.height)
-                    guard hypot(mapped.x-center.x-expected.x,mapped.y-center.y-expected.y)<max(first.size.width/sensor.width,first.size.height/sensor.height)*1.5 else {continue}
-                }
                 edges.append(Edge(a:a,b:b,transform:h,score:match.score,probes:match.pairs.map {CGPoint(x:$0.b.x/scale,y:$0.b.y/scale)}))
                 projective=true
             }}

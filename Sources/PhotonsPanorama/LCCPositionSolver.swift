@@ -18,9 +18,18 @@ public enum LCCPositionSolver {
         let logRGB:SIMD3<Double>
         let field:LCCOrientedField
     }
+    /// Intersect compatible readings on this axis. Conflicting or out-of-travel readings
+    /// leave the image-derived search open on that axis.
+    static func guidedRange(_ range: ClosedRange<Double>, origins: [Double]) -> ClosedRange<Double> {
+        guard let low = origins.min(), let high = origins.max() else { return range }
+        let lower = max(range.lowerBound, high - 1.5)
+        let upper = min(range.upperBound, low + 1.5)
+        return lower <= upper ? lower...upper : range
+    }
+
     public static func solve(plan:PanoramaPlan,fields:[LCCCaptureOrientation:LCCCorrectionField],sensor:SensorSize,
                              cameraBody:PanoramaCameraBody = .alpa12Max,bodyOrientation:PanoramaBodyOrientation = .degrees0,
-                             allowPairedFlats:Bool = true, approximateOffset:CGPoint? = nil, searchRadius:Double = 3,
+                             shiftHints:[Int:PanoramaShiftPosition] = [:], allowPairedFlats:Bool = true, approximateOffset:CGPoint? = nil, searchRadius:Double = 3,
                              cancellation:PanoramaCancellation = .init(),progress:PanoramaEngine.Progress = {_ in}) throws -> LCCPositionSolution {
         let engine=PanoramaEngine(),records=allowPairedFlats ? LCCPairingStore().records():[]
         var observations:[Observation]=[],flats=0
@@ -36,6 +45,9 @@ public enum LCCPositionSolver {
         let y0=max(bounds.minY,approximateOffset.map {$0.y-searchRadius} ?? bounds.minY)
         let y1=min(bounds.maxY,approximateOffset.map {$0.y+searchRadius} ?? bounds.maxY)
         guard x0<=x1,y0<=y1 else {throw PanoramaFailure(L10n.tr("3735a180c3c7"))}
+
+        let xRange = guidedRange(x0...x1, origins: centers.indices.compactMap { i in shiftHints[i]?.x.map { centers[i].x - $0 } })
+        let yRange = guidedRange(y0...y1, origins: centers.indices.compactMap { i in shiftHints[i]?.y.map { centers[i].y - $0 } })
 
         let flatRecords=plan.sources.map {source in records.first {$0.scene.standardizedFileURL==source.url.standardizedFileURL}}
         let useFlats=flatRecords.contains {$0 != nil}
@@ -69,7 +81,7 @@ public enum LCCPositionSolver {
         }
         guard observations.count>100 else {throw PanoramaFailure(L10n.tr("fb4baac95a8f"))}
         progress(useFlats ? L10n.tr("3e9dec9a63e9"):L10n.tr("2fdf398a243c"))
-        let result=try search(observations:observations,xRange:x0...x1,yRange:y0...y1,flat:useFlats,cancellation:cancellation)
+        let result=try search(observations:observations,xRange:xRange,yRange:yRange,flat:useFlats,cancellation:cancellation)
         var explanation=useFlats
             ? String(format:L10n.tr("d44d22cbc3ea"),flats,result.error*100)
             : L10n.tr("32579e8b19fb")
