@@ -712,7 +712,7 @@ final class IPadEngineTests: XCTestCase {
             let props = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
             let tiff = try XCTUnwrap(props[kCGImagePropertyTIFFDictionary] as? [CFString: Any])
             XCTAssertEqual(tiff[kCGImagePropertyTIFFCompression] as? Int, tag)
-            XCTAssertTrue((props[kCGImagePropertyProfileName] as? String)?.contains("2020") == true, "\(props)")
+            XCTAssertEqual(props[kCGImagePropertyProfileName] as? String, "Rec. ITU-R BT.2020-1; sRGB Gamma")
             XCTAssertEqual(props[kCGImagePropertyDepth] as? Int, depth)
         }
     }

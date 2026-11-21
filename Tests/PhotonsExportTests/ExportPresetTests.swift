@@ -1,5 +1,6 @@
 import XCTest
 import CoreGraphics
+import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
 import PhotonsCore
@@ -193,11 +194,35 @@ final class ExportPresetTests: XCTestCase {
         XCTAssertEqual(ExportFormat.png.clampedBitDepth(10), 16)
     }
 
-    func testRec2020IsTaggedAsITUR2020AndNamedInTheSummary() throws {
+    func testRec2020CarriesTheDisplayTransferAndIsNamedInTheSummary() throws {
         let space = try XCTUnwrap(Exporter.colorSpace(for: .rec2020))
-        XCTAssertEqual(space.name as String?, "kCGColorSpaceITUR_2020")
+        XCTAssertEqual(space.name, CGColorSpace.itur_2020_sRGBGamma)
         XCTAssertTrue(ExportPreset(format: .heic, colorSpace: .rec2020).summary
             .contains("Rec2020"))
+    }
+
+    func testSDRRec2020TIFFAndPNGRecoverSceneLinearSwatches() throws {
+        let patches: [[Float16]] = [[0.018,0.018,0.018,1], [0.18,0.18,0.18,1], [0.62,0.24,0.08,1]]
+        let linear = LinearPixels(width: patches.count, height: 1, rgba: patches.flatMap { $0 }, primaries: .rec2020)
+        let display = linear.displaySDR(bitDepth: 16)
+        let context = CIContext()
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.extendedLinearITUR_2020))
+        for format in [ExportFormat.tiff, .png] {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(format.fileExtension)
+            defer { try? FileManager.default.removeItem(at: url) }
+            try Exporter.write(display, to: url, options: .init(format: format, bitDepth: 16))
+            let image = try XCTUnwrap(CIImage(contentsOf: url))
+            var decoded = [Float](repeating: 0, count: patches.count * 4)
+            context.render(image, toBitmap: &decoded, rowBytes: decoded.count * 4, bounds: image.extent,
+                           format: .RGBAf, colorSpace: space)
+            for (i, patch) in patches.enumerated() {
+                for channel in 0..<3 {
+                    XCTAssertEqual(decoded[i * 4 + channel], Float(patch[channel]), accuracy: 0.001,
+                                   "\(format) patch \(i), channel \(channel)")
+                }
+            }
+        }
     }
 
     func testSDRToneMappingDefaultsToGlobalAndIsOnlyWrittenWhenNot() throws {

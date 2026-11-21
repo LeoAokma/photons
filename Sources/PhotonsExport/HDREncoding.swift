@@ -56,8 +56,8 @@ public enum HDREncoding {
         }
     }
 
-    /// The SDR base a gain map / PQ / HLG export is tagged with. Plain SDR exports keep the historic
-    /// `Exporter.colorSpace(for:)` tags (byte identity); only the HDR pair uses this table.
+    /// The SDR base a gain map / PQ / HLG export is tagged with. Rec.2020 SDR rasters use the same sRGB
+    /// transfer as their display-encoded pixels.
     public static func sdrColorSpace(for primaries: OutputPrimaries) -> CGColorSpace? {
         switch primaries {
         case .sRGB: return CGColorSpace(name: CGColorSpace.itur_709)

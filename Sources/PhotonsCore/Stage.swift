@@ -360,7 +360,7 @@ extension PixelRect {
 public enum OutputPrimaries: String, Sendable, Codable, CaseIterable {
     case sRGB
     case displayP3
-    /// BT.2020 primaries with the sRGB transfer function (what `CGColorSpace.itur_2020` tags).
+    /// BT.2020 primaries with the sRGB transfer function (tagged with `CGColorSpace.itur_2020_sRGBGamma`).
     /// The working space is already Rec.2020, so this output is the **identity** matrix in S4 — the
     /// widest thing a 16-bit TIFF/PNG (or a 10-bit HEIC) can carry without inventing colour.
     case rec2020

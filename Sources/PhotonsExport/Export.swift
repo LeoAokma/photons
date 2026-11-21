@@ -245,7 +245,7 @@ public enum Exporter {
         case .sRGB: return CGColorSpace(name: CGColorSpace.sRGB)
         case .displayP3: return CGColorSpace(name: CGColorSpace.displayP3)
         // Rec.2020 primaries, sRGB transfer — the tag a 16-bit TIFF/PNG (or 10-bit HEIC) should carry.
-        case .rec2020: return CGColorSpace(name: CGColorSpace.itur_2020)
+        case .rec2020: return HDREncoding.sdrColorSpace(for: .rec2020)
         }
     }
 

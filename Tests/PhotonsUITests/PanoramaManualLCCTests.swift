@@ -96,7 +96,7 @@ final class PanoramaManualLCCTests: XCTestCase {
         XCTAssertTrue(model.canStitch)
         let manifest = model.exportManifest(for: plan)
         let job = try PanoramaJob(snapshot: PanoramaSnapshot(plan: plan), manifest: manifest,
-            preset: ExportPreset(format: .tiff, bitDepth: 16, colorSpace: .sRGB, sdrToneMapping: .none),
+            preset: ExportPreset(format: .tiff, bitDepth: 16, sdrToneMapping: .none),
             linearDNG: false, outputDirectory: directory, bookmarks: [])
         let url = try XCTUnwrap(job.run { _,_ in })
         let written = try XCTUnwrap(PanoramaManifest.read(from: url))

@@ -302,7 +302,7 @@ public final class PanoramaEngine {
             progress(L10n.tr("2c1ef19b2f8f"))
             let display=plan.lccState?.protectHighlights == true ? Self.protectedDisplay(scene):scene
             guard let cg = context.createCGImage(display,from:display.extent,format:.RGBA16,
-                                                 colorSpace:CGColorSpace(name:CGColorSpace.itur_2020)!),
+                                                 colorSpace:CGColorSpace(name:CGColorSpace.itur_2020_sRGBGamma)!),
                   let destination = CGImageDestinationCreateWithURL(temp as CFURL,"public.tiff" as CFString,1,nil) else {
                 throw PanoramaFailure(L10n.tr("b4cd18cf7cdc"))
             }
