@@ -2,6 +2,21 @@
 
 Tracking baseline is ed54df7 on the fork main. Local probes read the CFV 100C originals and the bundled 43XL profile. Intermediate rasters and personal photographs stay outside Git.
 
+## 交付记录
+
+| 编号 | 提交 | 独立改动 |
+| --- | --- | --- |
+| LCC-SKY-01 | `e092156` | 原片基线与天空残色诊断 |
+| LCC-HIGHLIGHT-01 | `97acbba` | 修复 474 高光重建造成的色带 |
+| LCC-OVERLAP-01 | `03f30f6` | 对 LCC 后的剩余帧间色差执行重叠匹配 |
+| PANO-ALIGN-01 | `4731abb` | 复核窄条特征，修正 467 的错位 |
+| SHIFT-AXIS-01 | `1fda4c6` | 配准和 LCC 支持逐轴提示及标定端点 |
+| SHIFT-AXIS-MAC-01 | `53c33f4` | Mac 逐轴输入及可选的整组基准 |
+| SHIFT-AXIS-IPAD-01 | `d60ed4d` | iPad 逐轴输入、拖动、撤销及自动识别 |
+| VERSION-035 | `73492d6` | Mac 与 iPad 的产品版本统一为 0.3.5 |
+
+最终在 Mac 上运行 `PHOTONS_LANGUAGE=zh-Hans swift test --filter 'PhotonsPanoramaTests|PanoramaPerspectiveTests'`，共 83 项，其中 75 项通过，8 项因外部样片或可选生成条件跳过，零失败。iPad 模拟器的完整界面流程在最后一次布局修订后再次通过。Mac 的 0.3.5 包通过签名检查和 Launch Services 启动检查。iPad 的模拟器包和未签名设备包均已编译并回读版本。四组个人照片仅用于本机验证。对照截图、测量脚本和缩放导出保存在本机，已移除 2.30 GiB 的临时浮点缓冲。
+
 ## LCC-SKY-01 · Real-input diagnosis
 
 - 496–501 register into a 21338 × 20228 canvas. Scene-based LCC gives offset (−0.04, −3.23) mm, 99.78% footprint coverage and 9109 K / +8.86 tint, with zero paired flats. Coverage measures where calibration samples exist. It does not measure chromatic accuracy.
@@ -9,7 +24,7 @@ Tracking baseline is ed54df7 on the fork main. Local probes read the CFV 100C or
 - In 496–501 the same disagreement was 2.33 log-percent with a 6.94 log-percent 90th percentile. The release code disables residual RGB matching with any active LCC. In an isolated comparison, running the existing overlap fit on corrected previews reduced those values to 1.42 and 3.43. For 478–479 and 480–481 the medians fell to 0.82 and 0.70. Scalar exposure changes cancel in this metric. This identifies a software contribution to differences between frames. Unpaired scene colours, especially the absolute hue of the sky outside an overlap, cannot establish the accuracy of a flat field or white balance.
 - In 474–475 coverage is 100%. The green/grey band can already be reproduced in frame 474 before compositing, well outside the overlap. With identical geometry, field, offset and WB, changing only RAW clipped-colour reconstruction reduced the adjacent-pixel log-chroma jump at x=575 (960-wide proxy, y=160…215) from 0.402 to 0.158. The original estimator rejected coloured neighbours and could switch abruptly to a scene-wide neutral. The original hue in a fully saturated channel remains unknown.
 
-Method: run the optimized PhotonsPanorama module from ed54df7, analyze the originals, prepare CFA images, solve with the bundled profile, apply with cropping and shared auto WB. Resample the individual linear RGB previews to 960 × 720. Compare positive, smooth, non-border overlap samples at identical panorama coordinates on a separate 3.7-pixel grid. The metric is 100 times the larger absolute difference in log R/G and log B/G. The sky proxy additionally selects blue-dominant pixels in the top 55% of the canvas. Sample counts for 496–501, 478–479 and 480–481 are 7592, 1609 and 2207. In 474–475 only 14 overlap samples pass the sky cut, so the isolated-frame control is the relevant test. No ground-truth white plate or full-resolution export was used.
+The baseline probe runs the optimized PhotonsPanorama module from ed54df7. It analyzes the originals, prepares CFA images, solves with the bundled profile and applies cropping and shared auto WB. Resample the individual linear RGB previews to 960 × 720. Compare positive, smooth, non-border overlap samples at identical panorama coordinates on a separate 3.7-pixel grid. The metric is 100 times the larger absolute difference in log R/G and log B/G. The sky proxy additionally selects blue-dominant pixels in the top 55% of the canvas. Sample counts for 496–501, 478–479 and 480–481 are 7592, 1609 and 2207. In 474–475 only 14 overlap samples pass the sky cut, so the isolated-frame control is the relevant test. No ground-truth white plate or full-resolution export was used.
 
 ### Clarified second group
 
@@ -37,7 +52,7 @@ Each frame can specify either axis independently as unknown, a signed millimetre
 
 ## SHIFT-AXIS-MAC-01 · Mac position sheet
 
-Click a photo in the shift diagram. Each axis has independent Unknown, Specific value and two directional Maximum choices. End stops display their resolved millimetres. The optional explicit absolute reference requires both axes; partial hints go to the automatic LCC solver. Clearing a hint removes it from subsequent matches. Shared SwiftUI editor, Mac window model, English and Simplified Chinese resources. Tested with 4 Mac workspace tests and 3 shared guidance tests, all passed. Depends on 1fda4c6. Pending edits are per stitch session.
+Click a photo in the shift diagram. Each axis has independent Unknown, Specific value and two directional Maximum choices. End stops display their resolved millimetres. The optional explicit absolute reference requires both axes. Partial hints go to the automatic LCC solver. Clearing a hint removes it from subsequent matches. Shared SwiftUI editor, Mac window model, English and Simplified Chinese resources. Tested with 4 Mac workspace tests and 3 shared guidance tests, all passed. Depends on 1fda4c6. Pending edits are per stitch session.
 
 ## SHIFT-AXIS-IPAD-01 · iPad position controls
 
@@ -47,9 +62,9 @@ On the 13-inch iPad Pro simulator the engine alignment/export and physical dragg
 
 ## Cross-checks
 
-- Holding geometry and calibration fixed, switching only scene WB to the as-shot WB changed sky colour substantially. In 496–501 the scene estimate was 9109 K / +8.86 versus as-shot 6189 K / −13.42. The scene setting raised the median linear R/G by 50% and lowered B/G by 17% in smooth blue samples of 496/497. For 482–487 the estimates were 10423 K / +7.74 and 5770 K / −12.10; the corresponding changes were +66% and −29% in 486/487. This establishes sensitivity to the illuminant estimate, without a neutral reference to choose between them.
+- Holding geometry and calibration fixed, switching only scene WB to the as-shot WB changed sky colour substantially. In 496–501 the scene estimate was 9109 K / +8.86 versus as-shot 6189 K / −13.42. The scene setting raised the median linear R/G by 50% and lowered B/G by 17% in smooth blue samples of 496/497. For 482–487 the estimates were 10423 K / +7.74 and 5770 K / −12.10. The corresponding changes were +66% and −29% in 486/487. This establishes sensitivity to the illuminant estimate, without a neutral reference to choose between them.
 - The integrated build with horizontal end stops alone registered 464–469, 482–487 and 496–501. Repeating the sky residual comparison on these final 482 and 496 layouts yielded median values of 2.98 and 1.40 log-percent.
-- Serialized and reopened the actual worker snapshot on 474–475 and 496–501. Rendered from full-resolution CFA sources into scaled linear half-float TIFFs of 1500 × 609 and 1500 × 1426. All inspected output values were finite; linear peaks were 3.50 and 2.52. These were scaled output checks.
+- Serialized and reopened the actual worker snapshot on 474–475 and 496–501. Rendered from full-resolution CFA sources into scaled linear half-float TIFFs of 1500 × 609 and 1500 × 1426. All inspected output values were finite. Linear peaks were 3.50 and 2.52. These were scaled output checks.
 
 ## VERSION-035 · Product version
 
