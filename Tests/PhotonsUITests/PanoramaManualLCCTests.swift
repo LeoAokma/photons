@@ -22,8 +22,8 @@ final class PanoramaManualLCCTests: XCTestCase {
         try FileManager.default.removeItem(at: directory)
     }
 
-    private func wait(for condition: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(20)
+    private func wait(timeout: TimeInterval = 20, for condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
         while !condition(), Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertTrue(condition())
     }
@@ -181,5 +181,58 @@ final class PanoramaManualLCCTests: XCTestCase {
             let a = sample(CIImage(cgImage: visible), x), b = sample(exported, x)
             for channel in 0..<3 { XCTAssertEqual(a[channel], b[channel], accuracy: 0.008) }
         }
+    }
+
+    func testHolyoke496Through501ManualPlacementReplacesAutomaticPixels() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PHOTONS_HOLYOKE_DIR"] else {
+            throw XCTSkip("Set PHOTONS_HOLYOKE_DIR to the external Holyoke RAW fixtures")
+        }
+        _ = NSApplication.shared
+        let urls = (496...501).map { URL(fileURLWithPath: path).appendingPathComponent(String(format: "B%07d.3FR", $0)) }
+        let store = LCCProfileStore(directory: directory.appendingPathComponent("profiles"))
+        try store.installBundledProfile()
+        let model = PanoramaWindowModel(urls: urls, profileStore: store)
+        defer { model.cancel() }
+        model.selectedLensProfileID = LCCLensProfile.builtInID.uuidString
+        model.lensProfiles = store.catalog().profiles
+        model.prepare(mode: .shift)
+        try await wait(timeout: 600) { !model.busy }
+        let registered = try XCTUnwrap(model.plan, model.error ?? "")
+        XCTAssertTrue(registered.isRegistered)
+        model.setLCCEnabled(true)
+        try await wait(timeout: 600) { !model.busy }
+        let initial = try XCTUnwrap(model.plan?.lccState, model.error ?? "")
+        let automatic = try XCTUnwrap(model.plan?.preview)
+        XCTAssertNotNil(model.estimatedReference, model.error ?? "")
+        model.alignLCC()
+        try await wait(timeout: 120) { !model.busy }
+        let editor = try XCTUnwrap(model.alignmentWindow?.model)
+        editor.x = initial.offsetMM.x + 3
+        editor.y = initial.offsetMM.y - 2
+        try await wait(timeout: 600) { !editor.working }
+        XCTAssertTrue(editor.canApply, editor.error ?? "")
+        let visible = try XCTUnwrap(editor.preview.preview)
+        let context = CIContext()
+        func thumbnail(_ image: CGImage) -> [UInt8] {
+            let scaled = CIImage(cgImage: image).transformed(by: CGAffineTransform(
+                scaleX: 32 / CGFloat(image.width), y: 32 / CGFloat(image.height)))
+            var bytes = [UInt8](repeating: 0, count: 32 * 32 * 4)
+            context.render(scaled, toBitmap: &bytes, rowBytes: 32 * 4,
+                           bounds: CGRect(x: 0, y: 0, width: 32, height: 32),
+                           format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+            return bytes
+        }
+        let before = thumbnail(automatic), after = thumbnail(visible)
+        let changed = stride(from: 0, to: before.count, by: 4).filter { i in
+            (0..<3).contains { abs(Int(before[i + $0]) - Int(after[i + $0])) >= 2 }
+        }.count
+        print("Holyoke 496–501 manual LCC: automatic \(initial.offsetMM), manual \(editor.x), \(editor.y); \(changed)/1024 samples changed by at least two code values")
+        XCTAssertGreaterThan(changed, 10)
+        editor.apply()
+        let accepted = try XCTUnwrap(model.plan)
+        XCTAssertTrue(accepted.preview === visible)
+        XCTAssertEqual(accepted.origins, registered.origins)
+        XCTAssertEqual(model.exportManifest(for: accepted).profileOffsetMM, CGPoint(x: editor.x, y: editor.y))
+        XCTAssertTrue(model.canStitch)
     }
 }
