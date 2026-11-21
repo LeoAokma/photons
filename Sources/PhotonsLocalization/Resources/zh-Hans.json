@@ -1424,7 +1424,7 @@
   "export.estimatedSize.single": "预计大小：{0}",
   "export.estimatedSize.total": "预计合计：{0}",
   "export.estimatedSize.unknown": "预计大小：—",
-  "export.estimatedSize.hint": "根据输出像素、格式、位深、质量及 HDR 增益图估算。实际大小取决于画面细节、水印和元数据；范围仅供参考。",
+  "export.estimatedSize.hint": "使用当前设置试编码预览中的局部区域，批量最多抽三张。取得样本前显示按尺寸推算的范围。原图细节、编辑和元数据会影响实际大小。",
   "export.watermark.dngHint": "无损输出下将禁用水印",
   "cameraBodies.title": "机身信息",
   "cameraBodies.generalTab": "常规",

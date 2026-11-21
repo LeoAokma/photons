@@ -43,6 +43,7 @@ final class PanoramaExportController {
         model.allowsLinearDNG = true
         model.preset.nameTemplate = "{name}"
         let size = ImageSize(width: Int(plan.outputSize.width), height: Int(plan.outputSize.height))
+        model.estimatePreview = plan.preview
         model.selectionCount = 1
         model.selectionNatives = [size]; model.selectionContents = [size]
         model.onClose = { [weak self] in self?.dismiss() }

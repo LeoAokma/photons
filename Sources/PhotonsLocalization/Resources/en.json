@@ -1424,7 +1424,7 @@
   "export.estimatedSize.single": "Estimated size: {0}",
   "export.estimatedSize.total": "Estimated total: {0}",
   "export.estimatedSize.unknown": "Estimated size: —",
-  "export.estimatedSize.hint": "Estimated from output pixels, format, bit depth, quality and HDR gain maps. Actual size depends on image detail, watermark and metadata; this range is a guide.",
+  "export.estimatedSize.hint": "Measured by encoding preview patches with the selected settings, sampling up to three photos in a batch. A size-based range is shown until a sample is available. Full-resolution detail, edits and metadata can change the result.",
   "export.watermark.dngHint": "Watermarks are disabled for lossless output.",
   "cameraBodies.title": "Camera Bodies",
   "cameraBodies.generalTab": "General",

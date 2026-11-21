@@ -26,24 +26,28 @@ public enum ExportFileSizeEstimator {
         guard !contents.isEmpty else { return nil }
         var estimates: [ExportFileSizeEstimate] = []
         for content in contents {
-            guard content.width > 0, content.height > 0 else { return nil }
-            let scale = preset.renderScale(content: content)
-            guard scale.isFinite, scale > 0,
-                  Double(content.width) * scale < Double(Int.max),
-                  Double(content.height) * scale < Double(Int.max) else { return nil }
-            let size: ImageSize
-            if linearDNG {
-                // LinearDNGWriter uses Int(CIImage.extent), rather than the display renderer's rounding.
-                let w = Double(content.width) * scale, h = Double(content.height) * scale
-                guard w < Double(Int.max), h < Double(Int.max) else { return nil }
-                size = ImageSize(width: max(1, Int(w)), height: max(1, Int(h)))
-            } else {
-                size = ExportSizing.outputSize(content: content, scale: scale)
-            }
+            guard let size = outputSize(content: content, preset: preset, linearDNG: linearDNG) else { return nil }
             guard let estimate = file(output: size, preset: preset, linearDNG: linearDNG) else { return nil }
             estimates.append(estimate)
         }
         return .total(estimates)
+    }
+
+    static func outputSize(content: ImageSize, preset: ExportPreset, linearDNG: Bool) -> ImageSize? {
+        guard content.width > 0, content.height > 0 else { return nil }
+        let scale = preset.renderScale(content: content)
+        guard scale.isFinite, scale > 0,
+              Double(content.width) * scale < Double(Int.max),
+              Double(content.height) * scale < Double(Int.max) else { return nil }
+        let size: ImageSize
+        if linearDNG {
+            // LinearDNGWriter uses Int(CIImage.extent), rather than the display renderer's rounding.
+            size = ImageSize(width: max(1, Int(Double(content.width) * scale)),
+                             height: max(1, Int(Double(content.height) * scale)))
+        } else {
+            size = ExportSizing.outputSize(content: content, scale: scale)
+        }
+        return size
     }
 
     /// `output` is already resized. Gain-map edge trimming is applied here, just as in BatchExporter.
@@ -88,8 +92,12 @@ public enum ExportFileSizeEstimator {
                 let raw = pixels * 3 * depthFactor
                 switch preset.tiffCompression {
                 case .uncompressed:
-                    lower = raw
-                    upper = pixels * 4 * depthFactor + 65_536
+                    // The SDR writer uses an RGB CGImage with a skipped component. ImageIO
+                    // drops it on disk. PQ and HLG carry a real fourth (alpha) channel.
+                    let channels = preset.hdrKind == .pq || preset.hdrKind == .hlg ? 4.0 : 3.0
+                    let payload = pixels * channels * depthFactor
+                    lower = payload - overhead + 512
+                    upper = payload + Double(size.height) * 8 + 8_192
                 case .zip, .lzw:
                     lower = raw * 0.25
                     upper = pixels * 4 * depthFactor * (preset.tiffCompression == .lzw ? 1.4 : 1.05)

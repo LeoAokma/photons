@@ -354,6 +354,12 @@ public final class ExportSheetModel {
     /// controller fills this alongside `natives`; the sheet uses it to update the even-pixel warning
     /// live as the user changes size/percentage. It is not persisted.
     public var selectionContents: [ImageSize] = []
+    var estimateSources: [URL?] = []
+    var estimatePreview: CGImage?
+    var sizeRequest: ExportSizeRequest {
+        ExportSizeRequest(contents: phase != .running && selectionCount == selectionContents.count ? selectionContents : [],
+                          preset: effectivePreset, linearDNG: usesLinearDNG, preview: estimatePreview, sources: estimateSources)
+    }
 
     /// 168 §2 — the selected pictures' **own** pixel sizes, straight from the catalog's
     /// `width`/`height` (never a thumbnail). The 长边 default comes from the first entry, because a
@@ -1160,6 +1166,7 @@ public struct ExportSectionCollapseStore {
 public struct ExportSheetView: View {
     @Bindable public var model: ExportSheetModel
 
+    @State private var sampledSize: (ExportSizeRequest, ExportFileSizeEstimate)?
     @State private var selectedPreset = ""
     @State private var showingSavePreset = false
     @State private var newPresetName = ""
@@ -1911,7 +1918,16 @@ public struct ExportSheetView: View {
     private var footer: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                ExportFileSizeLabel(estimate: model.estimatedFileSize)
+                let request = model.sizeRequest
+                ExportFileSizeLabel(estimate: sampledSize?.0 == request ? sampledSize?.1 : model.estimatedFileSize)
+                    .task(id: request) {
+                        do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+                        let result = await request.measure { url in
+                            let access = FileAccessStore.shared.access(to: url)
+                            return withExtendedLifetime(access) { ThumbnailProvider.imageIOThumbnail(access.url, maxPixelSize: 1600) }
+                        }
+                        if let result, !Task.isCancelled { sampledSize = (request, result) }
+                    }
                 if model.phase != .idle || model.errorText != nil {
                     Text(model.footerStatus)
                         .font(.system(size: ExportRowGrid.Font.footer))
@@ -2350,6 +2366,7 @@ public final class ExportSheetController: NSObject {
             captured[index].cameraKey = assets[index].cameraKey
         }
         items = captured
+        model.estimateSources = items.map(\.sourceURL)
         var sizes: [String: ImageSize] = [:]
         for asset in assets {
             if let w = asset.width, let h = asset.height, w > 0, h > 0 {
