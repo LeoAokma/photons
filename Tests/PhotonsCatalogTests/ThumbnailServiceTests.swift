@@ -468,6 +468,30 @@ final class ThumbnailServiceTests: XCTestCase {
         XCTAssertEqual(producer.callCount, 2)
     }
 
+    func testLargePanoramaHDPreviewCanFinishAfterTheBaseDeadline() throws {
+        let source = root.appendingPathComponent("panorama.dng")
+        var panorama = Asset(sourceRootId: "root", relPath: "panorama.dng", filename: "panorama.dng",
+                             ext: "dng", kind: .raw, size: 0, mtime: 0, contentHash: contentHash(242),
+                             width: 21_299, height: 20_186)
+        let hdKey = ThumbKey.hdJPEG(contentHash: panorama.contentHash, document: .neutral)
+        let request = ThumbRequestSpec(key: hdKey, source: source, asset: panorama, isBackgroundWarm: true)
+        let producer = StubProducer()
+        producer.delayMilliseconds = 600
+        let service = ThumbnailService(cache: try makeCache(), config: .init(producerDeadline: 0.3),
+                                       producer: producer)
+        let ticket = service.request(request, priority: .background)
+        waitIdle(service)
+        XCTAssertEqual(result(service, of: ticket)?.origin, .generated)
+
+        let embeddedKey = ThumbKey.preview(contentHash: panorama.contentHash, tier: .t256)
+        XCTAssertEqual(ThumbRequestSpec(key: embeddedKey, source: source, asset: panorama).deadlineMultiplier, 1)
+        XCTAssertEqual(ThumbRequestSpec(key: hdKey, source: source).deadlineMultiplier, 1)
+        panorama.height = 2_000
+        XCTAssertEqual(ThumbRequestSpec(key: hdKey, source: source, asset: panorama).deadlineMultiplier, 1)
+        panorama.height = 200_000
+        XCTAssertEqual(ThumbRequestSpec(key: hdKey, source: source, asset: panorama).deadlineMultiplier, 8)
+    }
+
     /// "The view left": one call cancels a whole visible set.
     func testBatchCancelOfAVisibleSet() throws {
         let cache = try makeCache()

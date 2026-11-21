@@ -48,7 +48,7 @@ final class PreviewPreparation {
         provider.rememberDocument(ThumbnailProvider.document(from: asset), for: key.digest)
         provider.rememberSourceEdge(ThumbnailProvider.sourceLongEdge(of: asset), for: key.digest)
         let access = FileAccessStore.shared.access(to: url)
-        ticket = provider.service.request(ThumbRequestSpec(key: key, source: access.url, isBackgroundWarm: true), priority: .background) {
+        ticket = provider.service.request(ThumbRequestSpec(key: key, source: access.url, asset: asset, isBackgroundWarm: true), priority: .background) {
             [weak self] result in
             withExtendedLifetime(access) {}
             DispatchQueue.main.async {

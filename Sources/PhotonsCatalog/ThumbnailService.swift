@@ -52,11 +52,19 @@ public struct ThumbRequestSpec: Sendable, Hashable {
     /// before the last edit. A warm is therefore **enqueued but not started** while paused: the
     /// queue entry waits, `pump()` on resume starts it, and no producer runs during the interaction.
     public let isBackgroundWarm: Bool
+    let deadlineMultiplier: Double
 
-    public init(key: ThumbKey, source: URL, isBackgroundWarm: Bool = false) {
+    public init(key: ThumbKey, source: URL, asset: Asset? = nil, isBackgroundWarm: Bool = false) {
         self.key = key
         self.source = source
         self.isBackgroundWarm = isBackgroundWarm
+        // HD renders develop the source pixels. A stitched DNG can take longer to decode
+        // than an ordinary camera frame even when both previews have the same output size.
+        if key.spec.isHDFamily, let width = asset?.width, let height = asset?.height, width > 0, height > 0 {
+            deadlineMultiplier = min(8, max(1, Double(width) * Double(height) / 100_000_000))
+        } else {
+            deadlineMultiplier = 1
+        }
     }
 }
 
@@ -221,11 +229,9 @@ public final class ThumbnailService: @unchecked Sendable {
         /// Optional admission cap. 0 = unlimited: the queue is bounded by the visible window, and
         /// silently dropping work because a prefetch ran long would make hit rates unexplainable.
         public var queueDepthLimit: Int
-        /// Nothing may sit in a producer forever: one wedged decode would hold a concurrency slot
-        /// (and with it `maxConcurrency` cells) until the app quit. A job that exceeds this is
-        /// booked `failed` with a reason and its bytes are dropped if they ever arrive. 0 disables.
-        /// A normal render here is ~0.3 s; the deadline exists for "the filter never returns", not
-        /// for slow machines.
+        /// Base watchdog interval for a producer. HD previews of large catalogued sources get
+        /// up to eight times this interval. Expiry releases the slot and discards late bytes.
+        /// Set to zero to disable the watchdog.
         public var producerDeadline: TimeInterval
 
         /// 308 — the *service* default follows the machine too, so a caller that builds a service
@@ -346,6 +352,7 @@ public final class ThumbnailService: @unchecked Sendable {
         let key: ThumbKey
         let source: URL
         let sequence: Int64
+        let producerDeadline: TimeInterval
         var cacheGeneration: UInt64 = 0
         let generation: Int
         var priority: ThumbPriority
@@ -363,9 +370,10 @@ public final class ThumbnailService: @unchecked Sendable {
         /// producer: the pause means no render while the interaction is on. See `requestBatch`.
         var servesFromDiskOnly = false
 
-        init(key: ThumbKey, source: URL, sequence: Int64, generation: Int, priority: ThumbPriority) {
-            self.key = key
-            self.source = source
+        init(spec: ThumbRequestSpec, producerDeadline: TimeInterval, sequence: Int64, generation: Int, priority: ThumbPriority) {
+            self.key = spec.key
+            self.source = spec.source
+            self.producerDeadline = producerDeadline
             self.sequence = sequence
             self.generation = generation
             self.priority = priority
@@ -630,8 +638,8 @@ public final class ThumbnailService: @unchecked Sendable {
         }
 
         sequence += 1
-        let job = Job(key: spec.key, source: spec.source, sequence: sequence,
-                      generation: gen, priority: priority)
+        let job = Job(spec: spec, producerDeadline: config.producerDeadline * spec.deadlineMultiplier,
+                      sequence: sequence, generation: gen, priority: priority)
         job.cacheGeneration = epoch
         job.subscribers.append(Subscription(id: ticket.id, completion: completion))
         pending.append(job)
@@ -850,11 +858,12 @@ public final class ThumbnailService: @unchecked Sendable {
 
         let t0 = DispatchTime.now()
         let payload: ThumbPayload
-        if config.producerDeadline > 0 {
+        if job.producerDeadline > 0 {
             // Safety net for a producer that never returns: without it, one wedged decode holds a
             // concurrency slot forever and the queue behind it never moves.
-            let deadline = config.producerDeadline
-            workers.asyncAfter(deadline: .now() + deadline) { [weak self] in
+            let deadline = job.producerDeadline
+            workers.asyncAfter(deadline: .now() + deadline) { [weak self, weak job] in
+                guard let job else { return }
                 self?.expire(job, after: deadline)
             }
         }

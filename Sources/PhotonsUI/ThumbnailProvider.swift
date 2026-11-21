@@ -596,7 +596,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
 
         // 2. the service: disk hit, or a producer run shared with whoever else asks for this key.
         let state = RequestState()
-        let spec = ThumbRequestSpec(key: key, source: fileURL)
+        let spec = ThumbRequestSpec(key: key, source: fileURL, asset: asset)
         let ticket = service.request(spec, priority: priority) { [weak self] result in
             self?.deliver(result, index: index, state: state, display: pixels, generation: generation, completion: completion)
         }
@@ -730,7 +730,7 @@ public final class ThumbnailProvider: @unchecked Sendable {
         // decoded here and nothing enters the memory LRU.
         rememberDocument(document, for: key.digest)
         rememberSourceEdge(ThumbnailProvider.sourceLongEdge(of: asset), for: key.digest)
-        let ticket = service.request(ThumbRequestSpec(key: key, source: fileURL,
+        let ticket = service.request(ThumbRequestSpec(key: key, source: fileURL, asset: asset,
                                                       isBackgroundWarm: true),
                                      priority: .prefetch) {
             [weak self] result in

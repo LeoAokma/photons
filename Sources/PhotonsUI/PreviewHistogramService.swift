@@ -50,7 +50,7 @@ public final class PreviewHistogramService: @unchecked Sendable {
             provider.rememberDocument(document, for: thumb.digest)
             provider.rememberSourceEdge(ThumbnailProvider.sourceLongEdge(of: asset), for: thumb.digest)
             let access = FileAccessStore.shared.access(to: source)
-            _ = provider.service.request(ThumbRequestSpec(key: thumb, source: access.url, isBackgroundWarm: true),
+            _ = provider.service.request(ThumbRequestSpec(key: thumb, source: access.url, asset: asset, isBackgroundWarm: true),
                                          priority: .onScreen) { [weak self] result in
                 withExtendedLifetime(access) {}
                 guard let self else { return }
