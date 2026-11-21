@@ -26,6 +26,15 @@ final class TranslationConsensusTests: XCTestCase {
         }
     }
 
+    func testSparseVotesAlongOneWireNeedSpatialVerification() {
+        let wire = [0, 29, 58, 87, 116].map { CGPoint(x: 500 + $0 / 10, y: $0) }
+        var match = TranslationRegistration.Match(offset: .zero, score: 0.994, inliers: 5, anchors: wire)
+        XCTAssertFalse(match.hasIndependentSupport)
+        match.anchors.append(CGPoint(x: 426, y: 58))
+        match.inliers += 1
+        XCTAssertTrue(match.hasIndependentSupport)
+    }
+
     func testDenseSparseAndDuplicatedVotesMatchAllPairs() {
         var state: UInt64 = 73
         func next(_ limit: Int) -> Int {

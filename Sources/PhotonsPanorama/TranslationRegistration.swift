@@ -4,12 +4,28 @@ import CoreGraphics
 /// Translation-only registration: corner descriptors, a robust displacement vote, then subpixel
 /// normalized correlation. No rotation, scale or perspective degrees of freedom exist here.
 enum TranslationRegistration {
-    struct Match { var offset: CGPoint; var score: Double; var inliers: Int; var anchors: [CGPoint] = [] }
+    struct Match {
+        var offset: CGPoint
+        var score: Double
+        var inliers: Int
+        var anchors: [CGPoint] = []
+        // A handful of votes along a single wire can all select the same wrong displacement.
+        // Require support wider than one descriptor when evidence is sparse.
+        var hasIndependentSupport: Bool {
+            guard inliers < 10 else { return true }
+            guard let first = anchors.first else { return false }
+            let bounds = anchors.dropFirst().reduce(CGRect(origin: first, size: .zero)) { box, p in
+                box.union(CGRect(origin: p, size: .zero))
+            }
+            return min(bounds.width, bounds.height) >= 16
+        }
+    }
     private struct Corner { let x: Int; let y: Int; let strength: Double; let descriptor: [Double] }
 
-    private static func corners(_ image: GrayRaster) -> [Corner] {
+    private static func corners(_ image: GrayRaster, distributed: Bool) -> [Corner] {
         let w = image.width, h = image.height
         guard w > 24, h > 24 else { return [] }
+        let minimumStrength = distributed ? 0.000008 : 0.00008
         var candidates: [(Int, Int, Double)] = []
         for y in stride(from: 10, to: h-10, by: 2) {
             for x in stride(from: 10, to: w-10, by: 2) {
@@ -21,12 +37,15 @@ enum TranslationRegistration {
                     xx += gx*gx; yy += gy*gy; xy += gx*gy
                 }}
                 let score = (xx+yy-sqrt((xx-yy)*(xx-yy)+4*xy*xy)) * 0.5
-                if score > 0.00008 { candidates.append((x,y,score)) }
+                if score > minimumStrength { candidates.append((x,y,score)) }
             }
         }
         candidates.sort { $0.2 > $1.2 }
         var blocked = [Bool](repeating: false, count: w*h), result: [Corner] = []
+        var occupancy = [Int](repeating: 0, count: 48)
         for (x,y,strength) in candidates where !blocked[y*w+x] {
+            let tile = (y*6/h)*8 + x*8/w
+            guard !distributed || occupancy[tile] < 20 else {continue}
             var descriptor: [Double] = []
             for dy in stride(from: -8, through: 8, by: 2) { for dx in stride(from: -8, through: 8, by: 2) {
                 descriptor.append(image.values[(y+dy)*w+x+dx])
@@ -35,6 +54,7 @@ enum TranslationRegistration {
             let norm = sqrt(descriptor.reduce(0) { $0+($1-mean)*($1-mean) })
             if norm < 0.015 { continue }
             descriptor = descriptor.map { ($0-mean)/norm }
+            occupancy[tile] += 1
             result.append(Corner(x:x,y:y,strength:strength,descriptor:descriptor))
             for yy in max(0,y-8)...min(h-1,y+8) { for xx in max(0,x-8)...min(w-1,x+8) { blocked[yy*w+xx] = true }}
             if result.count >= 900 { break }
@@ -42,8 +62,8 @@ enum TranslationRegistration {
         return result
     }
 
-    static func correspondences(_ a:GrayRaster,_ b:GrayRaster,cancellation:PanoramaCancellation) throws -> [ProjectiveRegistration.Pair] {
-        let ac = corners(a), bc = corners(b)
+    static func correspondences(_ a:GrayRaster,_ b:GrayRaster,distributed:Bool = false,cancellation:PanoramaCancellation) throws -> [ProjectiveRegistration.Pair] {
+        let ac = corners(a,distributed:distributed), bc = corners(b,distributed:distributed)
         var pairs: [ProjectiveRegistration.Pair] = []
         for (idx, point) in ac.enumerated() {
             if idx % 50 == 0 { try cancellation.check() }
@@ -92,7 +112,17 @@ enum TranslationRegistration {
     }
 
     static func align(_ a: GrayRaster, _ b: GrayRaster, cancellation: PanoramaCancellation) throws -> Match? {
-        let pairs = try correspondences(a,b,cancellation:cancellation)
+        guard let match = try featureMatch(a,b,distributed:false,cancellation:cancellation) else {return nil}
+        if match.hasIndependentSupport { return match }
+        // In the retry, reserve descriptors for quieter parts of the overlap.
+        guard let verified = try featureMatch(a,b,distributed:true,cancellation:cancellation),
+              verified.hasIndependentSupport else {return nil}
+        return verified
+    }
+
+    private static func featureMatch(_ a: GrayRaster, _ b: GrayRaster, distributed: Bool,
+                                     cancellation: PanoramaCancellation) throws -> Match? {
+        let pairs = try correspondences(a,b,distributed:distributed,cancellation:cancellation)
         guard pairs.count >= 5 else { return nil }
         let offsets = pairs.map { SIMD2(Int($0.a.x - $0.b.x), Int($0.a.y - $0.b.y)) }
         let cluster = consensusIndices(offsets)
