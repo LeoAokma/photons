@@ -26,6 +26,28 @@ final class PanoramaShiftHintTests: XCTestCase {
         XCTAssertEqual(delta.y, -15)
     }
 
+    func testBoundedDescriptorIndexMatchesTheSameStripOnEitherAxis() throws {
+        let width = 192, height = 160
+        let pixels = (0..<(width * height)).map { i in Double((i &* 7_491 ^ (i / width) &* 13_331) & 255) / 255 }
+        let raster = GrayRaster(width: width, height: height, values: pixels)
+        let token = PanoramaCancellation()
+        let all = try TranslationRegistration.correspondences(raster, raster, cancellation: token)
+        XCTAssertGreaterThan(all.count, 30)
+        XCTAssertTrue(try TranslationRegistration.correspondences(raster, raster, expected: .init(x: 0),
+                                                                   radius: -1, cancellation: token).isEmpty)
+        for expected in [PanoramaShiftPosition(x: 1.5), .init(y: -1.5), .init(x: 1.5, y: -1.5)] {
+            let guided = try TranslationRegistration.correspondences(raster, raster, expected: expected,
+                                                                    radius: 1.5, cancellation: token)
+            XCTAssertFalse(guided.isEmpty)
+            for pair in guided {
+                if let x = expected.x { XCTAssertLessThanOrEqual(abs(pair.a.x - pair.b.x - x), 1.5) }
+                if let y = expected.y { XCTAssertLessThanOrEqual(abs(pair.a.y - pair.b.y - y), 1.5) }
+            }
+            let selfMatches = guided.filter { $0.a == $0.b }.map(\.a)
+            for pair in all where pair.a == pair.b { XCTAssertTrue(selfMatches.contains(pair.a)) }
+        }
+    }
+
     func testImageDeterminesBothAxesWithCorrectOrIncorrectReading() throws {
         let w = 192, h = 144
         var state: UInt64 = 71

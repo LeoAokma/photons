@@ -64,14 +64,33 @@ enum TranslationRegistration {
 
     static func correspondences(_ a:GrayRaster,_ b:GrayRaster,distributed:Bool = false, expected: PanoramaShiftPosition = .init(), radius: Double = 0,
                                 cancellation:PanoramaCancellation) throws -> [ProjectiveRegistration.Pair] {
-        let ac = corners(a,distributed:distributed), bc = corners(b,distributed:distributed)
+        let ac = corners(a,distributed:distributed)
+        var bc = corners(b,distributed:distributed)
+        let displacement = expected.x ?? expected.y
+        func coordinate(_ corner: Corner) -> Int { expected.x != nil ? corner.x : corner.y }
+        if displacement != nil {
+            guard radius.isFinite, radius >= 0 else { return [] }
+            bc.sort { coordinate($0) < coordinate($1) }
+        }
+        func lowerBound(_ coordinateLimit: Double) -> Int {
+            var low = 0, high = bc.count
+            while low < high {
+                let mid = (low + high) / 2
+                if Double(coordinate(bc[mid])) < coordinateLimit { low = mid + 1 } else { high = mid }
+            }
+            return low
+        }
         var pairs: [ProjectiveRegistration.Pair] = []
         for (idx, point) in ac.enumerated() {
-            if idx % 50 == 0 { try cancellation.check() }
+            if idx % 50 == 0 {try cancellation.check()}
             var best = 10.0, next = 10.0, winner: Corner?
-            for other in bc {
-                if let x = expected.x, abs(Double(point.x - other.x) - x) > radius { continue }
-                if let y = expected.y, abs(Double(point.y - other.y) - y) > radius { continue }
+            var candidates = bc[...]
+            if let displacement {
+                let center = Double(coordinate(point)) - displacement
+                candidates = bc[lowerBound(center - radius)..<lowerBound(floor(center + radius) + 1)]
+            }
+            for other in candidates {
+                if expected.x != nil, let y = expected.y, abs(Double(point.y - other.y) - y) > radius { continue }
                 var distance = 0.0
                 for k in point.descriptor.indices {
                     let d = point.descriptor[k]-other.descriptor[k]; distance += d*d
@@ -143,11 +162,12 @@ enum TranslationRegistration {
         guard expected.x != nil || expected.y != nil else { return try align(a, b, cancellation: cancellation) }
         // Search a strip when only one displacement is known. Verify with image evidence across
         // the overlap before accepting a restricted match, since the scale reading can be wrong.
-        if let guided = try featureMatch(a, b, distributed: false, expected: expected, radius: radius,
-                                         cancellation: cancellation),
-           guided.inliers >= 10,
-           correlation(a, b, offset: guided.offset) > 0.7 {
-            return guided
+        for distributed in [false, true] {
+            if let guided = try featureMatch(a, b, distributed: distributed, expected: expected, radius: radius,
+                                             cancellation: cancellation),
+               guided.inliers >= 10, correlation(a, b, offset: guided.offset) > 0.7 {
+                return guided
+            }
         }
         if let independent = try align(a, b, cancellation: cancellation) { return independent }
         if let point = expected.point {
