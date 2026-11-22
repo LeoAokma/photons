@@ -1789,7 +1789,7 @@
   "guide.workspace.tools.title": "照片工具",
   "guide.workspace.tools.body": "这里可打开实拍平场 LCC、镜头配置及功能概览。LCC 用于校正镜头引起的偏色与暗角，请选择适合本次拍摄的标定。",
   "guide.workspace.inspector.title": "调整与历史记录",
-  "guide.workspace.inspector.body": "显示或隐藏照片信息及编辑工具。宽屏侧栏保持固定，选图时只更新内容；窄屏通过此按钮打开详情。",
+  "guide.workspace.inspector.body": "显示或隐藏照片信息及编辑工具。宽屏侧栏保持固定，选图时只更新内容；窄屏时，编辑工具显示在照片或网格下方。",
   "guide.workspace.export.title": "导出与分享",
   "guide.workspace.export.body": "导出当前照片或全景图。选择格式、HDR/SDR 和输出尺寸，导出时会进行正式渲染。再保存或分享新文件，原图仍保留在图库中。",
   "guide.workspace.settings.title": "设置与缓存",

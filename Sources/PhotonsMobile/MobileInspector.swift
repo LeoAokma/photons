@@ -7,17 +7,38 @@ import PhotonsPanorama
 struct MobileInspector: View {
     @Environment(\.locale) private var interfaceLocale
     @ObservedObject var model: MobileWorkspaceModel
+    var bottomBar = false
     @State private var tab = "ipad.fd8a7d7b3e7b"
     @State private var copiedEdit: EditModel?
     var body: some View {
         let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
-        VStack(spacing: 0) {
-            if let histogram = model.frame?.histogram {
-                MobileHistogram(histogram: histogram,hdr: model.hdr).padding(14)
+        GeometryReader { geometry in
+            // In a bottom bar, keep room to scroll the editing controls beside the histogram.
+            // In narrow multitasking windows the histogram scrolls with the controls.
+            let sideBySide = bottomBar && geometry.size.width >= 600
+            let inlineHistogram = bottomBar && !sideBySide
+            let layout = sideBySide ? AnyLayout(HStackLayout(alignment: .top, spacing: 0))
+                                    : AnyLayout(VStackLayout(spacing: 0))
+            layout {
+                if !inlineHistogram, let histogram = model.frame?.histogram {
+                    MobileHistogram(histogram: histogram, hdr: model.hdr)
+                        .padding(14)
+                        .frame(width: sideBySide ? min(260, geometry.size.width * 0.32) : nil)
+                }
+                inspectorContent(inlineHistogram: inlineHistogram)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }.background(Color(white: 0.105)).disabled(model.busy || model.selectionLoading)
+    }
+
+    private func inspectorContent(inlineHistogram: Bool) -> some View {
+        VStack(spacing: 0) {
             if let plan = model.plan {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        if inlineHistogram, let histogram = model.frame?.histogram {
+                            MobileHistogram(histogram: histogram, hdr: model.hdr)
+                        }
                         Text(plan.sources.count > 1 ? L10n.tr("ipad.bcd646097a48") : L10n.tr("ipad.6f427ab8e70e")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         MobilePositionDiagram(plan: plan, manifest: model.manifest).frame(height: 230)
                         Text(L10n.tr("ipad.30e7414d5987", String(describing: (Int(plan.outputSize.width))), String(describing: (Int(plan.outputSize.height))), String(describing: (model.manifest?.frames.count ?? plan.sources.count)))).font(.caption)
@@ -68,6 +89,9 @@ struct MobileInspector: View {
                     case "ca4842bc9e80": transforms
                     default: history
                     }
+                    if inlineHistogram, let histogram = model.frame?.histogram {
+                        MobileHistogram(histogram: histogram, hdr: model.hdr)
+                    }
                 }.formStyle(.grouped).scrollContentBackground(.hidden)
                 HStack {
                     Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!model.history.canUndo).accessibilityIdentifier("undo-edit")
@@ -82,7 +106,7 @@ struct MobileInspector: View {
             } else {
                 ContentUnavailableView(L10n.tr("ipad.da188e3b1cef"), systemImage: "slider.horizontal.3", description: Text(L10n.tr("ipad.0ee5f146bb5e")))
             }
-        }.background(Color(white: 0.105)).disabled(model.busy || model.selectionLoading)
+        }
     }
     private func rows(_ title: String, _ controls: [DevelopControl]) -> some View {
         Section(title) {

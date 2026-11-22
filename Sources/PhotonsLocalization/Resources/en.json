@@ -1789,7 +1789,7 @@
   "guide.workspace.tools.title": "Photo tools",
   "guide.workspace.tools.body": "Open matching-flat LCC, lens profiles and the feature overview here. LCC corrects lens-related color casts and shading; choose a suitable calibration for your capture.",
   "guide.workspace.inspector.title": "Adjustments and history",
-  "guide.workspace.inspector.body": "Show or hide photo information and editing controls. On wide screens the dock stays in place while you select photos. On narrow screens this button opens the inspector.",
+  "guide.workspace.inspector.body": "Show or hide photo information and editing controls. On wide screens the dock stays in place while you select photos. On narrow screens the controls open below the photo or grid.",
   "guide.workspace.export.title": "Export and share",
   "guide.workspace.export.body": "Export the current photo or panorama. Choose format, HDR/SDR and output size; export performs the final render. Save or share the new file while keeping the original in your library.",
   "guide.workspace.settings.title": "Settings and cache",

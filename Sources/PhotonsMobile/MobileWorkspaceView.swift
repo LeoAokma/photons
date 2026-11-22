@@ -19,12 +19,10 @@ public struct MobileWorkspaceView: View {
     @State private var settingsWorkspace = false
     @State private var selectMode = false
     @State private var gridTapSequence = MobileGridTapSequence()
-    @State private var inspectorSheet = false
     @State private var sidebarVisible = false
     @State private var sidebarSheet = false
-    @State private var inspectorVisible = true
+    @State private var inspectorVisibility: Bool?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var wideLayout = true
     @State private var pinchStart: Double?
     @State private var tool: MobileSheet?
     @AppStorage("photons.mobile.thumbnailSize") private var thumbnailSize = 180.0
@@ -35,30 +33,37 @@ public struct MobileWorkspaceView: View {
         let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         NavigationStack {
             GeometryReader { geometry in
+                let wide = geometry.size.width >= 950
+                let inspectorVisible = inspectorVisibility ?? wide
+                let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
                 VStack(spacing: 0) {
-                    workspaceToolbar
+                    workspaceToolbar(wide: wide, inspectorVisible: inspectorVisible)
                     Divider()
-                    HStack(spacing: 0) {
-                        if sidebarVisible && geometry.size.width >= 950 { libraryRail.frame(width: 190); Divider() }
+                    layout {
+                        if wide && sidebarVisible { libraryRail.frame(width: 190); Divider() }
                         VStack(spacing: 0) {
                             taskBar
                             if model.showGrid { libraryGrid.mobileGuideTarget("workspace.grid",in: guide) }
                             else { canvas.mobileGuideTarget("workspace.canvas",in: guide) }
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        if geometry.size.width >= 950 && inspectorVisible {
-                            MobileInspector(model: model).frame(width: 310).frame(maxHeight: .infinity)
-                                .background(Color(white: 0.105))
-                                .overlay(alignment: .leading) { Divider() }
+                        if inspectorVisible {
+                            MobileInspector(model: model, bottomBar: !wide)
+                                .frame(width: wide ? 310 : nil, height: wide ? nil : min(400, geometry.size.height * 0.36))
+                                .frame(maxWidth: wide ? nil : .infinity, maxHeight: wide ? .infinity : nil)
+                                .overlay(alignment: wide ? .leading : .top) {
+                                    Rectangle().fill(.separator).frame(width: wide ? 1 : nil, height: wide ? nil : 1)
+                                }
                                 .accessibilityElement(children: .contain)
                                 .accessibilityIdentifier("workspace-inspector")
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                                .transition(.move(edge: wide ? .trailing : .bottom).combined(with: .opacity))
                         }
                     }
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18),value: inspectorVisible)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: inspectorVisible)
                 }
                 .background(Color(white: 0.075))
-                .onAppear { wideLayout = geometry.size.width >= 950 }
-                .onChange(of: geometry.size.width) { _,width in wideLayout = width >= 950 }
+                .onChange(of: model.showGrid) { _, grid in
+                    if wide && !grid && model.plan != nil { inspectorVisibility = true }
+                }
             }
 
             .navigationTitle("Photons Studio")
@@ -76,11 +81,7 @@ public struct MobileWorkspaceView: View {
             }
             await model.start()
         }
-        .onChange(of: model.showGrid) { _,grid in if !grid && model.plan != nil { inspectorVisible = true } }
         .onChange(of: model.folderScope) { _,_ in selectMode = false; gridTapSequence = .init() }
-        .onChange(of: inspectorSheet) { _,visible in
-            if !visible && model.showGrid && !selectMode { model.clearSelection() }
-        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in model.memoryWarning() }
         .fileImporter(isPresented: $importer, allowedContentTypes: [.image, .rawImage, .folder], allowsMultipleSelection: true) { result in
             do { model.importPhotos(try result.get()) } catch { model.error = error.localizedDescription }
@@ -103,10 +104,6 @@ public struct MobileWorkspaceView: View {
             NavigationStack { libraryRail.toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.tr("c0b3fbff51cc")) { sidebarSheet = false } } } }
                 .preferredColorScheme(.dark).presentationDetents([.medium, .large])
         }
-        .sheet(isPresented: $inspectorSheet) {
-            NavigationStack { MobileInspector(model: model).toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.tr("c0b3fbff51cc")) { inspectorSheet = false } } } }
-                .preferredColorScheme(.dark).presentationDetents([.large])
-        }
         .alert("Photons Studio", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L10n.tr("slices.ok"), role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
@@ -119,10 +116,10 @@ public struct MobileWorkspaceView: View {
             preferredLanguages = Locale.preferredLanguages
         }
     }
-    private var workspaceToolbar: some View {
+    private func workspaceToolbar(wide: Bool, inspectorVisible: Bool) -> some View {
         HStack(spacing: 16) {
             Button {
-                if wideLayout { sidebarVisible.toggle() } else { sidebarSheet = true }
+                if wide { sidebarVisible.toggle() } else { sidebarSheet = true }
             } label: { Image(systemName: "sidebar.left") }
                 .accessibilityLabel(L10n.tr("ipad.3339973aae80")).accessibilityIdentifier("toggle-sidebar")
                 .mobileGuideTarget("workspace.library",in: guide)
@@ -160,11 +157,10 @@ public struct MobileWorkspaceView: View {
                 .disabled(model.busy).accessibilityLabel(L10n.tr("5ca6730d4415")).accessibilityIdentifier("tools-menu")
                 .mobileGuideTarget("workspace.tools",in: guide)
             Button {
-                if wideLayout {
-                    inspectorVisible.toggle()
-                    if !inspectorVisible && model.showGrid && !selectMode { model.clearSelection() }
-                } else { inspectorSheet = true }
-            } label: { Image(systemName: "sidebar.right") }
+                inspectorVisibility = !inspectorVisible
+                if inspectorVisible && model.showGrid && !selectMode { model.clearSelection() }
+            } label: { Image(systemName: wide ? "sidebar.right" : "rectangle.bottomthird.inset.filled") }
+                .accessibilityAddTraits(inspectorVisible ? .isSelected : [])
                 .accessibilityLabel(L10n.tr("ipad.5602d0e1c70b")).accessibilityIdentifier("toggle-inspector")
                 .mobileGuideTarget("workspace.inspector",in: guide)
             Button { tool = .export } label: { Image(systemName: "square.and.arrow.up") }

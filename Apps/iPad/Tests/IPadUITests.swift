@@ -225,9 +225,58 @@ final class IPadUITests: XCTestCase {
         app.buttons["grid-view"].tap()
         app.buttons["toggle-inspector"].tap()
         XCTAssertTrue(app.otherElements["RGB histogram"].waitForExistence(timeout: 10))
-        app.buttons["Done"].firstMatch.tap()
+        let inspector = app.otherElements["workspace-inspector"], grid = app.scrollViews["photo-grid"]
+        XCTAssertLessThanOrEqual(grid.frame.maxY, inspector.frame.minY + 1)
+        app.buttons["toggle-inspector"].tap()
+        XCTAssertTrue(inspector.waitForNonExistence(timeout: 5))
         XCTAssertEqual(first.value as? String,"Not selected")
     }
+    @MainActor
+    func testPortraitAdjustmentsDockBelowLivePhotoAndFollowRotation() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"
+        app.launch()
+        XCUIDevice.shared.orientation = .portrait
+        let first = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(first.waitForExistence(timeout: 60))
+        guard app.frame.width < 950 else { throw XCTSkip("Requires a compact portrait window") }
+        first.doubleTap()
+        let canvas = app.otherElements["photo-canvas-container"]
+        XCTAssertTrue(canvas.waitForExistence(timeout: 10))
+        let fullHeight = canvas.frame.height
+        let toggle = app.buttons["toggle-inspector"], inspector = app.otherElements["workspace-inspector"]
+        toggle.tap()
+        XCTAssertTrue(inspector.waitForExistence(timeout: 5))
+        XCTAssertEqual(inspector.frame.width, app.frame.width, accuracy: 2)
+        XCTAssertLessThanOrEqual(canvas.frame.maxY, inspector.frame.minY + 1)
+        XCTAssertGreaterThan(canvas.frame.height, fullHeight * 0.5)
+        XCTAssertLessThan(canvas.frame.height, fullHeight - 100)
+        let temperature = app.sliders["Temperature"]
+        XCTAssertTrue(temperature.isHittable)
+        temperature.adjust(toNormalizedSliderPosition: 0.17)
+        app.buttons["Transform"].tap()
+        let rotate = app.buttons["Rotate clockwise"]
+        rotate.tap()
+        XCTAssertTrue(app.staticTexts["zoom-state"].wait(for: \.label, toEqual: "Fit", timeout: 10))
+        let preview = XCTAttachment(screenshot: app.screenshot())
+        preview.name = "Portrait photo with bottom adjustments"; preview.lifetime = .keepAlways; add(preview)
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(rotate.isHittable)
+        XCTAssertLessThanOrEqual(canvas.frame.maxX, inspector.frame.minX + 1)
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(rotate.isHittable)
+        XCTAssertLessThanOrEqual(canvas.frame.maxY, inspector.frame.minY + 1)
+        toggle.tap()
+        XCTAssertTrue(inspector.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(canvas.frame.height, fullHeight, accuracy: 1)
+        XCTAssertEqual(app.staticTexts["current-photo-name"].label, "Sample-01.tiff")
+        let fit = XCTAttachment(screenshot: app.screenshot())
+        fit.name = "Portrait photo fit with adjustments closed"; fit.lifetime = .keepAlways; add(fit)
+    }
+
     @MainActor
     func testGridDragDoesNotSelectPhoto() throws {
         continueAfterFailure = false
