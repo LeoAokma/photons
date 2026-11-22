@@ -130,6 +130,9 @@ struct MobileInspector: View {
                 Button(L10n.tr("ipad.fcc834176527")) { model.mutate(L10n.tr("ipad.fcc834176527")) { $0.light.temperature = nil; $0.light.tint = nil } }
             }
             rows(L10n.tr("ipad.lightAdjustments"), DevelopControls.lightRows)
+            Button(L10n.tr("187f2e7d1e49")) {
+                Task { await model.automaticEdit(L10n.tr("187f2e7d1e49")) { try await $0.autoLight($1, edit: $2) } }
+            }.disabled(model.measuringAdjustment)
             rows(L10n.tr("e40fffdb9798"), DevelopControls.colorRows)
             rows(L10n.tr("ipad.d489ea05c935"), DevelopControls.textureClarityRows)
             if let raw = model.frame?.rawControls { rawDetail(raw) }

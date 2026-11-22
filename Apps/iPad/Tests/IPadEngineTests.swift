@@ -409,6 +409,18 @@ final class IPadEngineTests: XCTestCase {
         let remaining = try await reopened.photos(); XCTAssertEqual(remaining.count,3)
     }
 
+    func testAutoLightMeasuresThePhotoAndPreservesOtherAdjustments() async throws {
+        let worker = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("auto-light"))
+        let photo = MobilePhoto(id: "light", name: "test", url: urls[0], rating: 0, width: 768, height: 512)
+        var edit = EditModel.neutral
+        edit.light.exposure = -3
+        edit.color.saturation = 7
+        let result = try await worker.autoLight(photo, edit: edit)
+        XCTAssertNotEqual(result.light, edit.light)
+        XCTAssertEqual(result.color, edit.color)
+        XCTAssertEqual(result.geometry, edit.geometry)
+    }
+
     func testRAWControlDefaultsAndCapabilitiesSurvivePreviewCache() async throws {
         let worker = engine()
         let url = try makeFlat(name: "raw-controls.dng", exposure: 1)

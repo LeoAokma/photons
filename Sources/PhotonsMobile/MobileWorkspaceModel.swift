@@ -41,6 +41,7 @@ final class MobileWorkspaceModel: ObservableObject {
     @Published var lccPositionNote: String?
     @Published var profiles: [LCCProfileSummary] = []
     @Published var busy = false
+    @Published private(set) var measuringAdjustment = false
     @Published var rendering = false
     @Published var selectionLoading = false
     @Published var status = ""
@@ -268,6 +269,17 @@ final class MobileWorkspaceModel: ObservableObject {
             } catch is CancellationError { }
             catch { if ticket == generation { rendering = false; self.error = error.localizedDescription } }
         }
+    }
+    func automaticEdit(_ title: String, measure: (MobileEngine, MobilePhoto, EditModel) async throws -> EditModel) async {
+        guard !measuringAdjustment, !busy, !selectionLoading, plan == nil, let photo = active else { return }
+        let source = edit, revision = selectionRevision
+        measuringAdjustment = true
+        defer { measuringAdjustment = false }
+        do {
+            let next = try await measure(engine, photo, source)
+            guard revision == selectionRevision, !busy, plan == nil, edit == source, next != source else { return }
+            mutate(title) { $0 = next }
+        } catch { if revision == selectionRevision { self.error = error.localizedDescription } }
     }
     func autoCrop() async {
         guard let photo = active else { return }

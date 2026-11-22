@@ -237,8 +237,7 @@ actor MobileEngine {
             for (url,size,_) in records where bytes > 512*1024*1024 { try FileManager.default.removeItem(at: url); bytes -= size }
         } catch { /* A disposable cache must not make photograph rendering fail. */ }
     }
-    private func render(_ url: URL, edit: EditModel, edge: Int, hdr: Bool, histogram: Bool,
-                        linear: Bool = false, primaries: OutputPrimaries = .displayP3, detail: MobileDetailRequest? = nil) throws -> RenderResult {
+    private func preparedGraph(_ url: URL, edit: EditModel, edge: Int) throws -> RenderGraph {
         try Task.checkCancellation()
         let signature = try sourceSignature(url)
         let size = try sourceSizes[url] ?? ImageSourceDecoder.size(at: url)
@@ -246,26 +245,41 @@ actor MobileEngine {
         let scale = edge > 0 ? min(1, Float(edge) / Float(max(size.width, size.height))) : 1
         let inputs = edit.decodeInputs
         let key = signature + inputs.key + ":\(scale)"
-        if graphKey != key || graph == nil {
-            graph = nil
-            graphRAWControls = nil
-            let image: LinearImage
-            let input: RenderInput
-            if ImageSourceDecoder.isRAW(url) {
-                let result = try RAWDecoder().decodeDetailed(url, options: .init(decoderVersion: inputs.decoderVersion,
-                    scale: scale, whiteBalance: inputs.whiteBalance, detail: inputs.detail))
-                graphRAWControls = MobileRAWControls(axes: result.capabilities.detailAxes, baseline: result.detailBaseline, asShot: result.asShotWhiteBalance)
-                image = result.image
-                input = RenderInput(image: image, identity: key, sourceURL: url, lensProfile: result.lensProfile,
-                                    whiteBalance: inputs.whiteBalance, asShotPair: result.asShotWhiteBalance)
-            } else {
-                image = try ImageSourceDecoder.decodeRaster(url, scale: scale)
-                input = RenderInput(image: image, identity: key, sourceURL: url)
-            }
-            graphSize = ImageSize(width: image.uprightSize.width, height: image.uprightSize.height)
-            graph = try RenderGraph(input: input, cacheBudgetBytes: 160_000_000)
-            graphKey = key
+        if graphKey == key, let graph { return graph }
+        graph = nil
+        graphRAWControls = nil
+        let image: LinearImage
+        let input: RenderInput
+        if ImageSourceDecoder.isRAW(url) {
+            let result = try RAWDecoder().decodeDetailed(url, options: .init(decoderVersion: inputs.decoderVersion,
+                scale: scale, whiteBalance: inputs.whiteBalance, detail: inputs.detail))
+            graphRAWControls = MobileRAWControls(axes: result.capabilities.detailAxes, baseline: result.detailBaseline, asShot: result.asShotWhiteBalance)
+            image = result.image
+            input = RenderInput(image: image, identity: key, sourceURL: url, lensProfile: result.lensProfile,
+                                whiteBalance: inputs.whiteBalance, asShotPair: result.asShotWhiteBalance)
+        } else {
+            image = try ImageSourceDecoder.decodeRaster(url, scale: scale)
+            input = RenderInput(image: image, identity: key, sourceURL: url)
         }
+        graphSize = ImageSize(width: image.uprightSize.width, height: image.uprightSize.height)
+        let prepared = try RenderGraph(input: input, cacheBudgetBytes: 160_000_000)
+        graph = prepared
+        graphKey = key
+        return prepared
+    }
+
+    func autoLight(_ photo: MobilePhoto, edit: EditModel) throws -> EditModel {
+        let graph = try preparedGraph(photo.url, edit: edit, edge: 1600)
+        let plan = try AutoLight.plan(for: edit) { staged in
+            try Task.checkCancellation()
+            return try graph.measureAutoLightSample(staged)
+        }
+        return plan.apply(to: edit)
+    }
+
+    private func render(_ url: URL, edit: EditModel, edge: Int, hdr: Bool, histogram: Bool,
+                        linear: Bool = false, primaries: OutputPrimaries = .displayP3, detail: MobileDetailRequest? = nil) throws -> RenderResult {
+        let graph = try preparedGraph(url, edit: edit, edge: edge)
         try Task.checkCancellation()
         let outputSize = CropGeometry(geometry: edit.geometry,source: graphSize).canvas
         let window = detail.map { request in
@@ -278,7 +292,7 @@ actor MobileEngine {
             return ImageRect(x: Int(padded.minX),y: Int(padded.minY),width: max(1,Int(padded.width)),height: max(1,Int(padded.height)))
         }
         renderCount += 1
-        return try graph!.render(edit, options: RenderOptions(
+        return try graph.render(edit, options: RenderOptions(
             outputWindow: window,
             display: .init(primaries: primaries, bitDepth: 16, headroom: hdr ? 16 : 1,
                            linearOutput: linear, sdrProof: !hdr),

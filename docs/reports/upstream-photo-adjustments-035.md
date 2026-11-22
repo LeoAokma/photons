@@ -57,3 +57,9 @@ iPad 变换页接入 Mac 与上游 861e5939（#502）既有的垂直、水平、
 MobileSlider 的标题和拖条都支持双击，数值输入框保留文字编辑。曝光、锐化、降噪、色彩、透视与裁切按各自文档默认值复位；白平衡和 RAW 解码参数清除单项覆盖，回到相机默认。接片曝光和 HDR 高光只复位所触及的一项。文档修改沿用现有渲染、保存和撤销。依赖 ADJ-NOISE-IPAD 和 ADJ-PERSPECTIVE 提供对应行；手势是 fork 原创。
 
 11 英寸 iPad 模拟器通过 testDoubleTapExposureTrackAndTitleResetOnlyExposureAndUndoRestoresIt 和竖屏调整底栏回归。真实 UI 先改色温再改曝光，双击轨道归零、一次撤销回到之前曝光，双击标题再次归零，全程色温不变。未在实体外接鼠标上复测。
+
+## ADJ-AUTOLIGHT
+
+移植 chemharuka/photons 0fae2932、ecd3f0a9、da1450ab（#426d/#441/#443）。自动明暗按大面积高光、主体与场景类型求解；低信号帧限制曝光提升。既有 Mac 明暗按钮和新增 iPad 按钮使用同一个 AutoLight.plan。iPad 在渲染 actor 上复用 1600 边长的解码，最后只提交一次；切照片或手动改值后丢弃旧结果。与以上移植独立，后续自动颜色将复用 iPad 入口和解码。
+
+本次 AutoLightTests 和 AutoLightCardTests 合计 30 项中 25 通过、5 项因外部样片等条件跳过。iPad 模拟器对合成图运行实际测量和写入，曝光改变且保留色彩与几何，测试通过。未重跑上游私人样片库的整套标定。
