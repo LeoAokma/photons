@@ -91,10 +91,7 @@ final class AutoLightCardTests: XCTestCase {
         XCTAssertTrue(inspector.contains("spec.section == .light"),
                       "挂在 light 卡的 InspectorCardShell(accessory:) 上，不是新加一行")
 
-        // The end marker must be a string that appears **after** the signature and nowhere before it —
-        // `/// The document's flips` reads twice in this file, and the first copy sits above.
         let body = try Self.body(of: "public func autoLight()",
-                                 upTo: "public func cropToolLayout(viewport",
                                  in: Self.loupeSource)
         XCTAssertEqual(Self.occurrences(of: "session.applyEdit", in: body), 1,
                        "一次自动调节 = 一次文档写（不是 N 次）")
@@ -223,13 +220,10 @@ final class AutoLightCardTests: XCTestCase {
         repoRoot.appendingPathComponent("Sources/PhotonsUI/LoupeController.swift")
     }
 
-    private static func body(of signature: String, upTo endMarker: String, in url: URL) throws -> String {
+    private static func body(of signature: String, in url: URL) throws -> String {
         let source = try String(contentsOf: url, encoding: .utf8)
-        guard let start = source.range(of: signature),
-              let end = source.range(of: endMarker),
-              start.lowerBound < end.lowerBound else {
-            throw XCTSkip("no `\(signature)` … `\(endMarker)` section in \(url.lastPathComponent)")
-        }
+        let start = try XCTUnwrap(source.range(of: signature))
+        let end = try XCTUnwrap(source.range(of: "\n    }", range: start.upperBound..<source.endIndex))
         return String(source[start.lowerBound..<end.lowerBound])
     }
 

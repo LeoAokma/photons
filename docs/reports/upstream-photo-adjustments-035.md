@@ -81,3 +81,9 @@ Mac 的 AdjustmentSliderTests 和 testSeamRefreshWaitsForCurrentGeometry 共四�
 Mac 手动 LCC 浮动拖条的标题与轨道支持复位所选轴，以中立位置 0 mm 为默认值。另一轴保留已调数值，沿用现有异步生成预览与应用流程。涉及 LCCAlignmentWindowController，依赖 ADJ-RESET-MAC；不涉及 LCC 计算，可独立回退。
 
 本次运行 AdjustmentSliderTests、testPositionSlidersOverlayTheirPhotoEdgesAndTrackRightAndUp 和 testApplyTransfersVisibleManualPreviewAndExportsItsCropAndPixels，共五项通过。实际拖动两轴后验证各自复位不改变另一轴，预览完成后可以应用；另用合成样片导出 TIFF 对照预览像素。未重复测量外部 RAW 库。
+
+## ADJ-AUTO-VERIFY
+
+整组回归发现旧 AutoLightCardTests 用「到裁切方法为止」识别明暗代码，加入自动颜色后误统计为两次提交。将检查范围收至明暗方法末尾，并为颜色增加真实图库与内置色卡 DNG 的控制器测试。该测试经解码、测量、历史记录与撤销验证只改变颜色并只提交一次。仅验证代码，依赖 ADJ-AUTOLIGHT 和 ADJ-AUTOCOLOR，独立回退不会改变产品行为。
+
+本次 PHOTONS_LANGUAGE=zh-Hans swift test --filter 'AutoLightCardTests|AutoColorCardTests' 七项中六项通过，一项因外部 Leica 样片缺失跳过。色卡用仓库自带文件，工作目录为测试专用临时图库。
