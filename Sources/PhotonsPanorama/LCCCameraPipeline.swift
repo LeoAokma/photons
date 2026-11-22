@@ -6,10 +6,10 @@ import PhotonsExtensions
 /// A four-channel map in unrotated sensor coordinates. Exactly the same normalized positions
 /// drive the interactive proxy and full-resolution CFA, independently of the preview size.
 public struct LCCCameraGainMap: Codable {
-    enum CodingKeys:String,CodingKey { case width,height,values }
+    enum CodingKeys:String,CodingKey { case width,height,values,clippedColors }
     let width:Int,height:Int
     let values:[SIMD4<Float>]
-    fileprivate var clippedColors:LCCClippedColorMap?
+    private(set) var clippedColors:LCCClippedColorMap?
     init(field:LCCCorrectionField,source:PanoramaSource,origin:CGPoint,panoramaSize:CGSize,sensor:SensorSize,offset:CGPoint,
          bodyOrientation:PanoramaBodyOrientation = .degrees0) {
         width=257;height=193
@@ -35,6 +35,12 @@ public struct LCCCameraGainMap: Codable {
     func preparingHighlights(_ raw:CameraMosaic,neutral:SIMD3<Double>?)->Self {
         var result=self;result.clippedColors=LCCClippedColorMap(raw:raw,gain:self,fallback:neutral);return result
     }
+    // Older worker snapshots contain gains without the preview's colour reference.
+    func restoringHighlights(for source: PanoramaSource, neutral: SIMD3<Double>?) throws -> Self {
+        guard clippedColors == nil else { return self }
+        let proxy = try LCCCameraPipeline.read(source, maxDimension: LCCCameraPipeline.previewLongEdge)
+        return preparingHighlights(proxy, neutral: neutral)
+    }
     func opcode(for raw:CameraMosaic,normalization:Double)->Data {
         func be32(_ v:UInt32)->Data {var v=v.bigEndian;return Data(bytes:&v,count:4)}
         func be64(_ v:Double)->Data {var v=v.bitPattern.bigEndian;return Data(bytes:&v,count:8)}
@@ -57,6 +63,7 @@ struct LCCWhiteBalanceReading {
 }
 
 enum LCCCameraPipeline {
+    static let previewLongEdge = 2048
     static func read(_ source:PanoramaSource,maxDimension:Int?=nil) throws->CameraMosaic {
         try source.checkUnchanged()
         let portrait=[6,8].contains(source.orientation)
@@ -103,23 +110,30 @@ enum LCCCameraPipeline {
         return LCCWhiteBalanceReading(temperature:filter.neutralTemperature,tint:filter.neutralTint,neutral:SIMD3(neutral[0],1,neutral[2]))
     }
     /// Sensor clipping is different from post-LCC overexposure. Reconstruct only saturated
-    /// channels from surviving channels and the measured illuminant; never shift scene WB to
+    /// channels from surviving channels and the local highlight colour. Never shift scene WB to
     /// hide clipping. This estimates missing colour, it cannot recover lost sensor information.
-    static func recoverClipped(original:SIMD4<Float>,corrected:SIMD4<Float>,neutral:SIMD3<Double>?)->SIMD4<Float> {
-        guard original.max()>0.97,let neutral else {return corrected}
-        let n=SIMD4<Float>(Float(neutral.x),1,Float(neutral.z),1)
-        var sum:Float=0,count:Float=0
-        for c in [0,1,2] where original[c]<0.97 && original[c]>0.001 {sum += corrected[c]/n[c];count += 1}
-        if count==0 {
-            let brightness=max(corrected.x/n.x,corrected.y,corrected.z/n.z,corrected.w)
-            return n*brightness
-        }
-        var result=corrected
+    static func recoverClipped(original: SIMD4<Float>, corrected: SIMD4<Float>, neutral: SIMD3<Double>?,
+                               clippedFraction: SIMD4<Float> = .zero) -> SIMD4<Float> {
+        guard let neutral else { return corrected }
+        let ratios = SIMD4<Float>(Float(neutral.x), 1, Float(neutral.z), 1)
+        var weights = SIMD4<Float>.zero
+        var sum: Float = 0, support: Float = 0
         for c in 0..<4 {
-            let t=min(1,max(0,(original[c]-0.97)/0.025)),w=t*t*(3-2*t)
-            result[c]=corrected[c]*(1-w)+(sum/count)*n[c]*w
+            let knee = min(1, max(0, (original[c] - 0.97) / 0.025))
+            weights[c] = max(clippedFraction[c], knee * knee * (3 - 2 * knee))
+            let headroom = min(1, max(0, (0.97 - original[c]) / 0.04))
+            let donor = (1 - clippedFraction[c]) * headroom * headroom * (3 - 2 * headroom)
+                * (c == 1 || c == 3 ? 0.5 : 1)
+            if original[c] > 0.001 {
+                sum += donor * corrected[c] / ratios[c]
+                support += donor
+            }
         }
-        return result
+        // With every channel saturated only a lower bound on brightness survives. Fade
+        // towards it as the last usable donor approaches saturation (including either green).
+        let missingSupport = max(0, 1 - support)
+        let brightness = (sum + missingSupport * (corrected / ratios).max()) / (support + missingSupport)
+        return corrected + weights * (ratios * brightness - corrected)
     }
     static func develop(_ raw:CameraMosaic,gain:LCCCameraGainMap,whiteBalance:(Float,Float)?,highlightNeutral:SIMD3<Double>?=nil,size:CGSize,scale:Double,
                         cancellation:PanoramaCancellation = .init()) throws->CIImage {
@@ -129,12 +143,19 @@ enum LCCCameraPipeline {
             if y%64==0 {try cancellation.check()}
             for x in stride(from:0,to:raw.width,by:2) {
                 let g=gain.gain((Double(x)+1)/Double(raw.width),(Double(y)+1)/Double(raw.height)),common=sqrt(g.y*g.w)
-                var original=SIMD4<Float>.zero,evidence=SIMD4<Float>.zero
+                var original = SIMD4<Float>.zero, fraction = SIMD4<Float>.zero
                 for site in 0..<4 {
-                    let p=(y+site/2)*raw.width+x+site%2,c=raw.pattern[site]
-                    original[c]=raw.samples[p];evidence[c]=(raw.clipping?[p] ?? 0)>0 ? 1:original[c]
+                    let p = (y + site / 2) * raw.width + x + site % 2, c = raw.pattern[site]
+                    original[c] = raw.samples[p]
+                    fraction[c] = raw.clipping?[p] ?? 0
                 }
-                let corrected=evidence.max()>0.97 ? Self.recoverClipped(original:evidence,corrected:original*g,neutral:highlightColors.neutral((Double(x)+1)/Double(raw.width),(Double(y)+1)/Double(raw.height))):original*g
+                var corrected = original * g
+                if original.max() > 0.97 || fraction.max() > 0 {
+                    let local = highlightColors.neutral((Double(x) + 1) / Double(raw.width),
+                                                       (Double(y) + 1) / Double(raw.height))
+                    corrected = recoverClipped(original: original, corrected: corrected,
+                                               neutral: local, clippedFraction: fraction)
+                }
                 peak=max(peak,Double(corrected.max()))
                 for site in 0..<4 {
                     let c=raw.pattern[site],divisor=(c==1 || c==3) ? common:g[c]
@@ -158,7 +179,24 @@ enum LCCCameraPipeline {
 
 /// Propagate colour ratios from unsaturated neighbours into clipped regions. This supplies
 /// local colour (e.g. blue sky), instead of forcing every reconstructed highlight to neutral.
-struct LCCClippedColorMap {
+struct LCCClippedColorMap: Codable {
+    // The middle log ratio is zero. Keep only red/green and blue/green in the worker snapshot.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(LCCMeasurementGrid.pack(colors.flatMap { [Float($0.x), Float($0.z)] }))
+    }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let bytes = try container.decode(Data.self)
+        guard bytes.count == width * height * 2 * MemoryLayout<Float>.size else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid highlight colour grid size")
+        }
+        let values = LCCMeasurementGrid.unpack(bytes)
+        guard values.allSatisfy({ exp($0).isFinite && exp($0) > 0 }) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid highlight colour ratio")
+        }
+        colors = stride(from: 0, to: values.count, by: 2).map { SIMD3(Double(values[$0]), 0, Double(values[$0 + 1])) }
+    }
     let width=96,height=72
     var colors:[SIMD3<Double>]
     init(raw:CameraMosaic,gain:LCCCameraGainMap,fallback:SIMD3<Double>?) {
@@ -166,7 +204,7 @@ struct LCCClippedColorMap {
         var sums=[SIMD3<Double>](repeating:.zero,count:width*height),counts=[Int](repeating:0,count:width*height)
         let step=max(2,(raw.width/400)/2*2)
         // A clipped channel needs the colour of a highlight. Dark objects next to it can
-        // have clean but unrelated ratios. Use the brightest available stop of sensor
+        // have clean but unrelated ratios. Use the brightest available quarter stop of sensor
         // measurements, before spatial gain, so the correction cannot promote a shadow.
         func reference(x: Int, y: Int, atLeast minimum: Float) -> (level: Float, corrected: SIMD4<Float>)? {
             var sample = SIMD4<Float>.zero
@@ -205,7 +243,7 @@ struct LCCClippedColorMap {
                 if let sample = reference(x: x, y: y, atLeast: brightest) { brightest = sample.level }
             }
         }
-        let threshold = brightest / 2
+        let threshold = brightest * exp2(Float(-0.25))
         for y in rows {
             for x in columns {
                 guard let sample = reference(x: x, y: y, atLeast: threshold) else { continue }

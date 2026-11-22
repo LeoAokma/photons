@@ -229,7 +229,7 @@ extension PanoramaEngine {
             for (i,source) in plan.sources.enumerated() {
                 try cancellation.check();progress(L10n.tr("6267568b6d4b" , String(describing: (i+1)), String(describing: (plan.sources.count))))
                 if ["3fr","dng"].contains(source.url.pathExtension.lowercased()) {
-                    let raw=try LCCCameraPipeline.read(source,maxDimension:2048)
+                    let raw=try LCCCameraPipeline.read(source,maxDimension:LCCCameraPipeline.previewLongEdge)
                     raws.append(raw);images.append(LCCCameraPipeline.cameraImage(raw))
                     if let pair=records.first(where:{$0.scene==source.url.standardizedFileURL}) {
                         let flatAccess=FileAccessStore.shared.access(to:pair.flat)

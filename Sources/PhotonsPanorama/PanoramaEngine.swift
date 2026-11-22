@@ -287,7 +287,8 @@ public final class PanoramaEngine {
         for (i,source) in plan.sources.enumerated() {
             try cancellation.check(); progress(L10n.tr("dcc5db9b7e00" , String(describing: (i+1)), String(describing: (plan.sources.count))))
             if let lcc=plan.lccState,lcc.usesFixedDecode[i] {
-                if lcc.cameraGains.indices.contains(i),let map=lcc.cameraGains[i] {
+                if lcc.cameraGains.indices.contains(i),let saved=lcc.cameraGains[i] {
+                    let map = try saved.restoringHighlights(for: source, neutral: lcc.highlightNeutral)
                     let raw=try LCCCameraPipeline.read(source)
                     images.append(try materialize(LCCCameraPipeline.develop(raw,gain:map,whiteBalance:lcc.whiteBalance,highlightNeutral:lcc.highlightNeutral,size:source.size,scale:scale,cancellation:cancellation)))
                 } else {

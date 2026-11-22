@@ -155,6 +155,66 @@ final class LCCCameraTests:XCTestCase {
         XCTAssertEqual(Double(repaired.x/repaired.y),neutral.x,accuracy:0.0001)
         XCTAssertEqual(Double(repaired.z/repaired.y),neutral.z,accuracy:0.0001)
     }
+    func testMixedProxyPixelsRepairOnlyTheClippedFraction() {
+        let sample = SIMD4<Float>(0.4, 0.6, 0.65, 0.6)
+        for fraction: Float in [0, 1 / 36, 0.25, 0.5, 1] {
+            let result = LCCCameraPipeline.recoverClipped(original: sample, corrected: sample, neutral: neutral,
+                                                          clippedFraction: SIMD4(0, fraction, 0, fraction))
+            // Donors include the unsaturated part of each green site.
+            let brightness = (2 + 0.6 * (1 - fraction)) / (3 - fraction)
+            XCTAssertEqual(result.y, sample.y + fraction * (brightness - sample.y), accuracy: 0.00001)
+            XCTAssertEqual(result.w, result.y)
+            XCTAssertEqual(result.x, sample.x)
+            XCTAssertEqual(result.z, sample.z)
+        }
+    }
+
+    func testLastSurvivingGreenSiteFadesContinuouslyIntoFullClipping() {
+        var previous: SIMD4<Float>?
+        // Walk adjacent 16-bit sensor codes through the donor and reconstruction knees.
+        var largestStep: Float = 0
+        for code in 59_638...65_535 {
+            let green = Float(code) / 65_535
+            let sample = SIMD4<Float>(1, 1, 1, green)
+            let result = LCCCameraPipeline.recoverClipped(original: sample, corrected: sample, neutral: neutral)
+            let swapped = SIMD4<Float>(1, green, 1, 1)
+            let other = LCCCameraPipeline.recoverClipped(original: swapped, corrected: swapped, neutral: neutral)
+            XCTAssertEqual(result.x, other.x, accuracy: 0.00001)
+            XCTAssertEqual(result.y, other.w, accuracy: 0.00001)
+            if let previous {
+                for c in 0..<4 { largestStep = max(largestStep, abs(result[c] - previous[c])) }
+            }
+            previous = result
+        }
+        XCTAssertLessThan(largestStep, 0.002)
+    }
+
+    func testExportKeepsPreviewHighlightColourAcrossWorkerSnapshot() throws {
+        let raw = fixture()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).dng")
+        try raw.dng().data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let source = try PanoramaSource(url: url)
+        let field = try LCCCorrectionField(profile: profile(), orientation: .landscape)
+        let map = LCCCameraGainMap(field: field, source: source, origin: .zero, panoramaSize: source.size,
+                                   sensor: SensorSize(width: 36, height: 24, source: "test"), offset: .zero)
+        var preview = raw
+        for i in preview.samples.indices where preview.pattern[(i / raw.width % 2) * 2 + i % 2] == 2 {
+            preview.samples[i] *= 1.8
+        }
+        let saved = try JSONEncoder().encode(map.preparingHighlights(preview, neutral: neutral))
+        let decoded = try JSONDecoder().decode(LCCCameraGainMap.self, from: saved)
+        let restored = try decoded.restoringHighlights(for: source, neutral: neutral)
+        XCTAssertEqual(try XCTUnwrap(restored.clippedColors).neutral(0.5, 0.5).z, neutral.z * 1.8, accuracy: 0.03)
+
+        // Pre-existing snapshots have no saved reference. Build it from the original's preview.
+        let legacy = try JSONDecoder().decode(LCCCameraGainMap.self, from: JSONEncoder().encode(map))
+        let rebuilt = try legacy.restoringHighlights(for: source, neutral: neutral)
+        XCTAssertEqual(try XCTUnwrap(rebuilt.clippedColors).neutral(0.5, 0.5).z, neutral.z, accuracy: 0.03)
+        XCTAssertThrowsError(try JSONDecoder().decode(LCCClippedColorMap.self,
+                                                      from: JSONEncoder().encode(Data(count: 4))))
+    }
+
     func testOrientationMappingAndGainCoverage() {
         XCTAssertEqual(LCCCameraGainMap.orient(0.2,0.7,orientation:8).x,0.7)
         XCTAssertEqual(LCCCameraGainMap.orient(0.2,0.7,orientation:8).y,0.8)
