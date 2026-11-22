@@ -87,3 +87,9 @@ Mac 手动 LCC 浮动拖条的标题与轨道支持复位所选轴，以中立�
 整组回归发现旧 AutoLightCardTests 用「到裁切方法为止」识别明暗代码，加入自动颜色后误统计为两次提交。将检查范围收至明暗方法末尾，并为颜色增加真实图库与内置色卡 DNG 的控制器测试。该测试经解码、测量、历史记录与撤销验证只改变颜色并只提交一次。仅验证代码，依赖 ADJ-AUTOLIGHT 和 ADJ-AUTOCOLOR，独立回退不会改变产品行为。
 
 本次 PHOTONS_LANGUAGE=zh-Hans swift test --filter 'AutoLightCardTests|AutoColorCardTests' 七项中六项通过，一项因外部 Leica 样片缺失跳过。色卡用仓库自带文件，工作目录为测试专用临时图库。
+
+## ADJ-NOISE-NOTICE
+
+应用内第三方说明仍标注旧远程 1.0.0 包。更新为实际编入的 chemharuka/nonlocal-matchfilter-swift 694d505，并注明 GRDB.swift 的独立锁定版本。仅更新 iPad 资源文字，依赖 ADJ-NOISE 的依赖切换，可独立回退。
+
+iPad 通用设备 Release 编译成功，cmp 确认成品与源码中的 ThirdPartyNotices.txt 逐字节相同，用 Python 校验内附 MIT 条款与 Vendor/nonlocal-matchfilter-swift/LICENSE 完整一致、版本与 VENDORED.md 匹配。没有运行实体设备。

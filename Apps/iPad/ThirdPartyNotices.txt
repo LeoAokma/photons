@@ -35,7 +35,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### Transitive dependencies
 
-Verified on 2026-11-17: two pins in the iPad Package.resolved: GRDB.swift 7.11.1 and NonlocalMatchFilter 1.0.0. GRDB bundles its own copy of the SQLite amalgamation.
+The iPad project pins GRDB.swift 7.11.1. GRDB bundles its own copy of the SQLite amalgamation. The NonlocalMatchFilter Swift package is built from the source included in Photons.
 
 ## SQLite
 
@@ -46,10 +46,10 @@ no separate license obligations apply.
 This iPad preview does not bundle the macOS external HDR/Ansel AI-denoise executables or Ansel weights. The shared PhotonsExtensions resource bundle includes the NonlocalMatchFilter model described below; the mobile interface does not yet expose its denoise workflow. The bundled 43XL calibration is a developer-created user profile.
 
 
-## NonlocalMatchFilter 1.0.0 and model
+## NonlocalMatchFilter and model
 
 Swift port: https://github.com/chemharuka/nonlocal-matchfilter-swift
-Pinned revision: 52a6e4f4edd48f6b9b34882327e3a838a0f69d54
+Vendored revision: 694d505
 Reference implementation and weights: https://github.com/MIA-UIB/nonlocal-matchfilter
 Bundled model: v_matmul_256.mlpackage (converted rawnoise_25_15_9nbr).
 
