@@ -4491,6 +4491,12 @@ public final class LoupeController: NSViewController, HeadroomSource {
         return committed
     }
 
+    public func autoCrop() {
+        guard session?.mode == .loupe, cropTool.autoCrop() else { return }
+        refreshCropTool()
+        requestEditRender()
+    }
+
     /// The document's quarter turn and the badge the 变换 card prints for it.
     public var quarterTurns: Int { session?.edit.geometry.quarterTurns ?? 0 }
     public var quarterTurnBadge: String { Self.quarterTurnBadge(for: quarterTurns) }

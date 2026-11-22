@@ -166,6 +166,13 @@ actor MobileEngine {
         if let previous = sourceSignatures[url], previous != signature { sourceSizes.removeValue(forKey: url) }
         sourceSignatures[url] = signature; return signature
     }
+    func uprightSize(at url: URL) throws -> ImageSize {
+        _ = try sourceSignature(url)
+        if let cached = sourceSizes[url] { return cached }
+        let size = try ImageSourceDecoder.size(at: url)
+        sourceSizes[url] = size
+        return size
+    }
     private func renderKey(_ photo: MobilePhoto, _ edit: EditModel, edge: Int) throws -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         let data = try encoder.encode(edit), source = try sourceSignature(photo.url)

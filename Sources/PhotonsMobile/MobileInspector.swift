@@ -202,6 +202,8 @@ struct MobileInspector: View {
             }
             Section(L10n.tr("ipad.460a1ef164d0")) {
                 crop(L10n.tr("ipad.58eb9032e3bb"), \.x); crop(L10n.tr("ipad.d5cdfcf7ff75"), \.y); crop(L10n.tr("ipad.3019947b6daf"), \.width); crop(L10n.tr("ipad.bfe2eca40179"), \.height)
+                Button(L10n.tr("adjust.autoCrop")) { Task { await model.autoCrop() } }
+                    .disabled(model.edit.geometry.straightenDegrees == 0 && model.edit.geometry.perspective == nil)
                 Button(L10n.tr("ipad.994feef62ef2")) { model.mutate(L10n.tr("ipad.994feef62ef2")) { $0.geometry.crop = .full } }
             }
         }

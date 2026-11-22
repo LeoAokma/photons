@@ -1,4 +1,6 @@
 {
+  "adjust.autoCrop": "Auto Crop",
+  "adjust.autoCrop.help": "Crop to the valid pixels after rotation or perspective correction.",
   "adjust.aspectPercent": "Aspect correction (%)",
   "panorama.shift.dragFrame": "Drag a photo or its number to set its shift. Click to edit a reading.",
   "panorama.shift.diagramReadings": "Shift readings (mm) · ? = unknown",

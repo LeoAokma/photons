@@ -269,6 +269,16 @@ final class MobileWorkspaceModel: ObservableObject {
             catch { if ticket == generation { rendering = false; self.error = error.localizedDescription } }
         }
     }
+    func autoCrop() async {
+        guard let photo = active else { return }
+        let geometry = edit.geometry
+        do {
+            let size = try await engine.uprightSize(at: photo.url)
+            guard active?.id == photo.id, edit.geometry == geometry,
+                  let cropped = geometry.autoCropped(source: size) else { return }
+            mutate(L10n.tr("adjust.autoCrop")) { $0.geometry = cropped }
+        } catch { if active?.id == photo.id { self.error = error.localizedDescription } }
+    }
     func update(_ path: WritableKeyPath<EditModel, Double>, _ value: Double) { edit[keyPath: path] = value; render() }
     func mutate(_ label: String, _ mutation: (inout EditModel) -> Void) { mutation(&edit); commit(label); render() }
     func commit(_ label: String) {

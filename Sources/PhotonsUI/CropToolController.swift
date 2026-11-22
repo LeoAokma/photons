@@ -2224,6 +2224,18 @@ public final class CropToolController {
         return true
     }
 
+    @discardableResult
+    public func autoCrop() -> Bool {
+        guard isActive, let session, let group = draftGeometry.autoCropped(source: uprightSource) else { return false }
+        closeToolSession(label: L10n.tr("53f37fa28f71"))
+        session.applyEdit { $0.geometry = group }
+        let changed = session.commitEdit(label: L10n.tr("adjust.autoCrop"), coalesce: false)
+        draft = Draft(geometry: group)
+        draftPhotoID = session.anchorID
+        if changed { appliedCount += 1 }
+        return changed
+    }
+
     func remapDraft(for operation: GeometryGroup.QuarterTurnOperation, from document: GeometryGroup) {
         guard isActive else { return }
         draft = Draft(geometry: draft.geometry(flipsOf: document).remapped(for: operation))

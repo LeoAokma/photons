@@ -21,3 +21,9 @@
 iPad 变换页接入 Mac 与上游 861e5939（#502）既有的垂直、水平、剪切与宽高比校正，使用同一个 PerspectiveMap、文档、预览和导出管线。百分数对应模型的 0.01 步长。涉及 MobileInspector 和本地化，可独立回退。
 
 11 英寸 iPad 模拟器 build 成功。PerspectiveAspect408Tests 和 PerspectiveMapShear407Tests 共 12 项通过，PerspectiveRange347Tests 的范围、几何和可逆检查通过；其中旧像素金值测试五个 SHA 与本机渲染不符，保留原断言和记录。此提交没有改动渲染算法。
+
+## ADJ-AUTOCROP
+
+移植 chemharuka/photons b8894229（#489 自动裁切）。把有效像素多边形与裁切求解放入 PhotonsCore，Mac 裁切工具和 iPad 变换页都写同一个可撤销文档操作。已水平照片保留原有构图，已应用的结果不会重复新增历史。裁切用转正后的原始分辨率，支持 90° 旋转及透视画布。依赖现有几何字段，可独立回退。
+
+本次 AutoCropSolver489Tests 四项通过，含相对穷举面积检查和转过 90° 的非正方形文档，CropReentryAfterAspect450Tests 四项通过；11 英寸模拟器 build 通过。未实体设备测量。

@@ -164,6 +164,8 @@ extension InspectorView {
                      help: L10n.tr("561266708d88"),
                      action: { loupe?.cropTool.toggleGrid() })
                 .background(CropRowProbeHost(rowID: CropCardID.grid))
+            CropChip(title: L10n.tr("adjust.autoCrop"), on: false, help: L10n.tr("adjust.autoCrop.help"),
+                     action: { loupe?.autoCrop() })
         }
     }
 

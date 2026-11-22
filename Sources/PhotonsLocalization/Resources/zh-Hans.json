@@ -1,4 +1,6 @@
 {
+  "adjust.autoCrop": "自动裁切",
+  "adjust.autoCrop.help": "旋转或透视校正后，裁去画面边缘的空白区域。",
   "adjust.aspectPercent": "宽高比校正（%）",
   "panorama.shift.dragFrame": "拖动照片框或编号设置移轴位置，单击可编辑读数。",
   "panorama.shift.diagramReadings": "移轴读数（mm） · ? 表示未知",
