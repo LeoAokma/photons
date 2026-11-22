@@ -16,4 +16,22 @@
 
 ## PANO-GHOST-02 · 实拍回归与本地交付
 
-依赖 PANO-GHOST-01。对应实拍测试、构建产物和提交记录在本项验收时补齐。
+| 追踪编号 | 提交 | 内容 |
+| --- | --- | --- |
+| PANO-GHOST-01 | 7631b01 | 在 Mac 和 iPad 共用的 RAW 管线中筛选高光颜色参考，附合成回归 |
+| PANO-GHOST-02 | 本记录所在提交，可用 git log --grep=PANO-GHOST-02 -- Tests/PhotonsPanoramaTests/BostonRegistrationTests.swift 定位 | 593–594 的实拍像素回归、实际导出、两端成品验收 |
+
+PANO-GHOST-02 依赖 7631b01。新增的 BostonRegistrationTests.testClippedSkyAfterLCCOnBoston593And594 从已渲染的 UI 预览取样，并在 JSON 快照往返后重新解码两张原片。两条路径使用同一份由未校正预览确定的天空掩码。此处经过预览重采样，共选中 6,819 个像素；预览和导出路径分别有 86、22 个像素红色高于蓝色。素材通过 PHOTONS_BOSTON_DIR 显式提供，仅作为输入；测试使用临时目录安装随包配置。
+
+另写出 21,296 × 8,802 的全尺寸 16 位线性 DNG，ImageIO 读取尺寸、位深及两帧清单，Core Image 重新解码成品检查相同天空。输出为 700,660,588 字节。实拍对比图来自同一曝光下的序列化快照导出，修复前后使用相同的配准位置、白平衡和 LCC 位置。
+
+Mac Release 上，LCCCameraTests、既有防伪影用例与 PanoramaToneTests 共 12 项，首次运行 11 项通过，1 项等待外部素材。设置 PHOTONS_BOSTON_DIR 后运行 593–594 高光、591–592 防伪影和 628–633 六帧亮度，3 项全部通过，包含首次跳过的用例。
+
+工作区内的成品如下。
+
+- `local/out/boston-593-594/final/comparison.png` 为修复前后局部对比，`final/dng-readback.jpg` 为完整成品的回读预览。
+- `local/out/boston-593-594/final/B0000593_pano.dng` 为修复后的全尺寸成品。
+- `local/out/studio-035-lcc-highlights/Mac/Photons Studio.app` 为本地 Mac 0.3.5 (8)，已完成 Release 编译、严格签名校验及空库启动退出。
+- `local/out/studio-035-lcc-highlights/iPadOS/Photons Studio.app` 为 Studio 身份的 arm64 iPad 0.3.5 (8) 设备 Release 包。iPad Pro 13 英寸（M5）模拟器上，共享 LCC、切换防伪影两项测试通过。设备包采用无签名构建；本次验证使用模拟器，未在实体 iPad 验收或上传 TestFlight。
+
+实拍验收与合成测试可以独立回退。原始实现和回归均在本仓库编写。

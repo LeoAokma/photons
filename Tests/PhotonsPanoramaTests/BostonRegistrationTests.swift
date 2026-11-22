@@ -44,6 +44,51 @@ final class BostonRegistrationTests: XCTestCase {
         print("591–592 post-LCC", corrected.outputSize, "coverage", lcc.coveredFraction)
     }
 
+    func testClippedSkyAfterLCCOnBoston593And594() throws {
+        guard let folder = ProcessInfo.processInfo.environment["PHOTONS_BOSTON_DIR"] else {
+            throw XCTSkip("Set PHOTONS_BOSTON_DIR for the 593–594 clipped-highlight regression")
+        }
+        let root = URL(fileURLWithPath: folder)
+        let urls = ["B0000593.3FR", "B0000594.3FR"].map { root.appendingPathComponent($0) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = LCCProfileStore(directory: directory)
+        try store.installBundledProfile()
+        let profile = try store.load(LCCLensProfile.builtInID)
+        let fields = try LCCCorrectionEngine.fields(profile)
+        let engine = PanoramaEngine()
+        let plan = try engine.prepareLCCImages(engine.analyze(urls: urls))
+        let sensor = try XCTUnwrap(plan.sources.first?.sensor)
+        let position = try LCCPositionSolver.solve(plan: plan, fields: fields, sensor: sensor, allowPairedFlats: false)
+        let corrected = try engine.applyingLCC(plan, profile: profile, fields: fields, offsetMM: position.offsetMM,
+                                              sensor: sensor, crop: false, cameraBody: .alpa12Max)
+        XCTAssertEqual(plan.origins, corrected.origins)
+        let bytes = try JSONEncoder().encode(PanoramaSnapshot(plan: corrected))
+        let restored = try JSONDecoder().decode(PanoramaSnapshot.self, from: bytes).plan()
+        let exported = try engine.renderComposite(restored, outputLongEdge: 1000)
+        func raster(_ image: CIImage) -> PanoramaRaster {
+            PanoramaRaster(image: image, context: engine.context, width: 1000, height: 414)
+        }
+        let original = raster(CIImage(cgImage: try XCTUnwrap(plan.preview)))
+        let preview = raster(CIImage(cgImage: try XCTUnwrap(corrected.preview)))
+        // This part of the sky is outside the overlap. Select sky above the roof using
+        // the uncorrected green channel, so the test uses identical pixels in each render.
+        for (path, image) in [("preview", preview), ("export", raster(exported))] {
+            var sky = 0, redDominant = 0
+            for y in 5..<70 {
+                for x in 551..<686 {
+                    let i = (y * original.width + x) * 4
+                    guard original.rgba[i + 1] > 0.38 else { continue }
+                    sky += 1
+                    if image.rgba[i] > image.rgba[i + 2] { redDominant += 1 }
+                }
+            }
+            XCTAssertGreaterThan(sky, 5000)
+            XCTAssertLessThan(redDominant, sky / 10, "\(path) sky changed from blue to red")
+            print("Boston 593–594 \(path): \(redDominant)/\(sky) sky pixels with R > B")
+        }
+    }
+
     func testBoston604Through607WithHorizontalStopsOrImageEvidenceAlone() throws {
         guard let path = ProcessInfo.processInfo.environment["PHOTONS_BOSTON_DIR"] else {
             throw XCTSkip("Set PHOTONS_BOSTON_DIR for Boston 604–607")
