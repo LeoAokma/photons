@@ -49,7 +49,7 @@ no separate license obligations apply.
 ## nonlocal-matchfilter (AI denoise model)
 
 - Upstream: https://github.com/MIA-UIB/nonlocal-matchfilter (arXiv:2604.17453)
-- Our port: https://github.com/chemharuka/nonlocal-matchfilter-swift (MIT)
+- Our port: https://github.com/chemharuka/nonlocal-matchfilter-swift (MIT), vendored at 694d505 in `Vendor/nonlocal-matchfilter-swift`.
 - License: **MIT** — Copyright (c) 2026 Marco Sánchez Beeckman
 - Used by: `PhotonsExtensions/Denoise/NLMFDenoiseJob.swift` — the network runs the released
   `rawnoise_25_15_9nbr` weights (RAW-to-RAW: 8 input channels = 4 CFA sites + 4 noise-σ maps,
