@@ -1,4 +1,5 @@
 {
+  "adjust.autoColor": "Auto Color",
   "adjust.rawDetail": "RAW detail",
   "adjust.autoCrop": "Auto Crop",
   "adjust.autoCrop.help": "Crop to the valid pixels after rotation or perspective correction.",

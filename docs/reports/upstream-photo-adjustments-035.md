@@ -63,3 +63,9 @@ MobileSlider 的标题和拖条都支持双击，数值输入框保留文字编�
 移植 chemharuka/photons 0fae2932、ecd3f0a9、da1450ab（#426d/#441/#443）。自动明暗按大面积高光、主体与场景类型求解；低信号帧限制曝光提升。既有 Mac 明暗按钮和新增 iPad 按钮使用同一个 AutoLight.plan。iPad 在渲染 actor 上复用 1600 边长的解码，最后只提交一次；切照片或手动改值后丢弃旧结果。与以上移植独立，后续自动颜色将复用 iPad 入口和解码。
 
 本次 AutoLightTests 和 AutoLightCardTests 合计 30 项中 25 通过、5 项因外部样片等条件跳过。iPad 模拟器对合成图运行实际测量和写入，曝光改变且保留色彩与几何，测试通过。未重跑上游私人样片库的整套标定。
+
+## ADJ-AUTOCOLOR
+
+移植 chemharuka/photons ab82f440、695eeb46 和 37d901bf（#452、#498、#496b）的自然饱和度/饱和度双轴求解与按钮。两端用同一套缩略测量迭代和高光通道裁剪护栏，手动改值或切图会丢弃过时结果。色彩核降低自然饱和度增益，因此单独升级色彩缓存版本，已有手动自然饱和度编辑也采用新曲线。依赖 ADJ-AUTOLIGHT 的测量与 iPad 提交入口。
+
+本次运行 AutoColor452Tests、AutoColor498Tests、两项共享键向量和 CacheVersionTests，23 项中 22 通过，1 项因外部样片缺失跳过。11 英寸模拟器通过 testAutoColorReMeasuresTheEditedPhotoAndLeavesToneAlone，实际重渲染合成照片，确认可独立改变色彩并保留明暗。未用上游私人库重标定。

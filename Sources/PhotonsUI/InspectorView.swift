@@ -1524,6 +1524,13 @@ public struct InspectorView: View {
         if spec.section == .light {
             // 422 — the 明暗 card's 自动调节, drawn exactly like 黑电平's 自动 (one button family).
             autoLightButton
+        } else if spec.section == .color {
+            Button { loupe?.autoColor() } label: {
+                Image(systemName: "wand.and.stars").frame(width: 20, height: 18)
+            }.buttonStyle(.plain)
+                .help(L10n.tr("adjust.autoColor"))
+                .accessibilityLabel(L10n.tr("adjust.autoColor"))
+                .accessibilityIdentifier("inspector.color.auto")
         } else if spec.section == .correction, let note = autoProfileNote {
             Text(note)
                 .font(.system(size: 9))

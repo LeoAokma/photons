@@ -28,6 +28,10 @@ extension RenderGraph {
     /// texture criterion takes would read sampling noise rather than contrast if the grid were coarser.
     public func measureAutoLightSample(_ edit: EditModel, longEdge: Int = AutoLight.sampleLongEdge)
         throws -> AutoLight.Sample {
+        AutoLight.Sample(try measureLinearSample(edit, longEdge: longEdge))
+    }
+
+    public func measureLinearSample(_ edit: EditModel, longEdge: Int = AutoLight.sampleLongEdge) throws -> LinearSample {
         let pixels = edit.geometry.outputPixels(in: sourceSize)
         let long = Double(max(pixels.width, pixels.height))
         let cap = max(64, longEdge)
@@ -47,6 +51,25 @@ extension RenderGraph {
         guard let sample = result.histogramSample else {
             throw RenderError.executeFailed("auto light: no scene-linear sample")
         }
-        return AutoLight.Sample(sample)
+        return sample
+    }
+
+    /// The two sliders are measured together. Re-measure each staged result before
+    /// committing, since the GPU uses half-float arithmetic and the solver uses Double.
+    public func automaticallyColored(_ edit: EditModel) throws -> EditModel {
+        var staged = edit
+        for _ in 0..<3 {
+            try Task.checkCancellation()
+            let metrics = AutoColor.metrics(from: try measureLinearSample(staged))
+            let plan = AutoColor.plan2D(metrics, currentVibrance: staged.color.vibrance,
+                                        currentSaturation: staged.color.saturation,
+                                        floorVibrance: edit.color.vibrance, floorSaturation: edit.color.saturation)
+            let vibrance = max(edit.color.vibrance, plan.vibrance)
+            let saturation = max(edit.color.saturation, plan.saturation)
+            guard abs(staged.color.vibrance - vibrance) > 1e-9 || abs(staged.color.saturation - saturation) > 1e-9 else { break }
+            staged.color.vibrance = vibrance
+            staged.color.saturation = saturation
+        }
+        return staged
     }
 }

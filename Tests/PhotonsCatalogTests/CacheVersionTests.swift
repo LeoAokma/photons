@@ -218,7 +218,8 @@ final class CacheVersionTests: XCTestCase {
         XCTAssertEqual(StageAlgorithmVersion.geometry, 5,
                        "307: CanvasRole.document/.export; the export bytes did not move, the keys must")
         // …and the ones that did not, so a bump stays a statement about one stage.
-        for stage in [RenderStage.color, .grain, .display] {
+        XCTAssertEqual(StageAlgorithmVersion.color, 2, "498: reduced the vibrance gain")
+        for stage in [RenderStage.grain, .display] {
             XCTAssertEqual(StageAlgorithmVersion.version(of: stage), 1,
                            "\(stage.rawValue) did not change and must not be re-versioned")
         }

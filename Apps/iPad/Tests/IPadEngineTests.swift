@@ -409,6 +409,17 @@ final class IPadEngineTests: XCTestCase {
         let remaining = try await reopened.photos(); XCTAssertEqual(remaining.count,3)
     }
 
+    func testAutoColorReMeasuresTheEditedPhotoAndLeavesToneAlone() async throws {
+        let worker = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("auto-color"))
+        let photo = MobilePhoto(id: "color", name: "test", url: urls[0], rating: 0, width: 768, height: 512)
+        var source = EditModel.neutral
+        source.color.saturation = -85
+        source.light.exposure = -0.25
+        let edited = try await worker.autoColor(photo, edit: source)
+        XCTAssertEqual(edited.light, source.light)
+        XCTAssertTrue(edited.color.saturation > source.color.saturation || edited.color.vibrance > source.color.vibrance)
+    }
+
     func testAutoLightMeasuresThePhotoAndPreservesOtherAdjustments() async throws {
         let worker = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("auto-light"))
         let photo = MobilePhoto(id: "light", name: "test", url: urls[0], rating: 0, width: 768, height: 512)

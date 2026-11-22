@@ -198,8 +198,8 @@ public enum StageAlgorithmVersion {
     /// **2** — 0107: contrast became a displacement in log2 EV over a held core with a bounded shoulder
     /// and a toe shift (no upper asymptote, no 4× slope); 074 R2 moved the region lifts to EV windows.
     public static let toneMap = 7
-    /// Unchanged (vibrance/saturation only, since 076).
-    public static let color = 1
+    /// 2 — recalibrated vibrance gain (0.28), shared with the automatic colour solver.
+    public static let color = 2
     /// Unchanged (S3.4's eight-band grey mix).
     public static let bw = 1
     /// Unchanged (S3.5's hue/saturation in the display-referred domain).

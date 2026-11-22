@@ -101,5 +101,6 @@ enum M1KeyVector {
     /// the curve instead of below S3.6. Every parent digest from the curve down moves with it; the
     /// stage's generation is 4 (the move changes the input domain even though the four parameters do
     /// not). The geometry/S1/S1.7 texts are unchanged, which is the "only 锐化 moved" claim.
-    static let pinnedDigest = "d24b463722b34ce5501fb33505fb18a1a08f9da4c979c6a00d5e5a07065499df"
+    /// 498 — the lower vibrance gain advances the color link from generation 1 to 2.
+    static let pinnedDigest = "51c98e60c6dcf352ed9a234ef8b0dc9caa59d93bd291a6a7507d4c7e1c518596"
 }

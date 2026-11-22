@@ -134,6 +134,9 @@ struct MobileInspector: View {
                 Task { await model.automaticEdit(L10n.tr("187f2e7d1e49")) { try await $0.autoLight($1, edit: $2) } }
             }.disabled(model.measuringAdjustment)
             rows(L10n.tr("e40fffdb9798"), DevelopControls.colorRows)
+            Button(L10n.tr("adjust.autoColor")) {
+                Task { await model.automaticEdit(L10n.tr("adjust.autoColor")) { try await $0.autoColor($1, edit: $2) } }
+            }.disabled(model.measuringAdjustment)
             rows(L10n.tr("ipad.d489ea05c935"), DevelopControls.textureClarityRows)
             if let raw = model.frame?.rawControls { rawDetail(raw) }
             rows(L10n.tr("ipad.906770cf4616"), DevelopControls.nonBayerRows)

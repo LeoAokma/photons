@@ -4636,6 +4636,29 @@ public final class LoupeController: NSViewController, HeadroomSource {
         return plan
     }
 
+    func autoColor() {
+        let frame = frameState
+        guard let session, session.mode == .loupe, let asset = session.anchorAsset,
+              frame.graphPhoto == ladderIdentity(asset), let graph = frame.graph else { return }
+        let document = session.edit, id = asset.id, revision = session.editRevision
+        queue.async { [weak self, weak session] in
+            let measured = Result { try graph.automaticallyColored(document) }
+            DispatchQueue.main.async {
+                guard let self, let session, session.mode == .loupe, session.anchorID == id,
+                      session.editRevision == revision else { return }
+                switch measured {
+                case .success(let edit) where edit.color != document.color:
+                    session.applyEdit { $0.color = edit.color }
+                    session.commitEdit(label: L10n.tr("adjust.autoColor"), coalesce: false)
+                    self.requestEditRender()
+                case .failure(let error):
+                    NSLog("Photons auto color: %@", error.localizedDescription)
+                default: break
+                }
+            }
+        }
+    }
+
     /// The document's flips — what the menu ticks and the bar's two switches show.
 
     /// The crop frame's layout in view points, for the overlay and for the tests.

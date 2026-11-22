@@ -268,6 +268,10 @@ actor MobileEngine {
         return prepared
     }
 
+    func autoColor(_ photo: MobilePhoto, edit: EditModel) throws -> EditModel {
+        try preparedGraph(photo.url, edit: edit, edge: 1600).automaticallyColored(edit)
+    }
+
     func autoLight(_ photo: MobilePhoto, edit: EditModel) throws -> EditModel {
         let graph = try preparedGraph(photo.url, edit: edit, edge: 1600)
         let plan = try AutoLight.plan(for: edit) { staged in
