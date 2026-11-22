@@ -20,6 +20,39 @@ enum TranslationRegistration {
             return min(bounds.width, bounds.height) >= 16
         }
     }
+    struct Edge {
+        let a: Int
+        let b: Int
+        let offset: CGPoint
+        let score: Double
+    }
+
+    /// Reconcile only small disagreements between image-measured loops, in native pixels.
+    static func consistentOrigins(_ tree: [CGPoint], edges: [Edge], tolerance: Double) -> [CGPoint]? {
+        func residual(_ origins: [CGPoint], _ edge: Edge) -> Double {
+            hypot(origins[edge.b].x - origins[edge.a].x - edge.offset.x,
+                  origins[edge.b].y - origins[edge.a].y - edge.offset.y)
+        }
+        let worst = edges.lazy.filter { $0.score > 0.8 }.map { residual(tree, $0) }.max() ?? 0
+        if worst <= tolerance { return tree }
+        // Two placements each within tolerance can differ by up to twice that distance.
+        // Larger disagreements require different image evidence or a different geometry.
+        guard worst <= 2 * tolerance, edges.count >= tree.count else { return nil }
+        var rows: [[Double]] = [], xs: [Double] = [], ys: [Double] = []
+        for edge in edges {
+            let weight = sqrt(edge.score)
+            var row = [Double](repeating: 0, count: tree.count - 1)
+            if edge.a > 0 { row[edge.a - 1] = -weight }
+            if edge.b > 0 { row[edge.b - 1] = weight }
+            rows.append(row)
+            xs.append(weight * edge.offset.x)
+            ys.append(weight * edge.offset.y)
+        }
+        guard let x = leastSquares(rows, xs), let y = leastSquares(rows, ys) else { return nil }
+        let fitted = [tree[0]] + x.indices.map { CGPoint(x: tree[0].x + x[$0], y: tree[0].y + y[$0]) }
+        return edges.allSatisfy { residual(fitted, $0) <= tolerance } ? fitted : nil
+    }
+
     private struct Corner { let x: Int; let y: Int; let strength: Double; let descriptor: [Double] }
 
     private static func corners(_ image: GrayRaster, distributed: Bool) -> [Corner] {

@@ -35,6 +35,28 @@ final class TranslationConsensusTests: XCTestCase {
         XCTAssertTrue(match.hasIndependentSupport)
     }
 
+    func testSmallLoopDisagreementFitsAllEdgesAndRejectsLargerConflicts() throws {
+        typealias Edge = TranslationRegistration.Edge
+        let tree = [CGPoint.zero, CGPoint(x: 100, y: 0), CGPoint(x: 100, y: 100), CGPoint(x: 0, y: 100)]
+        let chain = [Edge(a: 0, b: 1, offset: CGPoint(x: 100, y: 0), score: 1),
+                     Edge(a: 1, b: 2, offset: CGPoint(x: 0, y: 100), score: 1),
+                     Edge(a: 2, b: 3, offset: CGPoint(x: -100, y: 0), score: 1)]
+        func fit(_ loopError: Double) -> [CGPoint]? {
+            let loop = Edge(a: 0, b: 3, offset: CGPoint(x: 0, y: 100 + loopError), score: 1)
+            return TranslationRegistration.consistentOrigins(tree, edges: chain + [loop], tolerance: 3)
+        }
+        XCTAssertEqual(fit(0), tree)
+        XCTAssertEqual(fit(2.9), tree)
+        let balanced = try XCTUnwrap(fit(4))
+        let expected = [CGPoint.zero, CGPoint(x: 100, y: 1), CGPoint(x: 100, y: 102), CGPoint(x: 0, y: 103)]
+        for (actual, target) in zip(balanced, expected) {
+            XCTAssertEqual(actual.x, target.x, accuracy: 1e-9)
+            XCTAssertEqual(actual.y, target.y, accuracy: 1e-9)
+        }
+        XCTAssertNil(fit(7))
+        XCTAssertEqual(TranslationRegistration.consistentOrigins(tree, edges: chain, tolerance: 3), tree)
+    }
+
     func testDenseSparseAndDuplicatedVotesMatchAllPairs() {
         var state: UInt64 = 73
         func next(_ limit: Int) -> Int {

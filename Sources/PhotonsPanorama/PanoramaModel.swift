@@ -255,3 +255,21 @@ func median(_ input: [Double]) -> Double {
     guard !input.isEmpty else { return 0 }
     let sorted = input.sorted(); return sorted[sorted.count / 2]
 }
+
+func leastSquares(_ rows: [[Double]], _ values: [Double]) -> [Double]? {
+    guard let first = rows.first, !first.isEmpty, rows.count >= first.count, rows.count == values.count else { return nil }
+    let n = first.count
+    var matrix = [[Double]](repeating:[Double](repeating:0,count:n+1),count:n)
+    for (row,value) in zip(rows,values) { for a in 0..<n {
+        for b in 0..<n { matrix[a][b] += row[a]*row[b] }
+        matrix[a][n] += row[a]*value
+    }}
+    for k in 0..<n {
+        let pivot = (k..<n).max { abs(matrix[$0][k]) < abs(matrix[$1][k]) }!
+        matrix.swapAt(k,pivot)
+        guard abs(matrix[k][k])>1e-8 else { return nil }
+        let d = matrix[k][k]; for j in k...n { matrix[k][j] /= d }
+        for i in 0..<n where i != k { let f = matrix[i][k]; for j in k...n { matrix[i][j] -= f*matrix[k][j] } }
+    }
+    return matrix.map { $0[n] }
+}

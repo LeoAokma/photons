@@ -220,7 +220,8 @@ enum OpticalPositionEstimator {
                     values.append(channel == 0 ? log((c.x+c.y+c.z)/3) : log(c.x/c.y))
                 }}
             }
-            guard let fit = solve(rows,values), abs(fit[0])>0.12,
+            guard let first = rows.first, rows.count > first.count * 3,
+                  let fit = leastSquares(rows, values), abs(fit[0])>0.12,
                   channel != 0 || fit[0] < 0 else { continue }
             let cx = -fit[1]/(2*fit[0]), cy = -fit[2]/(2*fit[0])
             guard abs(cx)<0.7, abs(cy)<0.7 else { continue }
@@ -233,22 +234,5 @@ enum OpticalPositionEstimator {
                                    confidence:0.45,explanation:L10n.tr("4a14b51acd0b"),occludedEdges:occluded)
         }
         return OpticalEstimate(center:nil,confidence:0,explanation:L10n.tr("0df4a9d36d96"),occludedEdges:occluded)
-    }
-    static func solve(_ rows: [[Double]], _ values: [Double]) -> [Double]? {
-        guard let first = rows.first, rows.count > first.count*3 else { return nil }
-        let n = first.count
-        var matrix = [[Double]](repeating:[Double](repeating:0,count:n+1),count:n)
-        for (row,value) in zip(rows,values) { for a in 0..<n {
-            for b in 0..<n { matrix[a][b] += row[a]*row[b] }
-            matrix[a][n] += row[a]*value
-        }}
-        for k in 0..<n {
-            let pivot = (k..<n).max { abs(matrix[$0][k]) < abs(matrix[$1][k]) }!
-            matrix.swapAt(k,pivot)
-            guard abs(matrix[k][k])>1e-8 else { return nil }
-            let d = matrix[k][k]; for j in k...n { matrix[k][j] /= d }
-            for i in 0..<n where i != k { let f = matrix[i][k]; for j in k...n { matrix[i][j] -= f*matrix[k][j] } }
-        }
-        return matrix.map { $0[n] }
     }
 }

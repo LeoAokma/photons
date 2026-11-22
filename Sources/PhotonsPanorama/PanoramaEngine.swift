@@ -117,13 +117,20 @@ public final class PanoramaEngine {
         guard transforms.enumerated().allSatisfy({$0.element.isValid(for:sources[$0.offset].size)}) else {
             throw PanoramaFailure(L10n.tr("panorama.invalidPerspectiveGeometry"))
         }
-        for edge in edges where edge.score>0.8 {
+        if !projective {
+            let measurements = edges.map { TranslationRegistration.Edge(a: $0.a, b: $0.b,
+                offset: $0.transform.point(.zero), score: $0.score) }
+            guard let origins = TranslationRegistration.consistentOrigins(transforms.map { $0.point(.zero) },
+                edges: measurements, tolerance: 3 / scale) else { throw PanoramaFailure(L10n.tr("8a5142e9f53e")) }
+            transforms = origins.map(PanoramaTransform.translation)
+        }
+        for edge in edges where projective && edge.score>0.8 {
             let probes=edge.probes.isEmpty ? [CGPoint(x:first.size.width/2,y:first.size.height/2)]:edge.probes
             let residuals=probes.map {p -> Double in
                 let lhs=transforms[edge.a].point(edge.transform.point(p)),rhs=transforms[edge.b].point(p)
                 return hypot(lhs.x-rhs.x,lhs.y-rhs.y)*scale
             }
-            if median(residuals)>(projective ? 12:3) {throw PanoramaFailure(L10n.tr("8a5142e9f53e"))}
+            if median(residuals)>12 {throw PanoramaFailure(L10n.tr("8a5142e9f53e"))}
         }
         let boxes=transforms.enumerated().map {$0.element.bounds(sources[$0.offset].size)}
         let minX=floor(boxes.map(\.minX).min()!),minY=floor(boxes.map(\.minY).min()!)
