@@ -1,4 +1,5 @@
 {
+  "panorama.shift.diagramReadings": "移轴读数（mm） · ? 表示未知",
   "panorama.shift.unknown": "未知",
   "panorama.shift.reading": "指定值",
   "panorama.shift.leftMax": "向左最大",

@@ -3,6 +3,7 @@ import AppKit
 import CoreImage
 import ImageIO
 import PhotonsPanorama
+import PhotonsLocalization
 @testable import PhotonsUI
 
 @MainActor
@@ -54,6 +55,46 @@ final class PanoramaPerspectiveTests:XCTestCase {
         model.clearPosition(0)
         XCTAssertNil(model.positionReference)
         XCTAssertTrue(model.resolvedHints.isEmpty)
+    }
+
+    func testDiagramUsesEachSavedAxisBeforeMatchingAndKeepsOverlappingPhotosSelectable() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let pair = try fixtures(directory, textured: false)
+        let urls = pair + pair
+        let model = PanoramaWindowModel(urls: urls)
+        model.sensorChoice = 1
+        let plan = try PanoramaEngine().alignmentDraft(urls: urls, knownPositions: [:], sensorOverride: model.sensor,
+                                                      message: "unmatched")
+        model.plan = plan
+        func diagram() -> PanoramaPositionOverview {
+            PanoramaPositionOverview(plan: plan, sensor: model.sensor, reference: model.overviewReference,
+                cameraBody: model.cameraBody, bodyOrientation: model.bodyOrientation, hints: model.shiftHints,
+                resolved: model.resolvedHints, onSelect: { _ in })
+        }
+        let initial = diagram().frames
+        for index in urls.indices {
+            model.setShiftHint(index: index, hint: .init(x: index == 1 || index == 2 ? .negativeMaximum : .positiveMaximum), asReference: false)
+            let current = diagram()
+            XCTAssertEqual(current.frames[index].center.x, try XCTUnwrap(model.resolvedHints[index]?.x))
+            XCTAssertEqual(current.frames[index].center.y, initial[index].center.y)
+            XCTAssertTrue(current.readingText(index).contains("Y ?"))
+            XCTAssertTrue(current.readingText(index).contains(L10n.tr(index == 1 || index == 2 ? "panorama.shift.leftMax" : "panorama.shift.rightMax")))
+        }
+        XCTAssertEqual(diagram().frames.map { $0.center.x }, [18, -18, -18, 18])
+        XCTAssertFalse(model.canStitch)
+        let rects = diagram().frames.map { CGRect(x: $0.center.x * 4, y: 0, width: 140, height: 100) }
+        let centers = CapturePositionDiagram.badgeCenters(rects)
+        for i in rects.indices {
+            XCTAssertTrue(rects[i].contains(centers[i]))
+            for j in 0..<i { XCTAssertGreaterThanOrEqual(hypot(centers[i].x-centers[j].x, centers[i].y-centers[j].y), 18) }
+        }
+        model.setShiftHint(index: 0, hint: .init(y: .millimeters(-4)), asReference: false)
+        XCTAssertEqual(diagram().frames[0].center.x, initial[0].center.x)
+        XCTAssertEqual(diagram().frames[0].center.y, -4)
+        model.clearPosition(0)
+        XCTAssertEqual(diagram().frames[0].center, initial[0].center)
+        XCTAssertEqual(model.plan?.origins, plan.origins)
     }
 
     func testMacPerspectiveRegistrationAndExportPreserveModeWithoutShiftMetadata() async throws {

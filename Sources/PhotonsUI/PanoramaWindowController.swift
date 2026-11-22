@@ -560,10 +560,13 @@ private struct PanoramaWorkspace: View {
                 Text(model.cameraBody.travel(at:model.bodyOrientation).summary).font(.caption).foregroundStyle(.secondary)
             }
             if let plan = model.plan {
-                PanoramaPositionOverview(plan:plan,sensor:model.sensor,reference:model.overviewReference,cameraBody:model.cameraBody,bodyOrientation:model.bodyOrientation) {index in model.editingPosition=index}
-                    .frame(height:200).background(Color(nsColor:.underPageBackgroundColor),in:RoundedRectangle(cornerRadius:8))
-                Text(model.overviewReference != nil ? L10n.tr("a1d86877af02") : L10n.tr("92edb20a3dbc"))
-                    .font(.caption).foregroundStyle(.secondary)
+                PanoramaPositionOverview(plan: plan, sensor: model.sensor, reference: model.overviewReference,
+                    cameraBody: model.cameraBody, bodyOrientation: model.bodyOrientation,
+                    hints: model.shiftHints, resolved: model.resolvedHints) { model.editingPosition = $0 }
+                if plan.isRegistered && model.shiftHints.isEmpty {
+                    Text(model.overviewReference != nil ? L10n.tr("a1d86877af02") : L10n.tr("92edb20a3dbc"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if !plan.isRegistered {Text(L10n.tr("de949bd06103")).font(.caption).foregroundStyle(.orange)}
                 Text(L10n.tr("5e76d67d4617" , String(describing: (model.shiftHints.count)))).font(.caption).foregroundStyle(.secondary)
                 if model.shiftHints.count>1 || model.alignmentNeedsUpdate || !plan.isRegistered {
@@ -695,22 +698,75 @@ private struct PanoramaPositionEntry:View {
     }
 }
 
-private struct PanoramaPositionOverview: View {
+struct PanoramaPositionOverview: View {
     let plan: PanoramaPlan
     let sensor: SensorSize?
-    let reference:PanoramaPositionReference?
-    let cameraBody:PanoramaCameraBody
-    let bodyOrientation:PanoramaBodyOrientation
-    let onSelect:(Int)->Void
-    var body:some View {
-        CapturePositionDiagram(frames:plan.sources.indices.map {i in
-            let r=CGRect(origin:plan.origins[i],size:plan.sources[i].size)
-            let center=reference.flatMap {ref in sensor.map {ref.position(of:i,in:plan,sensor:$0)}}
-                ?? sensor.map {CGPoint(x:(r.midX-plan.size.width/2)*$0.width/r.width,y:(plan.size.height/2-r.midY)*$0.height/r.height)}
-                ?? CGPoint(x:r.midX,y:-r.midY)
-            return .init(name:plan.sources[i].url.lastPathComponent,center:center,
-                         sensor:sensor ?? SensorSize(width:r.width,height:r.height,source:"pixels"))
-        },cameraBody:cameraBody,orientation:bodyOrientation,absolute:reference != nil,
-           selected:reference?.sourceIndex,showsTravel:sensor != nil,onSelect:onSelect)
+    let reference: PanoramaPositionReference?
+    let cameraBody: PanoramaCameraBody
+    let bodyOrientation: PanoramaBodyOrientation
+    let hints: [Int: PanoramaShiftHint]
+    let resolved: [Int: PanoramaShiftPosition]
+    let onSelect: (Int) -> Void
+
+    var frames: [CapturePositionDiagram.Frame] {
+        plan.sources.indices.map { i in
+            let rect = plan.sensorRect(i)
+            let size = sensor ?? SensorSize(width: rect.width, height: rect.height, source: "pixels")
+            let center = reference.flatMap { ref in sensor.map { ref.position(of: i, in: plan, sensor: $0) } }
+                ?? CGPoint(x: (rect.midX - plan.size.width / 2) * size.width / rect.width,
+                           y: (plan.size.height / 2 - rect.midY) * size.height / rect.height)
+            let reading = resolved[i] ?? .init()
+            // Unknown axes retain their image/draft layout. Pixel coordinates cannot be mixed with millimetres.
+            let shown = sensor == nil ? center : CGPoint(x: reading.x ?? center.x, y: reading.y ?? center.y)
+            let hint = hints[i] ?? .init()
+            let caption = [reading.x.map { axisText(hint.x, value: $0, horizontal: true) },
+                           reading.y.map { axisText(hint.y, value: $0, horizontal: false) }]
+                .compactMap { $0 }.joined(separator: " · ")
+            return .init(name: plan.sources[i].url.lastPathComponent, center: shown, sensor: size,
+                         reading: caption.isEmpty ? nil : caption)
+        }
+    }
+
+    private func axisText(_ hint: PanoramaAxisHint, value: Double?, horizontal: Bool) -> String {
+        let axis = horizontal ? "X" : "Y"
+        guard let value else { return "\(axis) ?" }
+        let name: String
+        switch hint {
+        case .negativeMaximum: name = L10n.tr(horizontal ? "panorama.shift.leftMax" : "panorama.shift.downMax")
+        case .positiveMaximum: name = L10n.tr(horizontal ? "panorama.shift.rightMax" : "panorama.shift.upMax")
+        default: name = axis
+        }
+        return String(format: "%@ %+.1f", name, value)
+    }
+
+    func readingText(_ i: Int) -> String {
+        let hint = hints[i] ?? .init(), value = resolved[i] ?? .init()
+        return [axisText(hint.x, value: value.x, horizontal: true),
+                axisText(hint.y, value: value.y, horizontal: false)].joined(separator: " · ")
+    }
+
+    var body: some View {
+        let frames = frames
+        let numbered = !hints.isEmpty || !plan.isRegistered
+        VStack(alignment: .leading, spacing: 4) {
+            CapturePositionDiagram(frames: frames, cameraBody: cameraBody, orientation: bodyOrientation,
+                absolute: reference != nil, selected: reference?.sourceIndex, showsTravel: sensor != nil,
+                numbered: numbered, anchoredX: sensor != nil && resolved.values.contains { $0.x != nil },
+                anchoredY: sensor != nil && resolved.values.contains { $0.y != nil }, onSelect: onSelect)
+                .frame(height: 200).background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            if numbered {
+                Text(L10n.tr("panorama.shift.diagramReadings")).font(.caption).foregroundStyle(.secondary)
+                ForEach(frames.indices, id: \.self) { i in
+                    Button { onSelect(i) } label: {
+                        HStack {
+                            Text(String(i + 1)).fontWeight(.bold).foregroundStyle(CapturePositionDiagram.color(i))
+                            Text(frames[i].name).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Text(readingText(i)).monospacedDigit()
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain).font(.caption)
+                }
+            }
+        }
     }
 }

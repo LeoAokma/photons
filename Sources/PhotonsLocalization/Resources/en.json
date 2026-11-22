@@ -1,4 +1,5 @@
 {
+  "panorama.shift.diagramReadings": "Shift readings (mm) · ? = unknown",
   "panorama.shift.unknown": "Unknown",
   "panorama.shift.reading": "Specific value",
   "panorama.shift.leftMax": "Maximum left",
