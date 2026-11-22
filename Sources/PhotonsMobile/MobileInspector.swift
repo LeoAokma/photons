@@ -194,11 +194,21 @@ struct MobileInspector: View {
                 Toggle(L10n.tr("ipad.30122ff97c9a"), isOn: Binding(get: { model.edit.geometry.flipVertical }, set: { value in model.mutate(L10n.tr("3733e06a5224")) { if $0.geometry.flipVertical != value { $0.geometry = $0.geometry.remapped(for: .mirrorV) } } }))
                 direct(L10n.tr("7df1c3a41535"), \.geometry.rotationDegrees, -45...45)
             }
+            Section(L10n.tr("17e14283a497")) {
+                direct(L10n.tr("cfb8519677bc"), \.geometry.perspectiveVertical, -PerspectiveMap.limit...PerspectiveMap.limit)
+                direct(L10n.tr("1ebf0a707159"), \.geometry.perspectiveHorizontal, -PerspectiveMap.limit...PerspectiveMap.limit)
+                percent(L10n.tr("04684189cbd7"), \.geometry.perspectiveShear, -PerspectiveMap.shearLimit...PerspectiveMap.shearLimit)
+                percent(L10n.tr("adjust.aspectPercent"), \.geometry.perspectiveAspect, (1 / PerspectiveMap.aspectLimit)...PerspectiveMap.aspectLimit)
+            }
             Section(L10n.tr("ipad.460a1ef164d0")) {
                 crop(L10n.tr("ipad.58eb9032e3bb"), \.x); crop(L10n.tr("ipad.d5cdfcf7ff75"), \.y); crop(L10n.tr("ipad.3019947b6daf"), \.width); crop(L10n.tr("ipad.bfe2eca40179"), \.height)
                 Button(L10n.tr("ipad.994feef62ef2")) { model.mutate(L10n.tr("ipad.994feef62ef2")) { $0.geometry.crop = .full } }
             }
         }
+    }
+    private func percent(_ title: String, _ path: WritableKeyPath<EditModel, Double>, _ range: ClosedRange<Double>) -> some View {
+        MobileSlider(title: title, value: Binding(get: { model.edit[keyPath: path] * 100 }, set: { model.update(path, $0 / 100) }),
+                     range: (range.lowerBound * 100)...(range.upperBound * 100), step: 1) { model.commit(title) }
     }
     private func crop(_ title: String, _ path: WritableKeyPath<NormalizedRect, Double>) -> some View {
         MobileSlider(title: title, value: Binding(get: { model.edit.geometry.crop[keyPath: path] }, set: {

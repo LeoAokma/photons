@@ -15,3 +15,9 @@
 移植 chemharuka/photons b8894229（#489 的方向变换）。GeometryGroup 在旋转与镜像时同步重算裁切、引导线、透视和比例，Mac 菜单、裁切草稿及 iPad 方向控件使用同一算法。旧文件在下一次手动变换时生效，独立于 #450。
 
 本次 swift test --filter 'GeometryRemap489Tests|CropReentryAfterAspect450Tests' 的 13 项通过，11 英寸 iPad 模拟器 xcodebuild build 成功。未实机核验所有镜像组合。
+
+## ADJ-PERSPECTIVE
+
+iPad 变换页接入 Mac 与上游 861e5939（#502）既有的垂直、水平、剪切与宽高比校正，使用同一个 PerspectiveMap、文档、预览和导出管线。百分数对应模型的 0.01 步长。涉及 MobileInspector 和本地化，可独立回退。
+
+11 英寸 iPad 模拟器 build 成功。PerspectiveAspect408Tests 和 PerspectiveMapShear407Tests 共 12 项通过，PerspectiveRange347Tests 的范围、几何和可逆检查通过；其中旧像素金值测试五个 SHA 与本机渲染不符，保留原断言和记录。此提交没有改动渲染算法。
