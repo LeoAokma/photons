@@ -11,10 +11,14 @@ public enum ImageSourceDecoder {
         return UTType(type as String)?.conforms(to: .rawImage) == true
     }
 
+    /// Full-resolution dimensions in the upright coordinate space used by the edit graph.
     public static func size(at url: URL) throws -> ImageSize {
         if isRAW(url) {
-            let probe = try RAWDecoder().probe(url)
-            return ImageSize(width: probe.nativeWidth, height: probe.nativeHeight)
+            guard let initial = CIRAWFilter(imageURL: url) else { throw DecodeError.unsupportedFile(url) }
+            let filter = try LinearDNGCompatibility.filter(for: url, initial: initial)
+            let orientation = ImageOrientation(exifOrDefault: Int(filter.orientation.rawValue))
+            let upright = orientation.uprightSize(width: Int(filter.nativeSize.width), height: Int(filter.nativeSize.height))
+            return ImageSize(width: upright.width, height: upright.height)
         }
         let image = try raster(at: url)
         return ImageSize(width: Int(image.extent.width), height: Int(image.extent.height))

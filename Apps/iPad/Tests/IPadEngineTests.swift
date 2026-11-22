@@ -409,6 +409,40 @@ final class IPadEngineTests: XCTestCase {
         let remaining = try await reopened.photos(); XCTAssertEqual(remaining.count,3)
     }
 
+    func testPortraitRAWFitUsesUprightEditedDimensionsIncludingCachedPreviews() async throws {
+        let worker = engine()
+        for orientation in [1, 5, 6, 7, 8] {
+            let url = try makeFlat(name: "fit-\(orientation).dng", exposure: 1, orientation: orientation)
+            let photo = MobilePhoto(id: url.lastPathComponent, name: url.lastPathComponent, url: url,
+                                    rating: 0, width: 320, height: 240)
+            let upright = orientation == 1 ? ImageSize(width: 320, height: 240) : ImageSize(width: 240, height: 320)
+            XCTAssertEqual(try ImageSourceDecoder.size(at: url), upright)
+            var cropped = EditModel.neutral
+            cropped.geometry.quarterTurns = 1
+            cropped.geometry.crop = .init(x: 0, y: 0, width: 0.5, height: 1)
+            for edit in [EditModel.neutral, cropped] {
+                let expected = CropGeometry(geometry: edit.geometry, source: upright).canvas
+                let fresh = try await worker.frame(photo, edit: edit, hdr: true, edge: 160)
+                let reopened = engine()
+                let cached = try await reopened.frame(photo, edit: edit, hdr: false, edge: 160)
+                let renders = await reopened.renderCount
+                XCTAssertEqual(renders, 0)
+                for frame in [fresh, cached] {
+                    XCTAssertEqual(frame.fullSize, expected)
+                    XCTAssertEqual(frame.image.width * expected.height, frame.image.height * expected.width)
+                    let full = try XCTUnwrap(frame.fullSize)
+                    let view = CGSize(width: 794, height: 1090)
+                    let fit = MobileZoomGeometry.fit(pixels: CGSize(width: full.width, height: full.height),
+                                                    viewport: view, screenScale: 2)
+                    let drawnWidth = CGFloat(frame.image.width) * min(CGFloat(full.width) / CGFloat(frame.image.width),
+                        CGFloat(full.height) / CGFloat(frame.image.height)) * fit / 2
+                    XCTAssertEqual(drawnWidth, min(view.width, view.height * CGFloat(frame.image.width) / CGFloat(frame.image.height)),
+                                   accuracy: 1)
+                }
+            }
+        }
+    }
+
     func testZoomDetailMatchesEditedFullResolutionPixels() async throws {
         let engine = engine(), urls = try MobileSamples.create(in: folder.appendingPathComponent("detail-samples"))
         let photo = MobilePhoto(id: "detail",name: "detail",url: urls[0],rating: 0,width: 768,height: 512)
@@ -1089,7 +1123,7 @@ final class IPadEngineTests: XCTestCase {
         } catch { XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Exports").path)) }
     }
 
-    private func makeFlat(name: String, exposure: Float) throws -> URL {
+    private func makeFlat(name: String, exposure: Float, orientation: Int = 1) throws -> URL {
         let width = 320, height = 240
         let neutral: [Double] = [0.4,1,0.65]
         let pattern = [0,1,3,2], gains: [Float] = [0.4,1,0.65,1]
@@ -1099,7 +1133,7 @@ final class IPadEngineTests: XCTestCase {
             let falloff = Float(0.6) * exp(-1.6 * (dx*dx + dy*dy)) * exposure
             pixels[y*width+x] = falloff * gains[pattern[(y%2)*2+x%2]]
         } }
-        let mosaic = CameraMosaic(width: width,height: height,samples: pixels,pattern: pattern,
+        let mosaic = CameraMosaic(width: width,height: height,samples: pixels,pattern: pattern,orientation: orientation,
             neutral: neutral,matrix: [0.6468,-0.1899,-0.0545,-0.4526,1.2267,0.2542,-0.0388,0.1276,0.6096])
         let data = mosaic.dng().data
         let url = folder.appendingPathComponent(name)
