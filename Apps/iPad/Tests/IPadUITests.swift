@@ -752,6 +752,15 @@ final class IPadUITests: XCTestCase {
         update.tap()
         XCTAssertTrue(exportButton.wait(for: \.isEnabled, toEqual: true, timeout: 30))
         XCTAssertEqual(update.label, "Update alignment")
+        let softness = app.sliders["Seam softness"]
+        let initialSoftness = try XCTUnwrap(softness.value as? String)
+        softness.adjust(toNormalizedSliderPosition: 0.8)
+        XCTAssertNotEqual(softness.value as? String, initialSoftness)
+        XCTAssertFalse(exportButton.isEnabled)
+        softness.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).doubleTap()
+        XCTAssertEqual(softness.value as? String, initialSoftness)
+        XCTAssertEqual(exposureMatch.value as? String, "0")
+        XCTAssertTrue(exportButton.isEnabled)
         let crop = app.switches["panorama-crop-lcc"]
         if !crop.isHittable { scrollControls() }
         XCTAssertTrue(crop.exists)

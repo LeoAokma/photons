@@ -69,3 +69,9 @@ MobileSlider 的标题和拖条都支持双击，数值输入框保留文字编�
 移植 chemharuka/photons ab82f440、695eeb46 和 37d901bf（#452、#498、#496b）的自然饱和度/饱和度双轴求解与按钮。两端用同一套缩略测量迭代和高光通道裁剪护栏，手动改值或切图会丢弃过时结果。色彩核降低自然饱和度增益，因此单独升级色彩缓存版本，已有手动自然饱和度编辑也采用新曲线。依赖 ADJ-AUTOLIGHT 的测量与 iPad 提交入口。
 
 本次运行 AutoColor452Tests、AutoColor498Tests、两项共享键向量和 CacheVersionTests，23 项中 22 通过，1 项因外部样片缺失跳过。11 英寸模拟器通过 testAutoColorReMeasuresTheEditedPhotoAndLeavesToneAlone，实际重渲染合成照片，确认可独立改变色彩并保留明暗。未用上游私人库重标定。
+
+## ADJ-RESET-SEAM
+
+接片面板的接缝柔化此前没有单项复位。Mac 和 iPad 的标题、拖条现在都能恢复 PanoramaOptions 的默认柔化值。Mac 沿用接缝预览更新，iPad 沿用待应用选项并在恢复到当前预览时立即允许导出。依赖 ADJ-RESET-MAC、ADJ-RESET-IPAD，属于 fork 的交互适配，可独立回退。
+
+Mac 的 AdjustmentSliderTests 和 testSeamRefreshWaitsForCurrentGeometry 共四项通过。11 英寸 iPad 模拟器通过引导回归与 testGridInspectorSelectionAndPanoramaWorkflow，后者改柔化、双击轨道、检查仅柔化恢复且之前关闭的匹配曝光仍关闭，然后全尺寸导出并打开透视接片。未使用实体外接鼠标。

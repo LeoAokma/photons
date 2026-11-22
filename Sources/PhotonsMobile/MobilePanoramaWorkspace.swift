@@ -306,7 +306,9 @@ struct MobilePanoramaWorkspace: View {
                     } else { Text(String(format: L10n.tr("ipad.6f62f1f9443a"), sensorWidth, sensorHeight)).font(.caption) }
                     }
                     Toggle(L10n.tr("ipad.884e937d3d20"), isOn: $options.matchExposure)
-                    Slider(value: $options.seamSoftness, in: 0...20) { Text(L10n.tr("ipad.11b8fec683fe")) }
+                    MobileSlider(title: L10n.tr("ipad.11b8fec683fe"), value: $options.seamSoftness,
+                                 range: 0...20, reset: { options.seamSoftness = PanoramaOptions().seamSoftness },
+                                 commit: {}) // The Update seams button applies these staged options.
                 }.accessibilityElement(children: .contain).accessibilityIdentifier("panorama-alignment-options")
                     .id("panorama.alignment").mobileGuideTarget("panorama.alignment",in: guide)
                 Button(L10n.tr(previewStatus == .needsSeamUpdate ? "panorama.updateSeams" : "ipad.602ad77cd80f"), action: align)

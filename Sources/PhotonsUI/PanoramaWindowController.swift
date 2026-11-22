@@ -525,6 +525,13 @@ private struct PanoramaWorkspace: View {
             Text(L10n.tr("panorama.tone.hint")).font(.caption).foregroundStyle(.secondary)
         }.padding(12).disabled(model.busy)
     }
+    private func resetSeamSoftness() {
+        let original = PanoramaOptions().seamSoftness
+        guard model.options.seamSoftness != original else { return }
+        model.options.seamSoftness = original
+        model.refresh()
+    }
+
     private var inspector: some View {
         VStack(alignment:.leading,spacing:16) {
             Text(L10n.tr(model.registrationMode == .shift ? "e0a7acc067fd":"713e40499206")).font(.title2.bold())
@@ -543,7 +550,9 @@ private struct PanoramaWorkspace: View {
             Text(L10n.tr("panorama.deghost.hint")).font(.caption).foregroundStyle(.secondary)
             Toggle(L10n.tr("f332d17f7e09"),isOn:$model.options.matchExposure).onChange(of:model.options.matchExposure) { _,_ in model.refresh() }
             Text(L10n.tr("802a18c71f09")).font(.callout)
-            AdjustmentSlider(value:$model.options.seamSoftness,in:0...12,step:1,onEditingChanged:{ editing in if !editing { model.refresh() } })
+                .modifier(ResetOnDoubleClick(action: resetSeamSoftness))
+            AdjustmentSlider(value: $model.options.seamSoftness, in: 0...12, step: 1,
+                             onReset: resetSeamSoftness, onEditingChanged: { if !$0 { model.refresh() } })
             Picker(L10n.tr("f55043412c64"),selection:$model.options.preferredSource) {
                 Text(L10n.tr("db9773faa309")).tag(-1)
                 ForEach(Array(model.urls.enumerated()),id:\.offset) { i,url in Text(url.lastPathComponent).tag(i) }
