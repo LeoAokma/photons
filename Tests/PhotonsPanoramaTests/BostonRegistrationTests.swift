@@ -18,7 +18,9 @@ final class BostonRegistrationTests: XCTestCase {
         let profile = try profiles.load(LCCLensProfile.builtInID)
         let fields = try LCCCorrectionEngine.fields(profile)
         let engine = PanoramaEngine()
-        let prepared = try engine.prepareLCCImages(engine.analyze(urls: urls))
+        var deghost = PanoramaOptions()
+        deghost.avoidMotion = true
+        let prepared = try engine.prepareLCCImages(engine.analyze(urls: urls, options: deghost))
         let sensor = try XCTUnwrap(prepared.sources.first?.sensor)
         let position = try LCCPositionSolver.solve(plan: prepared, fields: fields, sensor: sensor, allowPairedFlats: false)
         let corrected = try engine.applyingLCC(prepared, profile: profile, fields: fields,

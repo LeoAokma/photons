@@ -94,6 +94,9 @@ final class PanoramaTests: XCTestCase {
         let background = CIImage(color:CIColor(red:0.2,green:0.2,blue:0.2)).cropped(to:bounds)
         let object = CIImage(color:CIColor(red:0.8,green:0.01,blue:0.01)).cropped(to:CGRect(x:40,y:30,width:40,height:40)).composited(over:background)
         let images = [object,background,background]
+        var deghost = PanoramaOptions()
+        XCTAssertFalse(deghost.avoidMotion)
+        deghost.avoidMotion = true
         let sources = try images.enumerated().map { i,image -> PanoramaSource in
             let url = dir.appendingPathComponent("\(i).png")
             try engine.context.writePNGRepresentation(of:image,to:url,format:.RGBA8,colorSpace:PanoramaEngine.linearSpace)
@@ -101,8 +104,9 @@ final class PanoramaTests: XCTestCase {
         }
         var plan = PanoramaPlan(sources:sources,origins:[.zero,.zero,.zero],size:bounds.size,
             registrationScores:[1,1,1],whiteBalance:nil,gains:[1,1,1],ownership:[],maskWidth:0,maskHeight:0,
-            optical:OpticalEstimate(center:nil,confidence:0,explanation:"",occludedEdges:[]),options:.init(),previewScale:1,previewImages:images,preview:nil)
+            optical:OpticalEstimate(center:nil,confidence:0,explanation:"",occludedEdges:[]),options:deghost,previewScale:1,previewImages:images,preview:nil)
         try PanoramaSeams.prepare(&plan,context:engine.context,cancellation:.init())
+        XCTAssertTrue(try PanoramaSnapshot(plan: plan).plan().options.avoidMotion)
         XCTAssertNotEqual(plan.ownership[50*plan.maskWidth+60],0,"Prefer the two clean observations over the transient red object")
         let weights = plan.blendMasks.map { $0.withUnsafeBytes { Array($0.bindMemory(to:Float.self)) } }
         for p in stride(from:0,to:plan.ownership.count,by:11) where plan.ownership[p] >= 0 {

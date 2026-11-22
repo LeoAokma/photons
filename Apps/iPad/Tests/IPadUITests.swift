@@ -734,9 +734,9 @@ final class IPadUITests: XCTestCase {
         scrollControls()
         let deghost = app.switches["panorama-deghost"]
         if !deghost.isHittable { scrollControls() }
-        XCTAssertEqual(deghost.value as? String, "1")
+        XCTAssertEqual(deghost.value as? String, "0")
         let exportButton = app.buttons["panorama-export"]
-        for expected in ["0", "1"] {
+        for expected in ["1", "0"] {
             deghost.tap()
             XCTAssertEqual(deghost.value as? String, expected)
             XCTAssertTrue(exportButton.wait(for: \.isEnabled, toEqual: true, timeout: 30))

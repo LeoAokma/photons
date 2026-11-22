@@ -112,7 +112,7 @@ public enum PanoramaRegistrationMode: String, Codable, Sendable {
 }
 
 public struct PanoramaOptions: Codable, Equatable {
-    public var avoidMotion = true
+    public var avoidMotion = false
     public var matchExposure = true
     public var seamSoftness = 6.0
     /// -1: automatic. Otherwise prefer this source through ambiguous overlap regions.

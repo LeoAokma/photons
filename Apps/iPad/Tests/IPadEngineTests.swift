@@ -69,12 +69,13 @@ final class IPadEngineTests: XCTestCase {
         let photos=urls.prefix(2).enumerated().map { MobilePhoto(id:"test-\($0.offset)",name:$0.element.lastPathComponent,url:$0.element,rating:0,width:768,height:512) }
         let plan=try await worker.analyze(photos,options:.init(),positions:[:],sensor:nil,cancellation:.init(),progress:{_,_ in})
         var options = plan.options
-        options.avoidMotion = false
-        let off = try await worker.updatePanorama(plan, options: options, cancellation: .init())
+        XCTAssertFalse(options.avoidMotion)
+        options.avoidMotion = true
+        let on = try await worker.updatePanorama(plan, options: options, cancellation: .init())
+        XCTAssertTrue(on.options.avoidMotion); XCTAssertEqual(on.origins, plan.origins)
+        let off = try await worker.updatePanorama(on, options: plan.options, cancellation: .init())
         XCTAssertFalse(off.options.avoidMotion);XCTAssertEqual(off.origins,plan.origins);XCTAssertEqual(off.size,plan.size)
         XCTAssertNotNil(off.preview)
-        let on = try await worker.updatePanorama(off, options: plan.options, cancellation: .init())
-        XCTAssertTrue(on.options.avoidMotion);XCTAssertEqual(on.origins,off.origins)
     }
     @MainActor
     func testCancelledRealignmentDoesNotAcceptAnOldPlan() async throws {
