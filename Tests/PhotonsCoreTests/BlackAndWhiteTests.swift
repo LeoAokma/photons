@@ -124,6 +124,26 @@ final class BlackAndWhiteTests: XCTestCase {
         return edit
     }
 
+    /// 314：neutral 现在真的过 S3.10，恒等类断言必须用 amount = 0 的文档。
+    /// 先例见 `LocalColorStageTests` 475 的 `unsharpened`：`amount = 0` 是「S3.10 不存在」的写法。
+    private static var unsharpened: EditModel {
+        var edit = EditModel.neutral
+        edit.sharpen = SharpenGroup(amount: 0, radius: 2.0, detail: 25, masking: 0)
+        return edit
+    }
+
+    private func unsharpenedDocument(blackAndWhite: Bool = true) -> EditModel {
+        var edit = Self.unsharpened
+        edit.color.blackAndWhite = blackAndWhite
+        return edit
+    }
+
+    private func unsharpenedDocument(mix band: Int, _ value: Double) -> EditModel {
+        var edit = unsharpenedDocument()
+        edit.color.bands[band].mix = value
+        return edit
+    }
+
     /// Mean code of one block of a three-block frame.
     private func blockMean(_ image: DisplayImage, _ block: Int) -> Double {
         let third = image.width / 3
@@ -299,13 +319,15 @@ final class BlackAndWhiteTests: XCTestCase {
         let graph = try makeGraph(image, identity: "bw-mix")
         // headroom 4 so the slider's whole travel stays measurable: +100 on a bright primary is above
         // white, and a frame that clipped at 1.0 could only be shown to be monotone up to the white point.
-        let base = try display(graph, document(), headroom: 4)
+        // 314：neutral 现在真的过 S3.10，恒等类断言必须用 amount = 0 的文档
+        // （先例：`LocalColorStageTests` 475 的 `unsharpened`）。
+        let base = try display(graph, unsharpenedDocument(), headroom: 4)
         let blocks = [0, 3, 5]                              // the bands red/green/blue sit on
         var report: [String] = []
         for (block, band) in blocks.enumerated() {
             var codes: [Int] = []
             for value in [-100.0, -50, 0, 50, 100] {
-                let out = try display(graph, document(mix: band, value), headroom: 4)
+                let out = try display(graph, unsharpenedDocument(mix: band, value), headroom: 4)
                 codes.append(Self.code(Float16(blockMean(out, block))))
                 // The two blocks that are not this band's colour must be untouched — bit-exact.
                 for other in 0..<3 where other != block {
@@ -355,7 +377,9 @@ final class BlackAndWhiteTests: XCTestCase {
     func testTheKernelAgreesWithTheCPUReference() throws {
         let image = hueWheel(height: 6, L: 0.52, C: 0.11)
         let graph = try makeGraph(image, identity: "bw-cpu")
-        var edit = document()
+        // 314：neutral 现在真的过 S3.10，恒等类断言必须用 amount = 0 的文档
+        // （先例：`LocalColorStageTests` 475 的 `unsharpened`）。
+        var edit = unsharpenedDocument()
         edit.color.bands = (0..<8).map { HSLBand(mix: Double(40 - $0 * 6)) }
         let actual = try display(graph, edit)
 
@@ -422,8 +446,8 @@ final class BlackAndWhiteTests: XCTestCase {
                                              display: DisplayOptions())
             XCTAssertNil(links.bw)
             XCTAssertEqual(links.pipeline.filter { $0 == .bw }, [])
-            XCTAssertEqual(links.pipeline, RenderStage.allCases,
-                           "a colour document's chain is exactly the unconditional stages")
+            XCTAssertEqual(links.pipeline, StageChainShape.resting(),
+                           "a colour document's chain is the unconditional stages + 314's S3.10")
             // `RenderInputs.key` must not grow a segment — otherwise every cached thumbnail misses once
             // (the 076/派单-042 rule).
             XCTAssertFalse(RenderInputs(edit).key.contains("s3.4-bw"),
@@ -461,8 +485,12 @@ final class BlackAndWhiteTests: XCTestCase {
         XCTAssertEqual(link, KeyBuilder(KeyBuilder.digest(of: plain.color))
             .add("bw").add(document().keyMaterial(.bw)).canonical,
                        "S3.4 is seeded by S3's key, not by the vignette's")
-        XCTAssertEqual(Array(bw.pipeline.dropFirst(4).prefix(2)), [.toneMap, .color])
-        XCTAssertEqual(Array(bw.pipeline.suffix(3)), [.color, .bw, .display])
+        XCTAssertEqual(bw.pipeline, StageChainShape.resting([.bw]))
+        let toneMapIndex = try XCTUnwrap(bw.pipeline.firstIndex(of: .toneMap))
+        XCTAssertEqual(bw.pipeline[(toneMapIndex + 1)...].first, .color,
+                       "S3 still follows S2 (483 moved 锐化 below S1, not out of the chain)")
+        XCTAssertEqual(Array(bw.pipeline.suffix(2)), [.bw, .display],
+                       "483: 锐化搬去 S2.9 之后，S3.4 仍是 S4 之前的最后一个算术 pass")
         XCTAssertEqual(bw.pipeline.count, plain.pipeline.count + 1)
         XCTAssertNotEqual(bw.vignette, plain.vignette, "the vignette reads the grey, so its key must move")
 

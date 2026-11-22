@@ -138,6 +138,21 @@ final class HSLTests: XCTestCase {
         return edit
     }
 
+    /// 314：neutral 现在真的过 S3.10，恒等类断言必须用 amount = 0 的文档。
+    /// 先例见 `LocalColorStageTests` 475 的 `unsharpened`：`amount = 0` 是「S3.10 不存在」的写法。
+    private static var unsharpened: EditModel {
+        var edit = EditModel.neutral
+        edit.sharpen = SharpenGroup(amount: 0, radius: 2.0, detail: 25, masking: 0)
+        return edit
+    }
+
+    private func unsharpenedDocument(_ band: Int, hue: Double = 0, saturation: Double = 0,
+                                     luminance: Double = 0) -> EditModel {
+        var edit = Self.unsharpened
+        edit.color.bands[band] = HSLBand(hue: hue, saturation: saturation, luminance: luminance)
+        return edit
+    }
+
     // MARK: - ① the space
 
     /// OKLab is the graph's own fold (075's Rec.2020 derivation), so the published sRGB values are the
@@ -367,8 +382,8 @@ final class HSLTests: XCTestCase {
         XCTAssertEqual(both, [.localColor, .hsl], "S3.5 then S3.6, in `RenderStage.order`'s order")
         XCTAssertNotNil(result.keys.localColor)
         let hslLink = try XCTUnwrap(result.keys.hsl)
-        XCTAssertEqual(Array(result.keys.pipeline.suffix(4)),
-                       [.color, .localColor, .hsl, .display])
+        XCTAssertEqual(result.keys.pipeline,
+                       StageChainShape.resting([.maskAtlas, .localApply, .localColor, .hsl]))
         XCTAssertNotEqual(result.keys.vignette, KeyBuilder.digest(of: hslLink),
                           "the vignette link is H(hsl | effects), so it cannot be the hsl link itself")
         print("HSL BOTH · " + result.keys.shortTrace)
@@ -395,7 +410,7 @@ final class HSLTests: XCTestCase {
                                          canvas: dims, content: dims,
                                          edit: allBands(0, 0, 0), display: DisplayOptions())
         XCTAssertNil(links.hsl, "no hsl link without a band value")
-        XCTAssertEqual(links.pipeline, RenderStage.allCases)
+        XCTAssertEqual(links.pipeline, StageChainShape.resting())
         print("HSL NEUTRAL · trace \(result.trace.csv) · sha \(pixels.sha256().prefix(12))… = neutral")
     }
 
@@ -414,8 +429,9 @@ final class HSLTests: XCTestCase {
                                           content: ImageSize(width: 64, height: 64),
                                           edit: EditModel.neutral, display: DisplayOptions())
         let link = try XCTUnwrap(links.hsl)
-        XCTAssertEqual(links.pipeline, RenderStage.pipeline(hasMasks: false, hasHSL: true))
-        XCTAssertEqual(Array(links.pipeline.suffix(3)), [.color, .hsl, .display])
+        XCTAssertEqual(links.pipeline, StageChainShape.resting([.hsl]))
+        XCTAssertEqual(Array(links.pipeline.suffix(2)), [.hsl, .display],
+                       "483: 锐化搬去 S2.9 之后，S3.6 仍是 S4 之前的最后一个算术 pass")
         XCTAssertEqual(link, KeyBuilder(KeyBuilder.digest(of: plain.color))
             .add("hsl").add(withBand.keyMaterial(.hsl)).canonical,
                        "S3.6 must be seeded by S3's key, not by the vignette's")
@@ -456,8 +472,10 @@ final class HSLTests: XCTestCase {
         // Left half red, right half blue.
         let image = picture(64, 32) { x, _ in x < 32 ? (red.x, red.y, red.z) : (blue.x, blue.y, blue.z) }
         let graph = try makeGraph(image, identity: "076-isolation")
-        let neutral = try display(graph, EditModel.neutral)
-        let moved = try display(graph, document(0, hue: 100, saturation: 60, luminance: 30))
+        // 314：neutral 现在真的过 S3.10，恒等类断言必须用 amount = 0 的文档
+        // （先例：`LocalColorStageTests` 475 的 `unsharpened`）。
+        let neutral = try display(graph, Self.unsharpened)
+        let moved = try display(graph, unsharpenedDocument(0, hue: 100, saturation: 60, luminance: 30))
 
         func codes(_ img: DisplayImage, x: Int, y: Int) -> (Int, Int, Int) {
             let o = (y * img.width + x) * 4

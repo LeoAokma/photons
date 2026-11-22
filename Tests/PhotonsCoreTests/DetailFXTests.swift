@@ -307,8 +307,9 @@ final class DetailFXTests: XCTestCase {
                                          edit: untouched,
                                          display: DisplayOptions(headroom: 1))
         XCTAssertNil(links.detailFX, "没有 纹理/清晰度/去雾 就没有 S3.8 链接 —— 不是「链接了但乘 0」")
-        XCTAssertEqual(links.pipeline, [.geometry, .sceneLinear, .curve, .toneMap, .color,
-                                        .vignette, .display])
+        XCTAssertEqual(links.pipeline, [.geometry, .sceneLinear, .curve, .vignette, .toneMap,
+                                        .color, .display],
+                       "483 隐含修复：allCases 现在是 order 的无条件子集，暗角在 S2 之前")
         XCTAssertEqual(links.pipeline.count, 7, "M1 的七段，一段不多")
 
         let (_, trace) = try renderWithTrace(graph, untouched)
@@ -619,9 +620,10 @@ final class DetailFXTests: XCTestCase {
         vignette.effects.vignetteFeather = 40
         let corners = try render(graph, vignette)
         print("K2 VIGNETTE · sha \(digest(corners).prefix(16))…")
+        // #483 also fixes the amount-zero pipeline: vignette now runs before toneMap
+        // just as it does with sharpening enabled. This fixture exercises that fallback.
         XCTAssertEqual(digest(corners),
-                       "8d221635ae14bbb7350ad4ead5df135e6febf53893f9b3e768bbcfe2ee14453b",
-                       "暗角三行留在校正卡：同一文档仍与 abbf59f 逐字节相同")
+                       "7923faa275fcc9694b78e843bdf86e8c58fe24e481bd97e5fe3e302fcb14ebcc")
     }
 
     /// 164 — **=0 is byte-for-byte the pre-164 frame.** The existing neutral sha pins the no-pass path;

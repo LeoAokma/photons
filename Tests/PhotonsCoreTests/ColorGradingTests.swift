@@ -163,6 +163,26 @@ final class ColorGradingTests: XCTestCase {
         return edit
     }
 
+    /// 314：neutral 现在真的过 S3.10，恒等类断言必须用 amount = 0 的文档。
+    /// 先例见 `LocalColorStageTests` 475 的 `unsharpened`：`amount = 0` 是「S3.10 不存在」的写法。
+    private static var unsharpened: EditModel {
+        var edit = EditModel.neutral
+        edit.sharpen = SharpenGroup(amount: 0, radius: 2.0, detail: 25, masking: 0)
+        return edit
+    }
+
+    private func unsharpenedDocument(_ direction: Int, hue: Double = 0, saturation: Double = 0,
+                                     lightness: Double = 0) -> EditModel {
+        var edit = Self.unsharpened
+        let wheel = GradeWheel(hue: hue, saturation: saturation, lightness: lightness)
+        switch direction {
+        case 0: edit.colorGrading.shadows = wheel
+        case 1: edit.colorGrading.midtones = wheel
+        default: edit.colorGrading.highlights = wheel
+        }
+        return edit
+    }
+
     private static let directionNames = ["阴影", "中间调", "高光"]
 
     // MARK: - ① the windows
@@ -363,8 +383,10 @@ final class ColorGradingTests: XCTestCase {
     func testAShadowOnlyDocumentLeavesTheHighlightZoneUntouched() throws {
         let image = Self.bands()
         let graph = try makeGraph(image, identity: "grade-isolation")
-        let neutral = try display(graph, EditModel.neutral)
-        let moved = try display(graph, document(0, hue: -70, saturation: 80, lightness: 50))
+        // 314：neutral 现在真的过 S3.10，恒等类断言必须用 amount = 0 的文档
+        // （先例：`LocalColorStageTests` 475 的 `unsharpened`）。
+        let neutral = try display(graph, Self.unsharpened)
+        let moved = try display(graph, unsharpenedDocument(0, hue: -70, saturation: 80, lightness: 50))
         let (changed, total) = Self.changedPixels(neutral, moved, rows: 64..<96)
         let (shadowChanged, _) = Self.changedPixels(neutral, moved, rows: 0..<32)
         let (midChanged, midTotal) = Self.changedPixels(neutral, moved, rows: 32..<64)
@@ -466,7 +488,7 @@ final class ColorGradingTests: XCTestCase {
                                          canvas: dims, content: dims,
                                          edit: EditModel.neutral, display: DisplayOptions())
         XCTAssertNil(links.grade, "中性文档的键链不得长出新段")
-        XCTAssertEqual(links.pipeline, RenderStage.allCases)
+        XCTAssertEqual(links.pipeline, StageChainShape.resting())
         print("GRADE NEUTRAL · trace \(plain.trace.csv) · sha \(pixels.sha256().prefix(12))…")
     }
 
@@ -482,8 +504,9 @@ final class ColorGradingTests: XCTestCase {
                                          canvas: dims, content: dims,
                                          edit: EditModel.neutral, display: DisplayOptions())
         let link = try XCTUnwrap(links.grade)
-        XCTAssertEqual(links.pipeline, RenderStage.pipeline(hasMasks: false, hasGrade: true))
-        XCTAssertEqual(Array(links.pipeline.suffix(3)), [.color, .grade, .display])
+        XCTAssertEqual(links.pipeline, StageChainShape.resting([.grade]))
+        XCTAssertEqual(Array(links.pipeline.suffix(2)), [.grade, .display],
+                       "483: 锐化搬去 S2.9 之后，S3.8 仍是 S4 之前的最后一个算术 pass")
         XCTAssertEqual(link, KeyBuilder(KeyBuilder.digest(of: plain.color))
             .add("grade").add(graded.keyMaterial(.grade)).canonical,
                        "S3.8 必须由 S3 的键种下（没有 HSL/黑白/局部色时）")
@@ -500,7 +523,8 @@ final class ColorGradingTests: XCTestCase {
         let links = RenderKeyChain.links(identity: "grade-both", sourceSize: dims,
                                          canvas: dims, content: dims,
                                          edit: edit, display: DisplayOptions())
-        XCTAssertEqual(Array(links.pipeline.suffix(4)), [.color, .hsl, .grade, .display])
+        XCTAssertEqual(links.pipeline, StageChainShape.resting([.hsl, .grade]))
+        XCTAssertEqual(Array(links.pipeline.suffix(3)), [.hsl, .grade, .display])
         XCTAssertEqual(try XCTUnwrap(links.grade),
                        KeyBuilder(KeyBuilder.digest(of: try XCTUnwrap(links.hsl)))
                         .add("grade").add(edit.keyMaterial(.grade)).canonical)
@@ -608,7 +632,10 @@ final class ColorGradingTests: XCTestCase {
     func testTheKernelAgreesWithTheCPUReference() throws {
         let image = Self.bands(width: 24, bandHeight: 8)
         let graph = try makeGraph(image, identity: "grade-cpu")
-        var edit = EditModel.neutral
+        // 314/483：neutral 现在真的过锐化（483 之后在 S2.9，位于 S3.8 之前），恒等类断言必须用 amount = 0 的文档
+        // （先例：`LocalColorStageTests` 475 的 `unsharpened`；484 把这条换成套件 helper，483 的内联写法与之等价，
+        // 合并取 helper 以保持「一处定义」）。
+        var edit = Self.unsharpened
         edit.colorGrading.shadows = GradeWheel(hue: -35, saturation: 60, lightness: 20)
         edit.colorGrading.midtones = GradeWheel(hue: 15, saturation: -30, lightness: -10)
         edit.colorGrading.highlights = GradeWheel(hue: 70, saturation: 20, lightness: 5)
