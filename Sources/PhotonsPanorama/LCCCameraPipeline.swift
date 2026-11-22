@@ -165,17 +165,56 @@ struct LCCClippedColorMap {
         let base=fallback ?? SIMD3(1,1,1)
         var sums=[SIMD3<Double>](repeating:.zero,count:width*height),counts=[Int](repeating:0,count:width*height)
         let step=max(2,(raw.width/400)/2*2)
-        for y in stride(from:0,to:raw.height-1,by:step) {for x in stride(from:0,to:raw.width-1,by:step) {
-            var c=SIMD4<Float>.zero
-            var clipped=false
-            for site in 0..<4 {let p=(y+site/2)*raw.width+x+site%2;c[raw.pattern[site]]=raw.samples[p];clipped = clipped || (raw.clipping?[p] ?? 0)>0}
-            guard !clipped,c.max()<0.95,c.min()>0.001 else {continue}
-            c *= gain.gain((Double(x)+1)/Double(raw.width),(Double(y)+1)/Double(raw.height))
-            let green=Double(c.y+c.w)/2
-            guard green>0.03 else {continue}
-            let p=min(height-1,y*height/raw.height)*width+min(width-1,x*width/raw.width)
-            sums[p] += SIMD3(log(Double(c.x)/green),0,log(Double(c.z)/green));counts[p] += 1
-        }}
+        // A clipped channel needs the colour of a highlight. Dark objects next to it can
+        // have clean but unrelated ratios. Use the brightest available stop of sensor
+        // measurements, before spatial gain, so the correction cannot promote a shadow.
+        func reference(x: Int, y: Int, atLeast minimum: Float) -> (level: Float, corrected: SIMD4<Float>)? {
+            var sample = SIMD4<Float>.zero
+            for site in 0..<4 {
+                let index = (y + site / 2) * raw.width + x + site % 2
+                if (raw.clipping?[index] ?? 0) > 0 { return nil }
+                sample[raw.pattern[site]] = raw.samples[index]
+            }
+            let level = sample.max()
+            guard level >= minimum, level < 0.95, sample.min() > 0.001 else { return nil }
+            // The four Bayer sites sample adjacent positions. A block astride a
+            // silhouette can measure red on one object and blue on another.
+            // Compare each site to the same colour in surrounding blocks before using its ratio.
+            for dy in stride(from: -2, through: 2, by: 2) {
+                for dx in stride(from: -2, through: 2, by: 2) where dx != 0 || dy != 0 {
+                    let nx = x + dx, ny = y + dy
+                    guard nx >= 0, ny >= 0, nx + 1 < raw.width, ny + 1 < raw.height else { continue }
+                    for site in 0..<4 {
+                        let index = (ny + site / 2) * raw.width + nx + site % 2
+                        let neighbor = raw.samples[index], center = sample[raw.pattern[site]]
+                        guard (raw.clipping?[index] ?? 0) == 0, neighbor < 0.95,
+                              abs(neighbor - center) <= 0.25 * max(neighbor, center) else { return nil }
+                    }
+                }
+            }
+            let corrected = sample * gain.gain((Double(x) + 1) / Double(raw.width),
+                                               (Double(y) + 1) / Double(raw.height))
+            guard (corrected.y + corrected.w) / 2 > 0.03 else { return nil }
+            return (level, corrected)
+        }
+        let rows = stride(from: 0, to: raw.height - 1, by: step)
+        let columns = stride(from: 0, to: raw.width - 1, by: step)
+        var brightest: Float = 0
+        for y in rows {
+            for x in columns {
+                if let sample = reference(x: x, y: y, atLeast: brightest) { brightest = sample.level }
+            }
+        }
+        let threshold = brightest / 2
+        for y in rows {
+            for x in columns {
+                guard let sample = reference(x: x, y: y, atLeast: threshold) else { continue }
+                let c = sample.corrected, green = Double(c.y + c.w) / 2
+                let cell = (y * height / raw.height) * width + x * width / raw.width
+                sums[cell] += SIMD3(log(Double(c.x) / green), 0, log(Double(c.z) / green))
+                counts[cell] += 1
+            }
+        }
         let initial=SIMD3(log(base.x),0,log(base.z))
         colors=sums.indices.map {counts[$0]>0 ? sums[$0]/Double(counts[$0]):initial}
         var known=counts.map {$0>0},queue=known.indices.filter {known[$0]},cursor=0

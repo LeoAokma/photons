@@ -97,6 +97,39 @@ final class LCCCameraTests:XCTestCase {
         XCTAssertEqual(empty.neutral(0.5, 0.5).z, neutral.z, accuracy: 0.00001)
     }
 
+    func testClippedHighlightsUseBrightReferencesAcrossDarkForegrounds() throws {
+        var raw = fixture()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).dng")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try raw.dng().data.write(to: url)
+        let source = try PanoramaSource(url: url)
+        var flat = profile()
+        let count = flat.captures[0].grid.floats.count
+        flat.captures[0].grid.values = LCCMeasurementGrid.pack(Array(repeating: 1, count: count))
+        let field = try LCCCorrectionField(profile: flat, orientation: .landscape)
+        let gain = LCCCameraGainMap(field: field, source: source, origin: .zero, panoramaSize: source.size,
+                                    sensor: SensorSize(width: 36, height: 24, source: "test"), offset: .zero)
+
+        // Two different light sources with a dark, differently coloured foreground crossing each.
+        for ratios in [SIMD4<Float>(0.36, 1, 0.78, 1), SIMD4<Float>(1.35, 1, 0.55, 1)] {
+            for referencePeak: Float in [0.22, 0.74] {
+                for y in 0..<raw.height {
+                    for x in 0..<raw.width {
+                        let channel = raw.pattern[y % 2 * 2 + x % 2]
+                        let inHighlight = abs(x - raw.width / 2) < 40 && abs(y - raw.height / 2) < 40
+                        let signal = inHighlight ? ratios[channel] * 1.5 : ratios[channel] * referencePeak / ratios.max()
+                        let foreground = inHighlight && x >= raw.width / 2
+                        raw.samples[y * raw.width + x] = foreground ? [0.08, 0.05, 0.04, 0.05][channel] : min(1, signal)
+                    }
+                }
+                let map = LCCClippedColorMap(raw: raw, gain: gain, fallback: neutral)
+                let recovered = map.neutral(0.48, 0.5)
+                XCTAssertEqual(recovered.x, Double(ratios.x), accuracy: 0.015)
+                XCTAssertEqual(recovered.z, Double(ratios.z), accuracy: 0.015)
+            }
+        }
+    }
+
     func testSensorClippingRecoveryDoesNotTintUnclippedPixels() {
         let original=SIMD4<Float>(0.7,0.5,0.3,0.5),corrected=original*2
         XCTAssertEqual(LCCCameraPipeline.recoverClipped(original:original,corrected:corrected,neutral:neutral),corrected)
