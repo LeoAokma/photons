@@ -51,3 +51,9 @@ iPad 变换页接入 Mac 与上游 861e5939（#502）既有的垂直、水平、
 为 NSSlider 添加 AppKit 双击识别，拖条与参数名称共用同一个逐项复位动作。覆盖主检查器、白平衡、修复控件以及接片曝光/高光，保留原有单击、拖动、键盘和数值输入。双击的第一次按下不会额外提交一次调节，撤销可直接回到双击前。独立实现，没有外部移植，可单独回退。
 
 本次 PHOTONS_LANGUAGE=zh-Hans swift test --filter 'AdjustmentSliderTests|PanelResetTests|PanelResetScopeTests' 通过。实际向 AppKit 窗口发送轨道上的两次鼠标事件，检查只触发一次复位且没有拖动提交；既有键盘、辅助功能、卡片和参数作用域测试也通过。未使用实体触控板手工测试。
+
+## ADJ-RESET-IPAD
+
+MobileSlider 的标题和拖条都支持双击，数值输入框保留文字编辑。曝光、锐化、降噪、色彩、透视与裁切按各自文档默认值复位；白平衡和 RAW 解码参数清除单项覆盖，回到相机默认。接片曝光和 HDR 高光只复位所触及的一项。文档修改沿用现有渲染、保存和撤销。依赖 ADJ-NOISE-IPAD 和 ADJ-PERSPECTIVE 提供对应行；手势是 fork 原创。
+
+11 英寸 iPad 模拟器通过 testDoubleTapExposureTrackAndTitleResetOnlyExposureAndUndoRestoresIt 和竖屏调整底栏回归。真实 UI 先改色温再改曝光，双击轨道归零、一次撤销回到之前曝光，双击标题再次归零，全程色温不变。未在实体外接鼠标上复测。

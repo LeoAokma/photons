@@ -111,10 +111,11 @@ struct MobileInspector: View {
     private func rows(_ title: String, _ controls: [DevelopControl]) -> some View {
         Section(title) {
             ForEach(controls) { row in
+                let reset = { model.mutate(L10n.tr("87a894ed1aec", row.title)) { $0[keyPath: row.keyPath] = row.defaultValue } }
                 MobileSlider(title: row.title, value: Binding(get: { model.edit[keyPath: row.keyPath] }, set: { model.update(row.keyPath, $0) }),
                              range: row.range, step: row.quantum > 0 ? row.quantum : (row.range.upperBound <= 3 ? 0.01 : 0.1),
-                             commit: { model.commit(row.title) })
-                    .contextMenu { Button(L10n.tr("panorama.tone.reset")) { model.mutate(L10n.tr("87a894ed1aec", String(describing: (row.title)))) { $0[keyPath: row.keyPath] = row.defaultValue } } }
+                             reset: reset, commit: { model.commit(row.title) })
+                    .contextMenu { Button(L10n.tr("panorama.tone.reset"), action: reset) }
                     .accessibilityIdentifier("adjust-\(row.id)")
             }
         }
@@ -122,8 +123,10 @@ struct MobileInspector: View {
     private var adjustments: some View {
         Group {
             Section(L10n.tr("ipad.5631553e4ddc")) {
-                MobileSlider(title: L10n.tr("84ac609620e5"), value: Binding(get: { model.edit.light.temperature ?? model.frame?.rawControls?.asShot.temperature ?? 6500 }, set: { model.edit.light.temperature = min(TemperatureScale.kelvinRange.upperBound, max(TemperatureScale.kelvinRange.lowerBound, $0.isFinite ? $0 : 6500)); model.render() }), range: TemperatureScale.kelvinRange, step: 50) { model.commit(L10n.tr("ipad.5631553e4ddc")) }
-                MobileSlider(title: L10n.tr("5bddf6a1c0f5"), value: Binding(get: { model.edit.light.tint ?? model.frame?.rawControls?.asShot.tint ?? 0 }, set: { model.edit.light.tint = $0; model.render() }), range: -150...150) { model.commit(L10n.tr("5bddf6a1c0f5")) }
+                MobileSlider(title: L10n.tr("84ac609620e5"), value: Binding(get: { model.edit.light.temperature ?? model.frame?.rawControls?.asShot.temperature ?? 6500 }, set: { model.edit.light.temperature = min(TemperatureScale.kelvinRange.upperBound, max(TemperatureScale.kelvinRange.lowerBound, $0.isFinite ? $0 : 6500)); model.render() }), range: TemperatureScale.kelvinRange, step: 50,
+                             reset: { model.mutate(L10n.tr("84ac609620e5")) { $0.light.temperature = nil } }) { model.commit(L10n.tr("ipad.5631553e4ddc")) }
+                MobileSlider(title: L10n.tr("5bddf6a1c0f5"), value: Binding(get: { model.edit.light.tint ?? model.frame?.rawControls?.asShot.tint ?? 0 }, set: { model.edit.light.tint = $0; model.render() }), range: -150...150,
+                             reset: { model.mutate(L10n.tr("5bddf6a1c0f5")) { $0.light.tint = nil } }) { model.commit(L10n.tr("5bddf6a1c0f5")) }
                 Button(L10n.tr("ipad.fcc834176527")) { model.mutate(L10n.tr("ipad.fcc834176527")) { $0.light.temperature = nil; $0.light.tint = nil } }
             }
             rows(L10n.tr("ipad.lightAdjustments"), DevelopControls.lightRows)
@@ -155,7 +158,8 @@ struct MobileInspector: View {
                 }, set: {
                     model.edit.detailSettings.setPosition($0, axis, in: raw.baseline)
                     model.render()
-                }), range: axis.range, step: axis.step) { model.commit(axis.title) }
+                }), range: axis.range, step: axis.step,
+                    reset: { model.mutate(axis.title) { $0.detailSettings[axis] = nil } }) { model.commit(axis.title) }
                 .disabled(!raw.axes.isEnabled(axis))
                 .accessibilityIdentifier("raw-detail-\(axis.rawValue)")
             }
@@ -165,7 +169,8 @@ struct MobileInspector: View {
             }, set: {
                 model.edit.detailSettings.setMoirePosition($0, in: raw.baseline)
                 model.render()
-            }), range: DetailSettings.moireRange, step: 1) { model.commit(title) }
+            }), range: DetailSettings.moireRange, step: 1,
+                reset: { model.mutate(title) { $0.detailSettings.moire = nil } }) { model.commit(title) }
             .disabled(!raw.axes.moire)
         }
     }
@@ -197,7 +202,8 @@ struct MobileInspector: View {
         }
     }
     private func colorSlider(_ title: String, index: Int, path: WritableKeyPath<HSLBand, Double>) -> some View {
-        MobileSlider(title: title, value: Binding(get: { model.edit.color.bands[index][keyPath: path] }, set: { model.edit.color.bands[index][keyPath: path] = $0; model.render() }), range: -100...100) { model.commit("HSL \(title)") }
+        MobileSlider(title: title, value: Binding(get: { model.edit.color.bands[index][keyPath: path] }, set: { model.edit.color.bands[index][keyPath: path] = $0; model.render() }), range: -100...100,
+                     reset: { model.mutate(title) { $0.color.bands[index][keyPath: path] = HSLBand()[keyPath: path] } }) { model.commit("HSL \(title)") }
     }
     private func grading(_ title: String, path: WritableKeyPath<EditModel, GradeWheel>) -> some View {
         Section(L10n.tr("ipad.fdeaad6643b3", String(describing: (title)))) {
@@ -207,7 +213,8 @@ struct MobileInspector: View {
         }
     }
     private func direct(_ title: String, _ path: WritableKeyPath<EditModel, Double>, _ range: ClosedRange<Double>) -> some View {
-        MobileSlider(title: title, value: Binding(get: { model.edit[keyPath: path] }, set: { model.update(path, $0) }), range: range) { model.commit(title) }
+        MobileSlider(title: title, value: Binding(get: { model.edit[keyPath: path] }, set: { model.update(path, $0) }), range: range,
+                     reset: { model.mutate(title) { $0[keyPath: path] = EditModel.neutral[keyPath: path] } }) { model.commit(title) }
     }
     private var transforms: some View {
         Group {
@@ -233,13 +240,19 @@ struct MobileInspector: View {
     }
     private func percent(_ title: String, _ path: WritableKeyPath<EditModel, Double>, _ range: ClosedRange<Double>) -> some View {
         MobileSlider(title: title, value: Binding(get: { model.edit[keyPath: path] * 100 }, set: { model.update(path, $0 / 100) }),
-                     range: (range.lowerBound * 100)...(range.upperBound * 100), step: 1) { model.commit(title) }
+                     range: (range.lowerBound * 100)...(range.upperBound * 100), step: 1,
+                     reset: { model.mutate(title) { $0[keyPath: path] = EditModel.neutral[keyPath: path] } }) { model.commit(title) }
     }
     private func crop(_ title: String, _ path: WritableKeyPath<NormalizedRect, Double>) -> some View {
         MobileSlider(title: title, value: Binding(get: { model.edit.geometry.crop[keyPath: path] }, set: {
             model.edit.geometry.crop[keyPath: path] = $0
             model.edit.geometry.crop = model.edit.geometry.crop.clamped(); model.render()
-        }), range: title == L10n.tr("ipad.3019947b6daf") || title == L10n.tr("ipad.bfe2eca40179") ? 0.01...1 : 0...0.99, step: 0.01) { model.commit(L10n.tr("e9f8face2f69")) }
+        }), range: title == L10n.tr("ipad.3019947b6daf") || title == L10n.tr("ipad.bfe2eca40179") ? 0.01...1 : 0...0.99, step: 0.01, reset: {
+            model.mutate(title) { edit in
+                edit.geometry.crop[keyPath: path] = NormalizedRect.full[keyPath: path]
+                edit.geometry.crop = edit.geometry.crop.clamped()
+            }
+        }) { model.commit(L10n.tr("e9f8face2f69")) }
     }
     private var history: some View {
         Section(L10n.tr("5467922dce50")) {
@@ -258,18 +271,24 @@ struct MobileSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var step: Double = 0.1
+    var reset: () -> Void
     var commit: () -> Void
     var body: some View {
         let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
         VStack(spacing: 6) {
             HStack {
                 Text(title).font(.caption)
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2, perform: reset)
                 TextField(title, value: $value, format: .number.precision(.fractionLength(0...2)))
                     .font(.caption.monospacedDigit()).multilineTextAlignment(.trailing).frame(width: 72)
                     .keyboardType(.numbersAndPunctuation).onSubmit { value = min(range.upperBound, max(range.lowerBound, value.isFinite ? value : 0)); commit() }
             }
-            Slider(value: $value, in: range, step: step, onEditingChanged: { editing in if !editing { commit() } }).accessibilityLabel(title)
+            Slider(value: $value, in: range, step: step, onEditingChanged: { editing in if !editing { commit() } })
+                .highPriorityGesture(TapGesture(count: 2).onEnded { reset() })
+                .accessibilityLabel(title)
+                .accessibilityAction(named: Text(L10n.tr("panorama.tone.reset")), reset)
         }.padding(.vertical, 3)
     }
 }

@@ -189,14 +189,19 @@ struct MobilePanoramaWorkspace: View {
                 Divider()
                 VStack(spacing: 6) {
                     HStack(alignment: .center,spacing: 20) {
-                        MobileSlider(title: L10n.tr("ipad.81aa08939843"),value: toneBinding(\.exposureEV),range: -4...4,step: 0.05,commit: {})
+                        MobileSlider(title: L10n.tr("ipad.81aa08939843"),value: toneBinding(\.exposureEV),range: -4...4,step: 0.05,
+                                     reset: { toneBinding(\.exposureEV).wrappedValue = PanoramaToneSettings.panoramaDefault.exposureEV }, commit: {})
                             .accessibilityIdentifier("panorama-exposure")
                         MobileSlider(title: L10n.tr("panorama.tone.highlights"),value: Binding(get: {
                             log2(model.plan?.tone.highlightHeadroom ?? 4)
                         },set: { value in
                             var tone = model.plan?.tone ?? .panoramaDefault
                             tone.highlightHeadroom = pow(2,min(4,max(0,value.isFinite ? value : 2))); model.setPanoramaTone(tone)
-                        }),range: 0...4,step: 0.1,commit: {}).accessibilityIdentifier("panorama-hdr-brightness")
+                        }),range: 0...4,step: 0.1,reset: {
+                            guard var tone = model.plan?.tone else { return }
+                            tone.highlightHeadroom = PanoramaToneSettings.panoramaDefault.highlightHeadroom
+                            model.setPanoramaTone(tone)
+                        },commit: {}).accessibilityIdentifier("panorama-hdr-brightness")
                         Button(L10n.tr("panorama.tone.reset")) { model.setPanoramaTone(.panoramaDefault) }
                             .disabled(model.plan?.tone == .panoramaDefault).accessibilityIdentifier("reset-panorama-brightness")
                     }

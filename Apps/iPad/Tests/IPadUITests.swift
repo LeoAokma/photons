@@ -232,6 +232,39 @@ final class IPadUITests: XCTestCase {
         XCTAssertEqual(first.value as? String,"Not selected")
     }
     @MainActor
+    func testDoubleTapExposureTrackAndTitleResetOnlyExposureAndUndoRestoresIt() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"
+        XCUIDevice.shared.orientation = .landscapeLeft
+        app.launch()
+        let photo = app.buttons["photo-Sample-01.tiff"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 45))
+        photo.doubleTap()
+        let slider = app.sliders["adjust-light.exposure"]
+        let title = app.staticTexts["adjust-light.exposure"].firstMatch
+        let field = app.textFields["adjust-light.exposure"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 10))
+        let initial = try XCTUnwrap(field.value as? String)
+        let temperature = app.sliders["Temperature"]
+        temperature.adjust(toNormalizedSliderPosition: 0.3)
+        let whiteBalance = temperature.value as? String
+        slider.adjust(toNormalizedSliderPosition: 0.65)
+        let edited = try XCTUnwrap(field.value as? String)
+        XCTAssertNotEqual(initial, edited)
+        // Tap away from the thumb so a spurious first-click edit would also appear in Undo.
+        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.22, dy: 0.5)).doubleTap()
+        XCTAssertEqual(field.value as? String, initial)
+        XCTAssertEqual(temperature.value as? String, whiteBalance)
+        app.buttons["undo-edit"].tap()
+        XCTAssertEqual(field.value as? String, edited)
+        title.doubleTap()
+        XCTAssertEqual(field.value as? String, initial)
+        XCTAssertEqual(temperature.value as? String, whiteBalance)
+    }
+
+    @MainActor
     func testPortraitAdjustmentsDockBelowLivePhotoAndFollowRotation() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
