@@ -44,6 +44,41 @@ final class BostonRegistrationTests: XCTestCase {
         print("591–592 post-LCC", corrected.outputSize, "coverage", lcc.coveredFraction)
     }
 
+    func testBoston604Through607WithHorizontalStopsOrImageEvidenceAlone() throws {
+        guard let path = ProcessInfo.processInfo.environment["PHOTONS_BOSTON_DIR"] else {
+            throw XCTSkip("Set PHOTONS_BOSTON_DIR for Boston 604–607")
+        }
+        let root = URL(fileURLWithPath: path)
+        // Independent feature matches in the oriented, 1536-pixel-wide camera previews.
+        let measured: [(Int, Int, CGPoint)] = [
+            (604, 605, CGPoint(x: -1268.32, y: -2.59)), (604, 607, CGPoint(x: -0.85, y: 976.68)),
+            (605, 606, CGPoint(x: -2.07, y: 975.51)), (606, 607, CGPoint(x: 1269.35, y: 0.99))
+        ]
+        for (reversed, guided) in [(false, false), (false, true), (true, false)] {
+            try autoreleasepool {
+                let ids = reversed ? Array((604...607).reversed()) : Array(604...607)
+                let urls = ids.map { root.appendingPathComponent(String(format: "B%07d.3FR", $0)) }
+                var hints: [Int: PanoramaShiftPosition] = [:]
+                if guided {
+                    for (i, id) in ids.enumerated() { hints[i] = .init(x: [605, 606].contains(id) ? -18 : 18) }
+                }
+                let plan = try PanoramaEngine().analyze(urls: urls, shiftHints: hints)
+                XCTAssertTrue(plan.isRegistered)
+                XCTAssertNotNil(plan.preview)
+                XCTAssertNil(plan.warps)
+                let scale = 1536 / plan.sources[0].size.width
+                let origins = Dictionary(uniqueKeysWithValues: zip(ids, plan.origins))
+                for (a, b, expected) in measured {
+                    let first = try XCTUnwrap(origins[a]), second = try XCTUnwrap(origins[b])
+                    XCTAssertEqual((second.x-first.x)*scale, expected.x, accuracy: 2)
+                    XCTAssertEqual((second.y-first.y)*scale, expected.y, accuracy: 2)
+                }
+                let restored = try PanoramaSnapshot(plan: plan).plan()
+                XCTAssertEqual(restored.origins, plan.origins)
+            }
+        }
+    }
+
     func testBostonStripsAndConfirmedGroups() throws {
         guard let path = ProcessInfo.processInfo.environment["PHOTONS_BOSTON_DIR"] else {
             throw XCTSkip("Set PHOTONS_BOSTON_DIR to the external Boston RAW fixtures")

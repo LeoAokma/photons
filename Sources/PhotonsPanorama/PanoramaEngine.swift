@@ -63,6 +63,15 @@ public final class PanoramaEngine {
         }
         struct Edge { let a: Int; let b: Int; let transform: PanoramaTransform; let score: Double; var probes: [CGPoint] = [] }
         var edges: [Edge] = []
+        func addTranslation(_ match: TranslationRegistration.Match, a: Int, b: Int) {
+            let initial = CGPoint(x:match.offset.x*Double(grays[a].width)/Double(coarse[a].width),
+                                  y:match.offset.y*Double(grays[a].height)/Double(coarse[a].height))
+            let anchors = match.anchors.map { CGPoint(x:$0.x*Double(grays[a].width)/Double(coarse[a].width),
+                                                      y:$0.y*Double(grays[a].height)/Double(coarse[a].height)) }
+            let refined = TranslationRegistration.refine(grays[a],grays[b],offset:initial,radius:2,anchors:anchors)
+            guard refined.score > 0.7 else { return }
+            edges.append(Edge(a:a,b:b,transform:.translation(CGPoint(x:refined.offset.x/scale,y:refined.offset.y/scale)),score:refined.score))
+        }
         let positions = knownPositions.mapValues(PanoramaShiftPosition.init).merging(shiftHints) { _, hint in hint }
         if registrationMode == .shift {
         for a in 0..<sources.count-1 { for b in a+1..<sources.count {
@@ -73,25 +82,33 @@ public final class PanoramaEngine {
                 match = try TranslationRegistration.align(coarse[a], coarse[b], expected: pb.difference(from: pa, pixelsPerMM: scale),
                                                           radius: max(scale.width, scale.height) * 1.5, cancellation: cancellation)
             } else { match = try TranslationRegistration.align(coarse[a], coarse[b], cancellation: cancellation) }
-            if let match {
-                let initial = CGPoint(x:match.offset.x*Double(grays[a].width)/Double(coarse[a].width),
-                                      y:match.offset.y*Double(grays[a].height)/Double(coarse[a].height))
-                let anchors = match.anchors.map { CGPoint(x:$0.x*Double(grays[a].width)/Double(coarse[a].width),
-                                                          y:$0.y*Double(grays[a].height)/Double(coarse[a].height)) }
-                let refined = TranslationRegistration.refine(grays[a],grays[b],offset:initial,radius:2,anchors:anchors)
-                if refined.score > 0.7 {
-                    edges.append(Edge(a:a,b:b,transform:.translation(CGPoint(x:refined.offset.x/scale,y:refined.offset.y/scale)),score:refined.score))
-                }
-            }
+            if let match { addTranslation(match, a: a, b: b) }
         }}
         }
-        func connected() -> Bool {
-            var reached:Set<Int>=[0]
-            for _ in sources.indices {for edge in edges where reached.contains(edge.a) || reached.contains(edge.b) {reached.insert(edge.a);reached.insert(edge.b)}}
-            return reached.count==sources.count
+        func components() -> [Int] {
+            var labels = Array(sources.indices)
+            for edge in edges where labels[edge.a] != labels[edge.b] {
+                let old = labels[edge.b], new = labels[edge.a]
+                for i in labels.indices where labels[i] == old { labels[i] = new }
+            }
+            return labels
+        }
+        let groups = components()
+        var disconnected = Set(groups).count > 1
+        if registrationMode == .shift && disconnected {
+            // Only retry pairs bridging disconnected groups. Check every independent bridge
+            // so the loop consistency check can corroborate the resulting placement.
+            for a in 0..<sources.count-1 { for b in a+1..<sources.count where groups[a] != groups[b] {
+                try cancellation.check()
+                progress(L10n.tr("ffa317474694", String(a+1), String(b+1)))
+                if let match = try TranslationRegistration.verifiedOverlap(coarse[a], coarse[b], distributed: true, cancellation: cancellation) {
+                    addTranslation(match, a: a, b: b)
+                }
+            }}
+            disconnected = Set(components()).count > 1
         }
         var projective=false
-        if registrationMode == .perspective || !connected() {
+        if registrationMode == .perspective || disconnected {
             for a in 0..<sources.count-1 {for b in a+1..<sources.count where !edges.contains(where:{$0.a==a && $0.b==b}) {
                 try cancellation.check()
                 progress(L10n.tr("panorama.geometry",String(a+1),String(b+1)))

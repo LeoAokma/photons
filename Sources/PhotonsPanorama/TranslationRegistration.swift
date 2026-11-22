@@ -196,9 +196,8 @@ enum TranslationRegistration {
         // Search a strip when only one displacement is known. Verify with image evidence across
         // the overlap before accepting a restricted match, since the scale reading can be wrong.
         for distributed in [false, true] {
-            if let guided = try featureMatch(a, b, distributed: distributed, expected: expected, radius: radius,
-                                             cancellation: cancellation),
-               guided.inliers >= 10, correlation(a, b, offset: guided.offset) > 0.7 {
+            if let guided = try verifiedOverlap(a, b, distributed: distributed, expected: expected, radius: radius,
+                                                cancellation: cancellation) {
                 return guided
             }
         }
@@ -207,6 +206,15 @@ enum TranslationRegistration {
             return try align(a, b, near: point, radius: radius, cancellation: cancellation)
         }
         return nil
+    }
+
+    static func verifiedOverlap(_ a: GrayRaster, _ b: GrayRaster, distributed: Bool,
+                                expected: PanoramaShiftPosition = .init(), radius: Double = 0,
+                                cancellation: PanoramaCancellation) throws -> Match? {
+        guard let match = try featureMatch(a, b, distributed: distributed, expected: expected,
+                                           radius: radius, cancellation: cancellation),
+              match.inliers >= 10, correlation(a, b, offset: match.offset) > 0.7 else { return nil }
+        return match
     }
 
     /// Bounded image search around measured shift differences. A measurement supplies a
