@@ -1,4 +1,5 @@
 {
+  "adjust.rawDetail": "RAW 解码细节",
   "adjust.autoCrop": "自动裁切",
   "adjust.autoCrop.help": "旋转或透视校正后，裁去画面边缘的空白区域。",
   "adjust.aspectPercent": "宽高比校正（%）",

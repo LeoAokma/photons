@@ -21,10 +21,16 @@ struct MobilePhoto: Identifiable, Sendable {
     var width: Int
     var height: Int
 }
+struct MobileRAWControls: Codable, Equatable, Sendable {
+    let axes: DetailAxes
+    let baseline: DetailBaseline
+    let asShot: WhiteBalance
+}
 struct MobileFrame: @unchecked Sendable {
     var image: CGImage
     var histogram: Histogram?
     var fullSize: ImageSize? = nil
+    var rawControls: MobileRAWControls? = nil
 }
 struct MobileExportSettings: Sendable {
     var format = "heic"
@@ -58,6 +64,7 @@ actor MobileEngine {
     private var graph: RenderGraph?
     private var sourceSizes: [URL: ImageSize] = [:]
     private var graphKey = ""
+    private var graphRAWControls: MobileRAWControls?
     private var graphSize = ImageSize(width: 1, height: 1)
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let previewContext = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!, .cacheIntermediates: false])
@@ -179,7 +186,7 @@ actor MobileEngine {
         // Persisted display pixels must follow shared decoder and render algorithm upgrades,
         // even when the source file and the user's edit values are unchanged.
         let generation = "\(DecodeRecipe.current):\(StageAlgorithmVersion.graphVersion)"
-        return SHA256.hash(data: Data("ipad-v4-pair:\(generation):\(photo.id):\(source):\(edge):".utf8) + data)
+        return SHA256.hash(data: Data("ipad-v5-pair:\(generation):\(photo.id):\(source):\(edge):".utf8) + data)
             .map { String(format: "%02x", $0) }.joined()
     }
     func frame(_ photo: MobilePhoto, edit: EditModel, hdr: Bool, edge: Int = 1600) throws -> MobileFrame {
@@ -196,7 +203,9 @@ actor MobileEngine {
         guard let display = pixels.display else { throw MobileError.message(L10n.tr("ipad.fa4fb4d75cac")) }
         let fullSize = CropGeometry(geometry: edit.geometry,source: try sourceSizes[photo.url] ?? ImageSourceDecoder.size(at: photo.url)).canvas
         let snapshot = pixels.histogramSample.map { HistogramSnapshot(sample: $0,canvas: fullSize) }
-        let pair = try makePair(display,snapshot: snapshot,fullSize: fullSize)
+        var pair = try makePair(display,snapshot: snapshot,fullSize: fullSize)
+        pair.sdr.rawControls = graphRAWControls
+        pair.hdr.rawControls = graphRAWControls
         if thumbnail { thumbnailCache.put(pair,key: key) } else { photoCache.put(pair,key: key) }
         if edge > 0 && edge <= 2048 { writePreview(pair,key: key) }
         return pair.frame(hdr: hdr)
@@ -239,11 +248,13 @@ actor MobileEngine {
         let key = signature + inputs.key + ":\(scale)"
         if graphKey != key || graph == nil {
             graph = nil
+            graphRAWControls = nil
             let image: LinearImage
             let input: RenderInput
             if ImageSourceDecoder.isRAW(url) {
                 let result = try RAWDecoder().decodeDetailed(url, options: .init(decoderVersion: inputs.decoderVersion,
                     scale: scale, whiteBalance: inputs.whiteBalance, detail: inputs.detail))
+                graphRAWControls = MobileRAWControls(axes: result.capabilities.detailAxes, baseline: result.detailBaseline, asShot: result.asShotWhiteBalance)
                 image = result.image
                 input = RenderInput(image: image, identity: key, sourceURL: url, lensProfile: result.lensProfile,
                                     whiteBalance: inputs.whiteBalance, asShotPair: result.asShotWhiteBalance)

@@ -218,7 +218,7 @@ public enum LinearColorSpace: String, Sendable, CaseIterable {
 /// knows v9's two dead axes and nothing else, so v8's own dead luminance NR / detail and v8.dng's
 /// reshuffled set are reported as "all live". It must never be read as a capability claim;
 /// `DecoderCapabilities.detailAxesProvenance` says which of the two answered.
-public struct DetailAxes: Sendable, Equatable {
+public struct DetailAxes: Sendable, Equatable, Codable {
 
     public var nr: Bool
     public var cnr: Bool

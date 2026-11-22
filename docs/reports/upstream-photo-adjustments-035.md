@@ -39,3 +39,9 @@ iPad 变换页接入 Mac 与上游 861e5939（#502）既有的垂直、水平、
 移植 chemharuka/photons c19825a9、16aa3d32 和 ae9ab88c，使用其 MIT NonlocalMatchFilter 694d505 源码。原先对所有照片固定使用 0.70 强度；现有 Mac 模型降噪任务按当前 RAW 实测噪声求取强度。两端包引用同一版本，原有模型与权重继续使用。此改动独立，可连同两个 lockfile 一起回退。
 
 本次 NLMFDenoiseJobTests 10/10 通过，包括模型加载、打包位置和自动强度设置；11 英寸 iPad 模拟器 build 成功。该提交更新已有模型任务，未在实体 iPad 运行全尺寸推理。
+
+## ADJ-NOISE-IPAD
+
+把 fork 与上游共用的 DetailSettings / CIRAWFilter 五项解码调整接入 iPad，依据为 upstream/main 37d901bf 的 InspectorView.detailCard。亮度/色彩降噪、解码细节、解码锐化及去摩尔纹读取当前 RAW 的真实支持标记和默认值。MobileEngine 把这些值及拍摄白平衡写入预览缓存；SDR/HDR、缩略图、重启后的磁盘命中都能正确显示，普通位图不会出现 RAW 参数。旧预览按需更新。独立于模型降噪。
+
+11 英寸模拟器上 testRAWControlDefaultsAndCapabilitiesSurvivePreviewCache 和 testZoomDetailMatchesEditedFullResolutionPixels 均通过。新生成 DNG 的控件值逐项对照实际解码，再验证复用磁盘预览时渲染次数为零。未在实体机覆盖所有相机型号。

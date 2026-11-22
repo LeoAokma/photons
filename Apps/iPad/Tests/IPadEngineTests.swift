@@ -409,6 +409,22 @@ final class IPadEngineTests: XCTestCase {
         let remaining = try await reopened.photos(); XCTAssertEqual(remaining.count,3)
     }
 
+    func testRAWControlDefaultsAndCapabilitiesSurvivePreviewCache() async throws {
+        let worker = engine()
+        let url = try makeFlat(name: "raw-controls.dng", exposure: 1)
+        let photo = MobilePhoto(id: "raw", name: "raw", url: url, rating: 0, width: 320, height: 240)
+        let reference = try RAWDecoder().decodeDetailed(url, options: .init(scale: 0.5))
+        let fresh = try await worker.frame(photo, edit: .neutral, hdr: true, edge: 160)
+        let reopened = engine()
+        let cached = try await reopened.frame(photo, edit: .neutral, hdr: false, edge: 160)
+        XCTAssertEqual(fresh.rawControls?.axes, reference.capabilities.detailAxes)
+        XCTAssertEqual(fresh.rawControls?.baseline, reference.detailBaseline)
+        XCTAssertEqual(cached.rawControls?.asShot, reference.asShotWhiteBalance)
+        XCTAssertEqual(fresh.rawControls, cached.rawControls)
+        let renders = await reopened.renderCount
+        XCTAssertEqual(renders, 0)
+    }
+
     func testPortraitRAWFitUsesUprightEditedDimensionsIncludingCachedPreviews() async throws {
         let worker = engine()
         for orientation in [1, 5, 6, 7, 8] {

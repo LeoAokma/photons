@@ -122,13 +122,14 @@ struct MobileInspector: View {
     private var adjustments: some View {
         Group {
             Section(L10n.tr("ipad.5631553e4ddc")) {
-                MobileSlider(title: L10n.tr("84ac609620e5"), value: Binding(get: { model.edit.light.temperature ?? 6500 }, set: { model.edit.light.temperature = min(TemperatureScale.kelvinRange.upperBound, max(TemperatureScale.kelvinRange.lowerBound, $0.isFinite ? $0 : 6500)); model.render() }), range: TemperatureScale.kelvinRange, step: 50) { model.commit(L10n.tr("ipad.5631553e4ddc")) }
-                MobileSlider(title: L10n.tr("5bddf6a1c0f5"), value: Binding(get: { model.edit.light.tint ?? 0 }, set: { model.edit.light.tint = $0; model.render() }), range: -150...150) { model.commit(L10n.tr("5bddf6a1c0f5")) }
+                MobileSlider(title: L10n.tr("84ac609620e5"), value: Binding(get: { model.edit.light.temperature ?? model.frame?.rawControls?.asShot.temperature ?? 6500 }, set: { model.edit.light.temperature = min(TemperatureScale.kelvinRange.upperBound, max(TemperatureScale.kelvinRange.lowerBound, $0.isFinite ? $0 : 6500)); model.render() }), range: TemperatureScale.kelvinRange, step: 50) { model.commit(L10n.tr("ipad.5631553e4ddc")) }
+                MobileSlider(title: L10n.tr("5bddf6a1c0f5"), value: Binding(get: { model.edit.light.tint ?? model.frame?.rawControls?.asShot.tint ?? 0 }, set: { model.edit.light.tint = $0; model.render() }), range: -150...150) { model.commit(L10n.tr("5bddf6a1c0f5")) }
                 Button(L10n.tr("ipad.fcc834176527")) { model.mutate(L10n.tr("ipad.fcc834176527")) { $0.light.temperature = nil; $0.light.tint = nil } }
             }
             rows(L10n.tr("ipad.lightAdjustments"), DevelopControls.lightRows)
             rows(L10n.tr("e40fffdb9798"), DevelopControls.colorRows)
             rows(L10n.tr("ipad.d489ea05c935"), DevelopControls.textureClarityRows)
+            if let raw = model.frame?.rawControls { rawDetail(raw) }
             rows(L10n.tr("ipad.906770cf4616"), DevelopControls.nonBayerRows)
             rows(L10n.tr("fc538f246da7"), DevelopControls.sharpenRows)
             rows(L10n.tr("da89443e202b"), DevelopControls.vignetteRows)
@@ -144,6 +145,28 @@ struct MobileInspector: View {
                     Button(L10n.tr("ipad.83b12c2216ef")) { model.setRating(0) }.font(.caption)
                 }
             }
+        }
+    }
+    private func rawDetail(_ raw: MobileRAWControls) -> some View {
+        Section(L10n.tr("adjust.rawDetail")) {
+            ForEach(DetailAxis.panelOrder, id: \.self) { axis in
+                MobileSlider(title: axis.title, value: Binding(get: {
+                    model.edit.detailSettings.position(axis, in: raw.baseline)
+                }, set: {
+                    model.edit.detailSettings.setPosition($0, axis, in: raw.baseline)
+                    model.render()
+                }), range: axis.range, step: axis.step) { model.commit(axis.title) }
+                .disabled(!raw.axes.isEnabled(axis))
+                .accessibilityIdentifier("raw-detail-\(axis.rawValue)")
+            }
+            let title = L10n.tr("c6b72ac37f82")
+            MobileSlider(title: title, value: Binding(get: {
+                model.edit.detailSettings.moirePosition(in: raw.baseline)
+            }, set: {
+                model.edit.detailSettings.setMoirePosition($0, in: raw.baseline)
+                model.render()
+            }), range: DetailSettings.moireRange, step: 1) { model.commit(title) }
+            .disabled(!raw.axes.moire)
         }
     }
     private var colors: some View {

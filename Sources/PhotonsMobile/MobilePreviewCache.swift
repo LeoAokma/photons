@@ -48,6 +48,7 @@ struct MobileCachedPreview: Codable {
     var bitmapInfo: UInt32
     var headroom: Float
     var histogram: Histogram?
+    var rawControls: MobileRAWControls?
     var fullSize: ImageSize?
     var pixels: Data
     init(_ frame: MobileFrame) throws {
@@ -56,6 +57,7 @@ struct MobileCachedPreview: Codable {
         width = image.width; height = image.height; rowBytes = image.bytesPerRow
         bitmapInfo = image.bitmapInfo.rawValue; headroom = image.contentHeadroom; histogram = frame.histogram
         fullSize = frame.fullSize
+        rawControls = frame.rawControls
         let input = bytes as Data
         var compressed = Data(count: input.count + 4096)
         let count = compressed.withUnsafeMutableBytes { output in
@@ -86,7 +88,7 @@ struct MobileCachedPreview: Codable {
                 bitmapInfo: CGBitmapInfo(rawValue: bitmapInfo),provider: provider,decode: nil,shouldInterpolate: true,intent: .defaultIntent) else {
             throw MobileError.message(L10n.tr("ipad.cab1190e041a"))
         }
-        return MobileFrame(image: image,histogram: histogram,fullSize: fullSize)
+        return MobileFrame(image: image,histogram: histogram,fullSize: fullSize,rawControls: rawControls)
     }
 }
 

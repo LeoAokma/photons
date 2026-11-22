@@ -429,7 +429,7 @@ public enum DetailAxis: String, CaseIterable, Sendable, Hashable {
 ///
 /// Not a constant: it is per file and per decoder version, and it is what puts the default position
 /// of each slider on the body's own numbers instead of a nominal 0.5 or a hard-coded 50.
-public struct DetailBaseline: Sendable, Equatable {
+public struct DetailBaseline: Sendable, Equatable, Codable {
 
     public var luminanceNR: Double
     public var colorNR: Double
