@@ -205,12 +205,14 @@ private struct LCCAlignmentView:View {
     private func positionControl(_ axis: Axis, length: CGFloat) -> some View {
         let horizontal = axis == .horizontal
         let value = horizontal ? $model.x : $model.y
+        let reset = { value.wrappedValue = 0 }
         let name = L10n.tr(horizontal ? "98ab61de3e93" : "5e9009b476b1")
         let layout = horizontal ? AnyLayout(HStackLayout(spacing: 8)) : AnyLayout(VStackLayout(spacing: 6))
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         return layout {
             Text(verbatim: horizontal ? "X (mm)" : "Y (mm)").font(.caption.weight(.medium))
-            AdjustmentSlider(value: value, in: -100...100, axis: axis)
+                .modifier(ResetOnDoubleClick(action: reset))
+            AdjustmentSlider(value: value, in: -100...100, axis: axis, onReset: reset)
                 .frame(width: horizontal ? length : nil, height: horizontal ? nil : length)
                 .accessibilityLabel(name)
             TextField(name, value: value, format: .number.precision(.fractionLength(2)))

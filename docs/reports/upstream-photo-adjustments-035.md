@@ -75,3 +75,9 @@ MobileSlider 的标题和拖条都支持双击，数值输入框保留文字编�
 接片面板的接缝柔化此前没有单项复位。Mac 和 iPad 的标题、拖条现在都能恢复 PanoramaOptions 的默认柔化值。Mac 沿用接缝预览更新，iPad 沿用待应用选项并在恢复到当前预览时立即允许导出。依赖 ADJ-RESET-MAC、ADJ-RESET-IPAD，属于 fork 的交互适配，可独立回退。
 
 Mac 的 AdjustmentSliderTests 和 testSeamRefreshWaitsForCurrentGeometry 共四项通过。11 英寸 iPad 模拟器通过引导回归与 testGridInspectorSelectionAndPanoramaWorkflow，后者改柔化、双击轨道、检查仅柔化恢复且之前关闭的匹配曝光仍关闭，然后全尺寸导出并打开透视接片。未使用实体外接鼠标。
+
+## ADJ-RESET-LCC
+
+Mac 手动 LCC 浮动拖条的标题与轨道支持复位所选轴，以中立位置 0 mm 为默认值。另一轴保留已调数值，沿用现有异步生成预览与应用流程。涉及 LCCAlignmentWindowController，依赖 ADJ-RESET-MAC；不涉及 LCC 计算，可独立回退。
+
+本次运行 AdjustmentSliderTests、testPositionSlidersOverlayTheirPhotoEdgesAndTrackRightAndUp 和 testApplyTransfersVisibleManualPreviewAndExportsItsCropAndPixels，共五项通过。实际拖动两轴后验证各自复位不改变另一轴，预览完成后可以应用；另用合成样片导出 TIFF 对照预览像素。未重复测量外部 RAW 库。

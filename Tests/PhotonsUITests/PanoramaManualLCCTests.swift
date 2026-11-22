@@ -230,6 +230,16 @@ final class PanoramaManualLCCTests: XCTestCase {
         try drag(XCTUnwrap(sliders.first { $0.isVertical }), by: CGVector(dx: 0, dy: 30))
         XCTAssertGreaterThan(controller.model.y, 0)
         XCTAssertEqual(controller.model.x, manualX)
+        let manualY = controller.model.y
+        let x = try XCTUnwrap(sliders.first { !$0.isVertical } as? AdjustmentNSSlider)
+        let y = try XCTUnwrap(sliders.first { $0.isVertical } as? AdjustmentNSSlider)
+        try XCTUnwrap(x.onReset)()
+        XCTAssertEqual(controller.model.x, 0)
+        XCTAssertEqual(controller.model.y, manualY)
+        controller.model.x = manualX
+        try XCTUnwrap(y.onReset)()
+        XCTAssertEqual(controller.model.y, 0)
+        XCTAssertEqual(controller.model.x, manualX)
         try await wait { !controller.model.working }
         XCTAssertTrue(controller.model.canApply)
     }
