@@ -93,3 +93,30 @@ Mac 手动 LCC 浮动拖条的标题与轨道支持复位所选轴，以中立�
 应用内第三方说明仍标注旧远程 1.0.0 包。更新为实际编入的 chemharuka/nonlocal-matchfilter-swift 694d505，并注明 GRDB.swift 的独立锁定版本。仅更新 iPad 资源文字，依赖 ADJ-NOISE 的依赖切换，可独立回退。
 
 iPad 通用设备 Release 编译成功，cmp 确认成品与源码中的 ThirdPartyNotices.txt 逐字节相同，用 Python 校验内附 MIT 条款与 Vendor/nonlocal-matchfilter-swift/LICENSE 完整一致、版本与 VENDORED.md 匹配。没有运行实体设备。
+
+## 交付索引
+
+| 追踪编号 | 提交 | 可独立验收的变化 |
+| --- | --- | --- |
+| ADJ-CROP | `a787e6af` | 透视照片重开裁切时保留已保存的边界 |
+| ADJ-GEOMETRY | `2c44a378` | 旋转与镜像时同步更新透视、引导线和裁切 |
+| ADJ-PERSPECTIVE | `0b528166` | iPad 四轴透视调整 |
+| ADJ-AUTOCROP | `bd35be5b` | 两端按有效图像边界自动裁切 |
+| ADJ-SHARP | `f6c01929` | 将锐化放在局部蒙版之前 |
+| ADJ-NOISE | `c47cdad4` | Mac 模型降噪按实测噪声设置强度 |
+| ADJ-NOISE-IPAD | `cbc5ce06` | iPad 按当前 RAW 解码器提供降噪、锐化等参数和默认值 |
+| ADJ-RESET-MAC | `d6467e28` | Mac 双击调节项名称或轨道单项复位 |
+| ADJ-RESET-IPAD | `309115a7` | iPad 双击调节项名称或轨道单项复位 |
+| ADJ-AUTOLIGHT | `f32a19af` | 自动明暗测量和两端入口 |
+| ADJ-AUTOCOLOR | `f2b347e0` | 两端自动颜色与色彩缓存版本 |
+| ADJ-RESET-SEAM | `c1631492` | 两端接缝柔化单项复位 |
+| ADJ-RESET-LCC | `e526beae` | Mac 手动 LCC 单轴复位 |
+| ADJ-AUTO-VERIFY | `679603e6` | 用本地测试图库验证 Mac 自动颜色历史与撤销 |
+| ADJ-NOISE-NOTICE | `0832f6b8` | iPad 内置第三方说明对应实际编入的模型库版本 |
+
+## ADJ-VERIFY 最终验证
+
+- Mac 的照片调整、降噪、裁切、缓存和交互定向回归共 149 项，142 通过，7 跳过，0 失败。跳过项涉及外部 RAW 样片、显式启用的标定与计时。上述 ADJ-PERSPECTIVE 单列的旧整帧 SHA 差异仍存在于此前的验证记录中，未改写这五个金值。
+- 11 英寸 iPad 模拟器最终回归六项全部通过，覆盖自动明暗、自动颜色、RAW 缓存、全分辨率细节、曝光单项复位与撤销、竖屏调整栏。随后增加的接片引导和完整拼接导出 UI 回归两项也通过。
+- `swift build -c release` 和通用 arm64 iPadOS 设备的 `xcodebuild -configuration Release build` 均成功。两端产物都为 0.3.5（8），位于 `local/out/studio-035-upstream-adjustments/` 下的 Mac 与 iPadOS 目录。两个包内的 Core ML 模型权重逐字节相同。
+- Mac 应用通过 `codesign --verify --deep --strict`，用 Launch Services 从新打包的应用启动并定时正常退出。iPad 设备包在本地以 `CODE_SIGNING_ALLOWED=NO` 编译，交互在模拟器验证。本次验证日志保存在 `local/out/upstream-adjust-035/`。
