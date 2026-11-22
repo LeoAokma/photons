@@ -190,8 +190,8 @@ struct MobileInspector: View {
         Group {
             Section(L10n.tr("slices.orientation")) {
                 Button(L10n.tr("ipad.fb594c58c73d"), systemImage: "rotate.right") { model.mutate(L10n.tr("0cf81e4c2481")) { _ = $0.turn(clockwise: true) } }
-                Toggle(L10n.tr("ipad.9692a0ce7511"), isOn: Binding(get: { model.edit.geometry.flipHorizontal }, set: { value in model.mutate(L10n.tr("3733e06a5224")) { $0.geometry.flipHorizontal = value } }))
-                Toggle(L10n.tr("ipad.30122ff97c9a"), isOn: Binding(get: { model.edit.geometry.flipVertical }, set: { value in model.mutate(L10n.tr("3733e06a5224")) { $0.geometry.flipVertical = value } }))
+                Toggle(L10n.tr("ipad.9692a0ce7511"), isOn: Binding(get: { model.edit.geometry.flipHorizontal }, set: { value in model.mutate(L10n.tr("3733e06a5224")) { if $0.geometry.flipHorizontal != value { $0.geometry = $0.geometry.remapped(for: .mirrorH) } } }))
+                Toggle(L10n.tr("ipad.30122ff97c9a"), isOn: Binding(get: { model.edit.geometry.flipVertical }, set: { value in model.mutate(L10n.tr("3733e06a5224")) { if $0.geometry.flipVertical != value { $0.geometry = $0.geometry.remapped(for: .mirrorV) } } }))
                 direct(L10n.tr("7df1c3a41535"), \.geometry.rotationDegrees, -45...45)
             }
             Section(L10n.tr("ipad.460a1ef164d0")) {

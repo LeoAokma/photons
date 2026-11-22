@@ -2189,12 +2189,11 @@ public final class CropToolController {
         // depended on whether the history happened to hold a session.
         closeToolSession(label: L10n.tr("53f37fa28f71"))
 
-        let before = horizontal ? session.edit.geometry.flipHorizontal : session.edit.geometry.flipVertical
-        session.applyEdit { model in
-            if horizontal { model.geometry.flipHorizontal.toggle() }
-            else { model.geometry.flipVertical.toggle() }
-        }
-        let after = horizontal ? session.edit.geometry.flipHorizontal : session.edit.geometry.flipVertical
+        let before = session.edit.geometry
+        let operation: GeometryGroup.QuarterTurnOperation = horizontal ? .mirrorH : .mirrorV
+        session.applyEdit { $0.geometry = before.remapped(for: operation) }
+        remapDraft(for: operation, from: before)
+        let after = session.edit.geometry
         // A flip is discrete (072 §F): never fold it into the drag before it.
         session.commitEdit(label: horizontal ? L10n.tr("44775fbf3342") : L10n.tr("fcd75ef0a054"), coalesce: false)
         // The answer the bar needs is "did the document move", not "was a row written".
@@ -2216,11 +2215,18 @@ public final class CropToolController {
         // crop-so-far, or nothing) and write the turn's own row. No reopen, so a second press cannot
         // take a different door because of what the first one left behind.
         closeToolSession(label: L10n.tr("53f37fa28f71"))
+        let before = session.edit.geometry
         var turned = false
         session.applyEdit { model in turned = model.turn(clockwise: clockwise) }
         guard turned else { return false }
+        remapDraft(for: clockwise ? .rotateCW : .rotateCCW, from: before)
         session.commitEdit(label: clockwise ? L10n.tr("980edb5bf6fd") : L10n.tr("d4b56c062003"), coalesce: false)
         return true
+    }
+
+    func remapDraft(for operation: GeometryGroup.QuarterTurnOperation, from document: GeometryGroup) {
+        guard isActive else { return }
+        draft = Draft(geometry: draft.geometry(flipsOf: document).remapped(for: operation))
     }
 
     /// The document's quarter turn — what the card's badge prints.

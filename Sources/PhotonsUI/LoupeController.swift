@@ -4391,10 +4391,10 @@ public final class LoupeController: NSViewController, HeadroomSource {
             NSSound.beep()          // nothing to flip: say so instead of a silent no-op
             return false
         }
-        session.applyEdit { model in
-            if horizontal { model.geometry.flipHorizontal.toggle() }
-            else { model.geometry.flipVertical.toggle() }
-        }
+        let before = session.edit.geometry
+        let operation: GeometryGroup.QuarterTurnOperation = horizontal ? .mirrorH : .mirrorV
+        session.applyEdit { $0.geometry = before.remapped(for: operation) }
+        cropTool.remapDraft(for: operation, from: before)
         // The picture changed, so the frame the crop tool draws must follow it (the overlay is built
         // from the same flips) — and a mode that is on gets one render.
         if cropTool.isActive { refreshCropTool() }
@@ -4453,9 +4453,11 @@ public final class LoupeController: NSViewController, HeadroomSource {
         let framingBeforeTurn = framing()
         let frameBeforeTurn = ImageSize(width: Int((framingBeforeTurn?.sourceWidth ?? 1).rounded()),
                                         height: Int((framingBeforeTurn?.sourceHeight ?? 1).rounded()))
+        let beforeTurn = session.edit.geometry
         var turned = false
         session.applyEdit { model in turned = model.turn(clockwise: clockwise) }
         guard turned else { return false }
+        cropTool.remapDraft(for: clockwise ? .rotateCW : .rotateCCW, from: beforeTurn)
         // **The row is committed here, before anything else can be.** `commitEdit` answers `nil`
         // inside a tool session (the session owns the next snapshot), and a turn that lived only in
         // memory until 应用 is the 「点了一下没反应」 a crop session showed (082 measured it:
