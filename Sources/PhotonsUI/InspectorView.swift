@@ -2216,8 +2216,9 @@ public struct InspectorView: View {
                             in range: ClosedRange<Double>,
                             shape: SliderShape,
                             controlSize: ControlSize = .mini,
+                            onReset: (() -> Void)? = nil,
                             onEditingChanged: @escaping (Bool) -> Void) -> some View {
-        AdjustmentSlider(value: value, in: range, accent: shape.accent, onEditingChanged: onEditingChanged)
+        AdjustmentSlider(value: value, in: range, accent: shape.accent, onReset: onReset, onEditingChanged: onEditingChanged)
             .controlSize(controlSize)
             .frame(height: SliderValueMap.rowHeight)
     }
@@ -2410,7 +2411,7 @@ public struct InspectorView: View {
                                          previewWhiteBalance(isTemperature: isTemperature, value: newValue)
                                      }),
                              in: row.sliderRange,
-                             shape: row.shape) { editing in
+                             shape: row.shape, onReset: { resets.whiteBalanceField(isTemperature: isTemperature) }) { editing in
                 if editing { beginWhiteBalancePreview() }
                 else { commitWhiteBalance(isTemperature: isTemperature) }
             }

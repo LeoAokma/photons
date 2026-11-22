@@ -40,6 +40,23 @@ final class AdjustmentSliderCell: NSSliderCell {
 final class AdjustmentNSSlider: NSSlider {
     var editingChanged: (Bool) -> Void = { _ in }
     var valueStep: Double?
+    var onReset: (() -> Void)? {
+        didSet {
+            if onReset != nil && oldValue == nil { addGestureRecognizer(resetClick) }
+            if onReset == nil && oldValue != nil { removeGestureRecognizer(resetClick) }
+        }
+    }
+    private lazy var resetClick: NSClickGestureRecognizer = {
+        let click = NSClickGestureRecognizer(target: self, action: #selector(resetAdjustment))
+        click.numberOfClicksRequired = 2
+        // AppKit hands ordinary clicks and drags back to NSSlider. A double-click
+        // must not commit its first press as a separate change to the track.
+        click.delaysPrimaryMouseButtonEvents = true
+        return click
+    }()
+    @objc private func resetAdjustment() {
+        if isEnabled { onReset?() }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -79,13 +96,15 @@ struct AdjustmentSlider: NSViewRepresentable {
     let axis: Axis
     var step: Double?
     var accent: Color?
+    var onReset: (() -> Void)?
     var onEditingChanged: (Bool) -> Void
     @Environment(\.isEnabled) private var isEnabled
 
     init(value: Binding<Double>, in range: ClosedRange<Double>, step: Double? = nil,
-         accent: Color? = nil, axis: Axis = .horizontal, onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
+         accent: Color? = nil, axis: Axis = .horizontal, onReset: (() -> Void)? = nil, onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
         _value = value; self.range = range; self.step = step; self.accent = accent
         self.axis = axis
+        self.onReset = onReset
         self.onEditingChanged = onEditingChanged
     }
 
@@ -108,6 +127,7 @@ struct AdjustmentSlider: NSViewRepresentable {
         slider.minValue = range.lowerBound; slider.maxValue = range.upperBound
         slider.doubleValue = SliderValueMap.clamp(value, range)
         slider.isEnabled = isEnabled; slider.valueStep = step
+        slider.onReset = onReset
         slider.editingChanged = onEditingChanged
         (slider.cell as? AdjustmentSliderCell)?.accent = accent.map { NSColor($0) } ?? .controlAccentColor
         slider.needsDisplay = true

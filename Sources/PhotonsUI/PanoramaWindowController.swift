@@ -506,16 +506,18 @@ private struct PanoramaWorkspace: View {
         }
     }
     private var brightnessControls: some View {
-        VStack(alignment:.leading,spacing:6) {
+        let resetExposure = { model.tone.exposureEV = PanoramaToneSettings.panoramaDefault.exposureEV; model.changeTone() }
+        let resetHighlights = { model.tone.highlightHeadroom = PanoramaToneSettings.panoramaDefault.highlightHeadroom; model.changeTone() }
+        return VStack(alignment:.leading,spacing:6) {
             Divider()
             HStack(spacing:20) {
                 VStack {
-                    HStack { Text(L10n.tr("4626a2810ff9")); Spacer(); Text(String(format:"%+.2f EV",model.tone.exposureEV)).monospacedDigit() }
-                    AdjustmentSlider(value:$model.tone.exposureEV,in:-4...4,step:0.05,onEditingChanged:{ if !$0 {model.changeTone()} })
+                    HStack { Text(L10n.tr("4626a2810ff9")).modifier(ResetOnDoubleClick(action: resetExposure)); Spacer(); Text(String(format:"%+.2f EV",model.tone.exposureEV)).monospacedDigit() }
+                    AdjustmentSlider(value:$model.tone.exposureEV,in:-4...4,step:0.05,onReset:resetExposure,onEditingChanged:{ if !$0 {model.changeTone()} })
                 }
                 VStack {
-                    HStack { Text(L10n.tr("panorama.tone.highlights")); Spacer(); Text(String(format:"%.1f",log2(model.tone.highlightHeadroom ?? 4))).monospacedDigit() }
-                    AdjustmentSlider(value:Binding(get:{log2(model.tone.highlightHeadroom ?? 4)},set:{model.tone.highlightHeadroom=pow(2,$0)}),in:0...4,step:0.1,onEditingChanged:{if !$0 {model.changeTone()}})
+                    HStack { Text(L10n.tr("panorama.tone.highlights")).modifier(ResetOnDoubleClick(action: resetHighlights)); Spacer(); Text(String(format:"%.1f",log2(model.tone.highlightHeadroom ?? 4))).monospacedDigit() }
+                    AdjustmentSlider(value:Binding(get:{log2(model.tone.highlightHeadroom ?? 4)},set:{model.tone.highlightHeadroom=pow(2,$0)}),in:0...4,step:0.1,onReset:resetHighlights,onEditingChanged:{if !$0 {model.changeTone()}})
                 }
                 Button(L10n.tr("panorama.tone.reset")) {model.tone = .panoramaDefault;model.changeTone()}
                     .disabled(model.tone == .panoramaDefault)

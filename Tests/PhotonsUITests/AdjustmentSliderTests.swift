@@ -24,6 +24,33 @@ final class AdjustmentSliderTests: XCTestCase {
         XCTAssertEqual(slider.doubleValue, 0)
     }
 
+    func testDoubleClickOnTrackResetsWithoutCommittingTheFirstClick() {
+        let window = TestWindows.make(contentRect: NSRect(x: 0, y: 0, width: 250, height: 66),
+                                      styleMask: [.titled], backing: .buffered, defer: false)
+        defer { window.orderOut(nil) }
+        let slider = AdjustmentNSSlider(frame: NSRect(x: 15, y: 20, width: 210, height: 20))
+        slider.minValue = -4; slider.maxValue = 8; slider.doubleValue = 2
+        var edits = [Bool](), resets = 0
+        slider.editingChanged = { edits.append($0) }
+        slider.onReset = { slider.doubleValue = 0; resets += 1 }
+        window.contentView?.addSubview(slider)
+        window.makeKeyAndOrderFront(nil)
+        CropUITestSupport.pump(0.1)
+        let point = slider.convert(NSPoint(x: 180, y: 10), to: nil)
+        for count in 1...2 {
+            let up = CropUITestSupport.mouse(.leftMouseUp, at: point, in: window, clickCount: count)
+            NSApp.postEvent(up, atStart: true)
+            window.sendEvent(CropUITestSupport.mouse(.leftMouseDown, at: point, in: window, clickCount: count))
+            if let pending = NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) {
+                window.sendEvent(pending)
+            }
+            CropUITestSupport.pump(0.04)
+        }
+        XCTAssertEqual(resets, 1)
+        XCTAssertEqual(slider.doubleValue, 0)
+        XCTAssertTrue(edits.isEmpty, "Undo should go directly back to the pre-double-click edit")
+    }
+
     func testHandleIsWideRoundedRectangle() throws {
         let cell = AdjustmentSliderCell()
         let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 40,

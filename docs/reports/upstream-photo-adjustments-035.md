@@ -45,3 +45,9 @@ iPad 变换页接入 Mac 与上游 861e5939（#502）既有的垂直、水平、
 把 fork 与上游共用的 DetailSettings / CIRAWFilter 五项解码调整接入 iPad，依据为 upstream/main 37d901bf 的 InspectorView.detailCard。亮度/色彩降噪、解码细节、解码锐化及去摩尔纹读取当前 RAW 的真实支持标记和默认值。MobileEngine 把这些值及拍摄白平衡写入预览缓存；SDR/HDR、缩略图、重启后的磁盘命中都能正确显示，普通位图不会出现 RAW 参数。旧预览按需更新。独立于模型降噪。
 
 11 英寸模拟器上 testRAWControlDefaultsAndCapabilitiesSurvivePreviewCache 和 testZoomDetailMatchesEditedFullResolutionPixels 均通过。新生成 DNG 的控件值逐项对照实际解码，再验证复用磁盘预览时渲染次数为零。未在实体机覆盖所有相机型号。
+
+## ADJ-RESET-MAC
+
+为 NSSlider 添加 AppKit 双击识别，拖条与参数名称共用同一个逐项复位动作。覆盖主检查器、白平衡、修复控件以及接片曝光/高光，保留原有单击、拖动、键盘和数值输入。双击的第一次按下不会额外提交一次调节，撤销可直接回到双击前。独立实现，没有外部移植，可单独回退。
+
+本次 PHOTONS_LANGUAGE=zh-Hans swift test --filter 'AdjustmentSliderTests|PanelResetTests|PanelResetScopeTests' 通过。实际向 AppKit 窗口发送轨道上的两次鼠标事件，检查只触发一次复位且没有拖动提交；既有键盘、辅助功能、卡片和参数作用域测试也通过。未使用实体触控板手工测试。

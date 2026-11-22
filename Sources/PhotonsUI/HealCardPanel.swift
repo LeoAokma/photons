@@ -185,9 +185,11 @@ public struct HealCardPanel: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(L10n.tr("3e65075eb3e9"))
+                    .modifier(ResetOnDoubleClick(action: { session.redEyeRadiusPoints = RedEye.defaultRadiusPoints }))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-                AdjustmentSlider(value: redEyeRadiusBinding, in: RedEye.radiusPointsRange)
+                AdjustmentSlider(value: redEyeRadiusBinding, in: RedEye.radiusPointsRange,
+                                 onReset: { session.redEyeRadiusPoints = RedEye.defaultRadiusPoints })
                     .controlSize(.mini)
                     .accessibilityIdentifier("inspector.redeye.radius")
                 Text(String(format: "%.1f pt", session.redEyeRadiusPoints))
@@ -197,9 +199,11 @@ public struct HealCardPanel: View {
             }
             HStack(spacing: 6) {
                 Text(L10n.tr("a2846644a638"))
+                    .modifier(ResetOnDoubleClick(action: { session.redEyeStrength = 1 }))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-                AdjustmentSlider(value: redEyeStrengthBinding, in: 0 ... 100)
+                AdjustmentSlider(value: redEyeStrengthBinding, in: 0 ... 100,
+                                 onReset: { session.redEyeStrength = 1 })
                     .controlSize(.mini)
                     .accessibilityIdentifier("inspector.redeye.strength")
                 Text("\(Int((session.redEyeStrength * 100).rounded()))")
@@ -215,14 +219,16 @@ public struct HealCardPanel: View {
     }
 
     private func healRow(_ spot: HealSpot) -> some View {
-        HStack(spacing: 6) {
+        let reset = { session.setHealRadius(HealSpot.defaultRadius, for: spot.id) }
+        return HStack(spacing: 6) {
             Text(spot.kind == .redeye ? L10n.tr("87b1166498f9") : spot.mode.label)
+                .modifier(ResetOnDoubleClick(action: reset))
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .frame(width: 26, alignment: .leading)
             AdjustmentSlider(value: Binding(get: { spot.radius },
                                   set: { session.setHealRadius($0, for: spot.id, commit: false) }),
-                   in: HealSpot.radiusRange,
+                   in: HealSpot.radiusRange, onReset: reset,
                    onEditingChanged: { editing in
                        if !editing { session.commitEdit(label: L10n.tr("9890bcbfada3")) }
                    })

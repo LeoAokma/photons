@@ -66,7 +66,7 @@ struct SliderRow: View {
                 .frame(width: StudioTheme.labelWidth, alignment: .leading)
                 .lineLimit(1).minimumScaleFactor(0.85)
             InspectorView.shapeSlider(value, in: range, shape: shape,
-                                      controlSize: style.controlSize,
+                                      controlSize: style.controlSize, onReset: onReset,
                                       onEditingChanged: onEditingChanged)
             if editable {
                 SliderNumberField(value: value.wrappedValue, range: range, format: format,
