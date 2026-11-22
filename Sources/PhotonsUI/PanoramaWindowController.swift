@@ -142,6 +142,12 @@ final class PanoramaWindowModel: ObservableObject {
         updateHintStatus()
         changeLCC(automaticallyLocate: true)
     }
+    func moveFrame(_ index: Int, from start: CGPoint, to end: CGPoint) {
+        guard start != end else { return }
+        var hint = shiftHints[index] ?? .init()
+        hint.recordDrag(from: start, to: end)
+        setShiftHint(index: index, hint: hint, asReference: positionReference?.sourceIndex == index)
+    }
     func clearPosition(_ index: Int) {
         setShiftHint(index: index, hint: .init(), asReference: false)
     }
@@ -562,7 +568,7 @@ private struct PanoramaWorkspace: View {
             if let plan = model.plan {
                 PanoramaPositionOverview(plan: plan, sensor: model.sensor, reference: model.overviewReference,
                     cameraBody: model.cameraBody, bodyOrientation: model.bodyOrientation,
-                    hints: model.shiftHints, resolved: model.resolvedHints) { model.editingPosition = $0 }
+                    hints: model.shiftHints, resolved: model.resolvedHints, onMove: model.moveFrame) { model.editingPosition = $0 }
                 if plan.isRegistered && model.shiftHints.isEmpty {
                     Text(model.overviewReference != nil ? L10n.tr("a1d86877af02") : L10n.tr("92edb20a3dbc"))
                         .font(.caption).foregroundStyle(.secondary)
@@ -706,6 +712,7 @@ struct PanoramaPositionOverview: View {
     let bodyOrientation: PanoramaBodyOrientation
     let hints: [Int: PanoramaShiftHint]
     let resolved: [Int: PanoramaShiftPosition]
+    var onMove: ((Int, CGPoint, CGPoint) -> Void)?
     let onSelect: (Int) -> Void
 
     var frames: [CapturePositionDiagram.Frame] {
@@ -752,8 +759,12 @@ struct PanoramaPositionOverview: View {
             CapturePositionDiagram(frames: frames, cameraBody: cameraBody, orientation: bodyOrientation,
                 absolute: reference != nil, selected: reference?.sourceIndex, showsTravel: sensor != nil,
                 numbered: numbered, anchoredX: sensor != nil && resolved.values.contains { $0.x != nil },
-                anchoredY: sensor != nil && resolved.values.contains { $0.y != nil }, onSelect: onSelect)
+                anchoredY: sensor != nil && resolved.values.contains { $0.y != nil },
+                onMove: sensor == nil ? nil : onMove, onSelect: onSelect)
                 .frame(height: 200).background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            if sensor != nil && onMove != nil {
+                Text(L10n.tr("panorama.shift.dragFrame")).font(.caption).foregroundStyle(.secondary)
+            }
             if numbered {
                 Text(L10n.tr("panorama.shift.diagramReadings")).font(.caption).foregroundStyle(.secondary)
                 ForEach(frames.indices, id: \.self) { i in

@@ -97,6 +97,37 @@ final class PanoramaPerspectiveTests:XCTestCase {
         XCTAssertEqual(model.plan?.origins, plan.origins)
     }
 
+    func testDraggingAnOverlappingBadgeKeepsTheUnmovedAxisAndClampsInMillimetres() throws {
+        let model = PanoramaWindowModel(urls: [])
+        model.setShiftHint(index: 1, hint: .init(x: .negativeMaximum), asReference: false)
+        let size = SensorSize(width: 36, height: 24, source: "test")
+        let start = CGPoint(x: -18, y: 0)
+        let frames = ["one", "two"].map { CapturePositionDiagram.Frame(name: $0, center: start, sensor: size) }
+        let photos = Array(repeating: CGRect(x: 10, y: 10, width: 144, height: 96), count: 2)
+        let badges = CapturePositionDiagram.badgeCenters(photos)
+        let diagram = CapturePositionDiagram(frames: frames, cameraBody: .alpa12Max, orientation: .degrees0,
+            absolute: false, numbered: true, onMove: model.moveFrame, onSelect: { _ in })
+        let drag = try XCTUnwrap(diagram.draggedFrame(at: badges[1], translation: CGSize(width: 0.9, height: -24),
+                                                      photos: photos, badges: badges))
+        XCTAssertEqual(drag.index, 1)
+        XCTAssertEqual(drag.delta, CGSize(width: 0, height: -24))
+        model.moveFrame(drag.index, from: drag.start, to: drag.end)
+        XCTAssertEqual(model.shiftHints[1], .init(x: .negativeMaximum, y: .millimeters(6)))
+        XCTAssertNil(model.shiftHints[0])
+        let clamped = try XCTUnwrap(diagram.draggedFrame(at: badges[0], translation: CGSize(width: 999, height: 1),
+                                                         photos: photos, badges: badges))
+        model.moveFrame(clamped.index, from: clamped.start, to: clamped.end)
+        XCTAssertEqual(model.shiftHints[0], .init(x: .millimeters(18)))
+        XCTAssertTrue(model.alignmentNeedsUpdate)
+        XCTAssertNil(diagram.draggedFrame(at: CGPoint(x: -10, y: -10), translation: .zero, photos: photos, badges: badges))
+        let outside = CGPoint(x: -50, y: -10)
+        let external = CapturePositionDiagram(frames: [.init(name: "draft", center: outside, sensor: size)], cameraBody: .alpa12Max,
+            orientation: .degrees0, absolute: false, onMove: model.moveFrame, onSelect: { _ in })
+        let vertical = try XCTUnwrap(external.draggedFrame(at: badges[0], translation: CGSize(width: 0, height: -8),
+                                                          photos: [photos[0]], badges: []))
+        XCTAssertEqual(vertical.end, CGPoint(x: -50, y: -8))
+    }
+
     func testMacPerspectiveRegistrationAndExportPreserveModeWithoutShiftMetadata() async throws {
         _ = NSApplication.shared
         let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

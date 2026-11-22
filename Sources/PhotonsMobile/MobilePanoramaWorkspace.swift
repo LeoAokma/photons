@@ -5,15 +5,6 @@ import PhotonsCore
 import PhotonsPanorama
 import PhotonsWorkspaceUI
 
-/// Physical right/up coordinates are independent of screen size and source pixel dimensions.
-enum MobileShiftGeometry {
-    static func dragged(_ start: CGPoint, translation: CGSize, pointsPerMM: Double, travel: PanoramaShiftRange) -> CGPoint {
-        guard pointsPerMM.isFinite, pointsPerMM > 0 else { return start }
-        return CGPoint(x: min(travel.right, max(-travel.left, start.x + translation.width / pointsPerMM)),
-                       y: min(travel.up, max(-travel.down, start.y - translation.height / pointsPerMM)))
-    }
-}
-
 /// The last successfully applied physical layout. Selection alone does not invalidate alignment.
 struct MobilePanoramaLayout: Equatable {
     var positions: [Int: CGPoint]
@@ -246,8 +237,7 @@ struct MobilePanoramaWorkspace: View {
                     MobileDraggablePositions(names: photos.map(\.name), sensor: sensor, travel: bodyType.travel(at: orientation),
                         positions: $positions, selected: $selectedFrame, changed: { index, start, end in
                             var hint = hints[index] ?? .init()
-                            if end.x != start.x { hint.x = .millimeters(end.x) }
-                            if end.y != start.y { hint.y = .millimeters(end.y) }
+                            hint.recordDrag(from: start, to: end)
                             hints[index] = hint
                             guided = true
                         })
@@ -459,7 +449,7 @@ private struct MobileDraggableFrame: View {
 
     var body: some View {
         let _ = interfaceLocale // Rebuild plain translated strings on live language changes.
-        let center = translation == .zero ? position : MobileShiftGeometry.dragged(position, translation: translation, pointsPerMM: scale, travel: travel)
+        let center = translation == .zero ? position : travel.dragged(position, translation: translation, pointsPerMM: scale)
         let color = travel.contains(center, tolerance: 0.1) ? [Color.cyan, .purple, .green, .pink][index % 4] : .orange
         Rectangle().fill(color.opacity(selected == index ? 0.25 : 0.1))
             .overlay(Rectangle().stroke(color, lineWidth: selected == index ? 2.5 : 1))
@@ -476,7 +466,7 @@ private struct MobileDraggableFrame: View {
                 }
                 .onChanged { _ in selected = index }
                 .onEnded { value in
-                    let moved = MobileShiftGeometry.dragged(position, translation: value.translation, pointsPerMM: scale, travel: travel)
+                    let moved = travel.dragged(position, translation: value.translation, pointsPerMM: scale)
                     if moved != position {
                         let start = position
                         position = moved

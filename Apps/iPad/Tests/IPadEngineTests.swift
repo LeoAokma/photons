@@ -944,12 +944,12 @@ final class IPadEngineTests: XCTestCase {
 
     func testShiftDraggingUsesPhysicalScaleAndCameraTravel() {
         let travel = PanoramaCameraBody.alpa12Max.travel(at: .degrees0)
-        let moved = MobileShiftGeometry.dragged(.zero, translation: CGSize(width: 20,height: -10), pointsPerMM: 2, travel: travel)
+        let moved = travel.dragged(.zero, translation: CGSize(width: 20,height: -10), pointsPerMM: 2)
         XCTAssertEqual(moved.x, 10); XCTAssertEqual(moved.y, 5)
-        let clamped = MobileShiftGeometry.dragged(moved, translation: CGSize(width: 1000,height: -1000), pointsPerMM: 2, travel: travel)
+        let clamped = travel.dragged(moved, translation: CGSize(width: 1000,height: -1000), pointsPerMM: 2)
         XCTAssertEqual(clamped, CGPoint(x: 18,y: 25))
         let rotated = PanoramaCameraBody.alpa12STC.travel(at: .degrees90)
-        let vertical = MobileShiftGeometry.dragged(.zero, translation: CGSize(width: 20,height: -20), pointsPerMM: 2, travel: rotated)
+        let vertical = rotated.dragged(.zero, translation: CGSize(width: 20,height: -20), pointsPerMM: 2)
         XCTAssertEqual(vertical.x, 0); XCTAssertEqual(vertical.y, 10)
     }
 

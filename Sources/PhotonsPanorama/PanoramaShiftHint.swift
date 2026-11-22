@@ -26,6 +26,11 @@ public struct PanoramaShiftHint: Equatable, Sendable {
         self.y = y
     }
 
+    public mutating func recordDrag(from start: CGPoint, to end: CGPoint) {
+        if start.x != end.x { x = .millimeters(end.x) }
+        if start.y != end.y { y = .millimeters(end.y) }
+    }
+
     public func resolved(body: PanoramaCameraBody, orientation: PanoramaBodyOrientation,
                          calibration: LCCEndStopCalibration?) -> PanoramaShiftPosition {
         let travel = (body == .alpa12Max ? calibration?.travel.rotated(orientation) : nil)

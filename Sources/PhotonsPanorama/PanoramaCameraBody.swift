@@ -47,6 +47,12 @@ public struct PanoramaShiftRange:Hashable,Codable,Sendable {
             seen.append(range);return true
         }
     }
+    /// Convert a screen drag into physical right/up millimetres in this oriented travel range.
+    public func dragged(_ start: CGPoint, translation: CGSize, pointsPerMM: Double) -> CGPoint {
+        guard pointsPerMM.isFinite, pointsPerMM > 0 else { return start }
+        return CGPoint(x: min(right, max(-left, start.x + translation.width / pointsPerMM)),
+                       y: min(up, max(-down, start.y - translation.height / pointsPerMM)))
+    }
     public func contains(_ position:CGPoint,tolerance:Double=0)->Bool {
         position.x >= -left-tolerance && position.x <= right+tolerance &&
         position.y >= -down-tolerance && position.y <= up+tolerance

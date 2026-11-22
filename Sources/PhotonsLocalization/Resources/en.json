@@ -1,4 +1,5 @@
 {
+  "panorama.shift.dragFrame": "Drag a photo or its number to set its shift. Click to edit a reading.",
   "panorama.shift.diagramReadings": "Shift readings (mm) · ? = unknown",
   "panorama.shift.unknown": "Unknown",
   "panorama.shift.reading": "Specific value",

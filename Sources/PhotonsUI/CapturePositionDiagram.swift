@@ -20,7 +20,15 @@ struct CapturePositionDiagram:View {
     var numbered = false
     var anchoredX = false
     var anchoredY = false
+    var onMove: ((Int, CGPoint, CGPoint) -> Void)?
     let onSelect:(Int)->Void
+    struct DraggedFrame {
+        let index: Int
+        let start: CGPoint
+        let end: CGPoint
+        let delta: CGSize
+    }
+    @GestureState private var drag: DraggedFrame?
     private static let colors:[Color]=[.cyan,.purple,.green,.pink,.yellow,.blue]
     static func color(_ index: Int) -> Color { colors[index % colors.count] }
 
@@ -59,24 +67,70 @@ struct CapturePositionDiagram:View {
         func display(_ r:CGRect)->CGRect {CGRect(x:r.minX*scale+dx,y:r.minY*scale+dy,width:r.width*scale,height:r.height*scale)}
         return (photos.map(display),travel.map(display))
     }
+    private func target(at p: CGPoint, photos: [CGRect], badges: [CGPoint]) -> Int? {
+        func distance(_ center: CGPoint) -> CGFloat { hypot(p.x-center.x, p.y-center.y) }
+        if let i = badges.indices.min(by: { distance(badges[$0]) < distance(badges[$1]) }),
+           distance(badges[i]) <= 11 { return i }
+        return photos.indices.filter { photos[$0].contains(p) }.min { a,b in
+            distance(CGPoint(x: photos[a].midX, y: photos[a].midY)) < distance(CGPoint(x: photos[b].midX, y: photos[b].midY))
+        }
+    }
+
+    func draggedFrame(at location: CGPoint, translation: CGSize, photos: [CGRect], badges: [CGPoint]) -> DraggedFrame? {
+        guard onMove != nil, let index = target(at: location, photos: photos, badges: badges) else { return nil }
+        let frame = frames[index], scale = photos[index].width / frame.sensor.width
+        guard scale.isFinite, scale > 0 else { return nil }
+        let start = frame.center, travel = cameraBody.travel(at: orientation)
+        var end = travel.dragged(start, translation: translation, pointsPerMM: scale)
+        // Minor cross-axis mouse jitter must not replace an unknown or symbolic end-stop reading.
+        if abs(translation.width) < 2 { end.x = start.x }
+        if abs(translation.height) < 2 { end.y = start.y }
+        return DraggedFrame(index: index, start: start, end: end,
+                            delta: CGSize(width: (end.x-start.x)*scale, height: (start.y-end.y)*scale))
+    }
+
+    private func gesture(photos: [CGRect], badges: [CGPoint]) -> some Gesture {
+        let move = DragGesture(minimumDistance: 3)
+            .updating($drag) { value, state, transaction in
+                transaction.animation = nil
+                state = draggedFrame(at: value.startLocation, translation: value.translation, photos: photos, badges: badges)
+            }
+            .onEnded { value in
+                guard let result = draggedFrame(at: value.startLocation, translation: value.translation, photos: photos, badges: badges),
+                      result.start != result.end else { return }
+                onMove?(frames[result.index].sourceIndex ?? result.index, result.start, result.end)
+            }
+        let click = SpatialTapGesture().onEnded { event in
+            if let i = target(at: event.location, photos: photos, badges: badges) { onSelect(frames[i].sourceIndex ?? i) }
+        }
+        return move.exclusively(before: click)
+    }
+
     var body:some View {
         GeometryReader {proxy in
             let placement=layout(proxy.size)
-            let badges = numbered ? Self.badgeCenters(placement.photos) : []
+            let original = placement.photos
+            let originalBadges = numbered ? Self.badgeCenters(original) : []
+            let photos = original.indices.map { i in
+                if let drag, drag.index == i { return original[i].offsetBy(dx: drag.delta.width, dy: drag.delta.height) }
+                return original[i]
+            }
+            let badges = drag == nil ? originalBadges : (numbered ? Self.badgeCenters(photos) : [])
             Canvas {context,size in
                 if let travel=placement.travel {
                     context.stroke(Path(travel),with:.color(.primary.opacity(0.65)),style:StrokeStyle(lineWidth:1.2,dash:[5,3]))
                     context.draw(Text(L10n.tr("fe8af84b5fd4",cameraBody.name,String(orientation.rawValue))).font(.system(size:9)).foregroundColor(.secondary),at:CGPoint(x:travel.midX,y:travel.minY-9))
                 }
-                for i in placement.photos.indices {
-                    let rect=placement.photos[i],frame=frames[i],color=Self.color(i)
-                    let outside=absolute && showsTravel && !cameraBody.travel(at:orientation).contains(frame.center)
+                for i in photos.indices {
+                    let rect=photos[i],frame=frames[i],color=Self.color(i)
+                    let center = drag?.index == i ? (drag?.end ?? frame.center) : frame.center
+                    let outside=absolute && showsTravel && !cameraBody.travel(at:orientation).contains(center)
                     context.fill(Path(rect),with:.color(color.opacity(0.14)))
-                    context.stroke(Path(rect),with:.color(outside ? .orange:color),lineWidth:selected==(frame.sourceIndex ?? i) ? 2.5:1.2)
+                    context.stroke(Path(rect),with:.color(outside ? .orange:color),lineWidth:selected==(frame.sourceIndex ?? i) || drag?.index == i ? 2.5:1.2)
                     if numbered { continue }
                     context.draw(Text(frame.name).font(.system(size:10,weight:.medium)),at:CGPoint(x:rect.midX,y:rect.midY))
                     if showsTravel {
-                        let text=String(format:absolute ? "X %+.1f · Y %+.1f mm":"Δ %+.1f, %+.1f mm",frame.center.x,frame.center.y)
+                        let text=String(format:absolute ? "X %+.1f · Y %+.1f mm":"Δ %+.1f, %+.1f mm",center.x,center.y)
                         context.draw(Text(text).font(.system(size:8)).foregroundColor(.secondary),at:CGPoint(x:rect.midX,y:rect.midY+13))
                     }
                 }
@@ -87,8 +141,14 @@ struct CapturePositionDiagram:View {
                 // A common reading belongs to the whole stack of coincident photos.
                 var captions: [CGRect] = []
                 for i in badges.indices {
-                    guard let reading = frames[i].reading else { continue }
-                    let rect = placement.photos[i]
+                    let caption: String?
+                    if let drag, drag.index == i {
+                        caption = [drag.start.x != drag.end.x ? String(format: "X %+.1f", drag.end.x) : nil,
+                                   drag.start.y != drag.end.y ? String(format: "Y %+.1f", drag.end.y) : nil]
+                            .compactMap { $0 }.joined(separator: " · ")
+                    } else { caption = frames[i].reading }
+                    guard let reading = caption else { continue }
+                    let rect = photos[i]
                     let label = context.resolve(Text(reading).font(.system(size: 9, weight: .medium)))
                     let extent = label.measure(in: size)
                     let box = CGRect(x: rect.midX - extent.width / 2, y: badges[i].y + 11,
@@ -98,12 +158,7 @@ struct CapturePositionDiagram:View {
                     captions.append(box)
                 }
                 if !absolute && !numbered {context.draw(Text(L10n.tr("00964853f102")).font(.system(size:8)).foregroundColor(.secondary),at:CGPoint(x:size.width/2,y:size.height-8))}
-            }.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded {event in
-                if let i = badges.indices.min(by: { hypot(badges[$0].x-event.location.x,badges[$0].y-event.location.y) < hypot(badges[$1].x-event.location.x,badges[$1].y-event.location.y) }),
-                   hypot(badges[i].x-event.location.x,badges[i].y-event.location.y) <= 11 { onSelect(frames[i].sourceIndex ?? i); return }
-                let choices=placement.photos.indices.filter {placement.photos[$0].contains(event.location)}
-                if let i=choices.min(by:{hypot(placement.photos[$0].midX-event.location.x,placement.photos[$0].midY-event.location.y)<hypot(placement.photos[$1].midX-event.location.x,placement.photos[$1].midY-event.location.y)}) {onSelect(frames[i].sourceIndex ?? i)}
-            })
+            }.contentShape(Rectangle()).gesture(gesture(photos: original, badges: originalBadges))
         }.accessibilityIdentifier("lcc.placementDiagram")
     }
 }
