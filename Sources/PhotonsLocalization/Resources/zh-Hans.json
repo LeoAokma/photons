@@ -1465,6 +1465,7 @@
   "cameraBodies.invalidFile": "机身配置文件无效。",
   "cameraBodies.deleteQuestion": "删除此自建机身配置？",
   "cameraBodies.deleteHint": "删除后不会再出现在新任务的选择列表中。已保存的标定和拼接记录仍保留原机身信息。",
+  "lcc.profile.editTitle": "编辑镜头配置",
   "lensInfo.title": "镜头信息",
   "lensInfo.sharedList": "同一镜头与传感器的 LCC 可在覆盖充分时跨机身使用，也可保留多份配置。列表与 LCC 校正和拼接共用。",
   "lensInfo.configureLCC": "配置 LCC",

@@ -1465,6 +1465,7 @@
   "cameraBodies.invalidFile": "Invalid camera body file.",
   "cameraBodies.deleteQuestion": "Delete this custom camera body?",
   "cameraBodies.deleteHint": "It will no longer appear in the selection list for new tasks. Saved calibrations and panoramas keep their original body information.",
+  "lcc.profile.editTitle": "Edit Lens Profile",
   "lensInfo.title": "Lens Information",
   "lensInfo.sharedList": "LCC profiles for the same lens and sensor work across bodies where measured coverage is sufficient. Keep multiple calibrations in this list shared with LCC and stitching.",
   "lensInfo.configureLCC": "Configure LCC",

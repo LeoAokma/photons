@@ -1,11 +1,13 @@
 #if os(iOS)
 import SwiftUI
 import PhotonsPanorama
+import PhotonsWorkspaceUI
 import PhotonsLocalization
 
 struct MobileProfileDetails: View {
     @Environment(\.locale) private var interfaceLocale
-    let engine: MobileEngine
+    @ObservedObject var model: MobileWorkspaceModel
+    @State private var editingProfile: LCCLensProfile?
     let id: UUID
     @State private var profile: LCCLensProfile?
     @State private var error: String?
@@ -53,10 +55,22 @@ struct MobileProfileDetails: View {
         }
         .navigationTitle(profile?.name ?? L10n.tr("ipad.5e1b2d89ee2a"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let profile {
+                Button(L10n.tr("051836569928")) { editingProfile = profile }
+                    .accessibilityIdentifier("profile-edit-metadata")
+            }
+        }
+        .sheet(item: $editingProfile) { original in
+            LCCProfileMetadataEditor(profile: original) { name, aperture, notes in
+                profile = try await model.engine.updateProfileMetadata(original, name: name, aperture: aperture, notes: notes)
+                model.profiles = try await model.engine.profiles()
+            }
+        }
         .task(id: id) { await load() }
     }
     private func load() async {
-        do { profile = try await engine.profile(id); error = nil }
+        do { profile = try await model.engine.profile(id); error = nil }
         catch { self.error = error.localizedDescription }
     }
     @ViewBuilder private func captureDetails(_ capture: LCCProfileCapture) -> some View {

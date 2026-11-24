@@ -2,6 +2,7 @@ import PhotonsLocalization
 import AppKit
 import SwiftUI
 import PhotonsPanorama
+import PhotonsWorkspaceUI
 import PhotonsFileAccess
 import UniformTypeIdentifiers
 
@@ -106,6 +107,17 @@ final class LCCProfileLibraryModel: ObservableObject {
             } catch { DispatchQueue.main.async { self?.busy = false; self?.error = error.localizedDescription } }
         }
     }
+    func updateMetadata(of original: LCCLensProfile, name: String, aperture: Double?, notes: String) async throws {
+        let store = self.store
+        try await withCheckedThrowingContinuation { (completion: CheckedContinuation<Void, Error>) in
+            queue.async {
+                completion.resume(with: Result {
+                    _ = try store.updateMetadata(of: original, name: name, aperture: aperture, notes: notes)
+                })
+            }
+        }
+        refresh()
+    }
     func exportProfile() {
         guard let profile else { return }
         let panel = NSSavePanel()
@@ -126,6 +138,7 @@ final class LCCProfileLibraryModel: ObservableObject {
 
 struct LCCProfileLibraryView: View {
     @ObservedObject var model:LCCProfileLibraryModel
+    @State private var editingProfile: LCCLensProfile?
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
             HStack {
@@ -149,12 +162,17 @@ struct LCCProfileLibraryView: View {
                 ScrollView {
                     if let profile=model.profile {
                         VStack(alignment:.leading,spacing:14) {
-                            Text(profile.name).font(.title2.bold())
+                            HStack {
+                                Text(profile.name).font(.title2.bold())
+                                Spacer()
+                                Button(L10n.tr("051836569928")) { editingProfile = profile }
+                                    .disabled(model.busy).accessibilityIdentifier("profile-edit-metadata")
+                            }
                             Text(profile.camera).foregroundStyle(.secondary)
                             if let body=LCCProfileSummary(profile).calibrationBody {Text(L10n.tr("00f3f3fdc6a8" , String(describing: (body.name)))).font(.caption)}
                             Text(L10n.tr("lcc.profile.compatibility")).font(.caption).foregroundStyle(.secondary)
                             if let aperture=profile.aperture {Text(L10n.tr("9ff1649978c3" , String(format: "%g", aperture)))}
-                            Text(profile.notes).font(.callout).textSelection(.enabled)
+                            if !profile.notes.isEmpty { Text(profile.notes).font(.callout).textSelection(.enabled) }
                             ForEach(profile.orientations) { orientation in
                                 let frames=profile.captures(for:orientation)
                                 VStack(alignment:.leading,spacing:8) {
@@ -183,6 +201,11 @@ struct LCCProfileLibraryView: View {
                 Button(L10n.tr("1280364b7f84")) {model.reveal()}.disabled(model.selected==nil)
             }
         }.padding(22).onAppear {model.ensureLoaded()}
+        .sheet(item: $editingProfile) { profile in
+            LCCProfileMetadataEditor(profile: profile) { name, aperture, notes in
+                try await model.updateMetadata(of: profile, name: name, aperture: aperture, notes: notes)
+            }
+        }
         .alert(L10n.tr("2eeb1676861b"),isPresented:Binding(get:{model.error != nil},set:{if !$0 {model.error=nil}})) {Button(L10n.tr("f867f3417859")) {model.error=nil}} message: {Text(model.error ?? "")}
     }
 }

@@ -117,7 +117,7 @@ struct MobileProfilesSheet: View {
             Section(L10n.tr("ipad.441d4af6ac66")) {
                 ForEach(model.profiles) { profile in
                     NavigationLink {
-                        MobileProfileDetails(engine: model.engine,id: profile.id)
+                        MobileProfileDetails(model: model, id: profile.id)
                     } label: {
                         VStack(alignment: .leading,spacing: 4) {
                             Text(profile.name)

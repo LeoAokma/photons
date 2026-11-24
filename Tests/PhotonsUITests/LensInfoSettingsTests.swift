@@ -44,6 +44,36 @@ final class LensInfoSettingsTests: XCTestCase {
         XCTAssertEqual(model.profile?.id, second.id)
     }
 
+    func testEditingProfilePersistsExportableMetadataAndPreservesIndependentChanges() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = LCCProfileStore(directory: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = profile(name: "Original lens")
+        try store.save(original)
+        let model = LCCProfileLibraryModel(store: store, installBundledProfile: false)
+        model.refresh(select: original.id)
+        try await waitForLibrary(model)
+        try await model.updateMetadata(of: original, name: "Updated lens", aperture: 5.6, notes: "At infinity")
+        try await waitForLibrary(model)
+        XCTAssertEqual(model.selected, original.id)
+        XCTAssertEqual(model.profiles.first?.aperture, 5.6)
+        let edited = try XCTUnwrap(model.profile)
+        XCTAssertEqual(edited.name, "Updated lens")
+        XCTAssertEqual(edited.notes, "At infinity")
+        XCTAssertEqual(edited.captures, original.captures)
+        XCTAssertEqual(try LCCProfileCodec.decode(LCCProfileCodec.encode(edited)), edited)
+        let reopened = LCCProfileStore(directory: root)
+        XCTAssertEqual(try reopened.load(original.id), edited)
+
+        // An editor opened before the rename only changes its own aperture field.
+        let cleared = try reopened.updateMetadata(of: original, name: original.name, aperture: nil, notes: original.notes)
+        XCTAssertEqual(cleared.name, edited.name)
+        XCTAssertEqual(cleared.notes, edited.notes)
+        XCTAssertNil(cleared.aperture)
+        XCTAssertThrowsError(try reopened.updateMetadata(of: cleared, name: cleared.name, aperture: 0, notes: "invalid"))
+        XCTAssertEqual(try reopened.load(cleared.id), cleared)
+    }
+
     func testConfigurationManagerIsIndependentAndReusesOneWindow() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("lens-manager-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

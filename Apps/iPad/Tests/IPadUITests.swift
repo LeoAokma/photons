@@ -496,6 +496,50 @@ final class IPadUITests: XCTestCase {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Lens profile capture details"; shot.lifetime = .keepAlways; add(shot)
     }
     @MainActor
+    func testEditLensAperturePersistsAfterRelaunch() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--reset-demo"]
+        app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        func openEditor() {
+            XCTAssertTrue(app.buttons["photo-Sample-01.tiff"].waitForExistence(timeout: 60))
+            app.buttons["settings-button"].tap()
+            app.buttons["Lens profiles"].firstMatch.tap()
+            let lens = app.buttons["lens-profile-A060102A-B2E6-4408-A9C0-F151E042F87D"]
+            XCTAssertTrue(lens.waitForExistence(timeout: 10))
+            lens.tap()
+            let edit = app.buttons["profile-edit-metadata"]
+            XCTAssertTrue(edit.waitForExistence(timeout: 10))
+            edit.tap()
+        }
+        let aperture = app.textFields["profile-edit-aperture"]
+        let save = app.buttons["profile-save-metadata"]
+        func enter(_ value: String) {
+            aperture.tap()
+            aperture.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 10) + value)
+        }
+        openEditor()
+        XCTAssertTrue(aperture.waitForExistence(timeout: 10))
+        let initial = try XCTUnwrap(aperture.value as? String)
+        let changed = initial == "5.6" ? "8" : "5.6"
+        enter("0")
+        XCTAssertFalse(save.isEnabled)
+        enter(changed)
+        save.tap()
+        XCTAssertTrue(aperture.waitForNonExistence(timeout: 15))
+        app.terminate()
+        app.launchArguments = ["--demo"]
+        app.launch()
+        openEditor()
+        XCTAssertTrue(aperture.waitForExistence(timeout: 10))
+        XCTAssertEqual(aperture.value as? String, changed)
+        enter(initial)
+        save.tap()
+        XCTAssertTrue(aperture.waitForNonExistence(timeout: 15))
+    }
+
+    @MainActor
     func testSettingsMeasuresAndClearsPreviewCache() throws {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--reset-demo"]; app.launchEnvironment["PHOTONS_LANGUAGE"] = "en"; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft

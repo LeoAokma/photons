@@ -170,10 +170,25 @@ public struct LCCProfileStore {
         return profile
     }
     @discardableResult public func save(_ profile:LCCLensProfile) throws -> URL {
-        let data=try LCCProfileCodec.encode(profile)
         Self.writeLock.lock(); defer { Self.writeLock.unlock() }
-        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
-        let target=url(for:profile.id);try data.write(to:target,options:.atomic);return target
+        return try write(profile)
+    }
+    /// Apply only the fields the editor changed to the latest version of the calibration.
+    public func updateMetadata(of original: LCCLensProfile, name: String, aperture: Double?, notes: String) throws -> LCCLensProfile {
+        Self.writeLock.lock(); defer { Self.writeLock.unlock() }
+        var current = try load(original.id)
+        if name != original.name { current.name = name }
+        if aperture != original.aperture { current.aperture = aperture }
+        if notes != original.notes { current.notes = notes }
+        try write(current)
+        return current
+    }
+    @discardableResult private func write(_ profile: LCCLensProfile) throws -> URL {
+        let data = try LCCProfileCodec.encode(profile)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let target = url(for: profile.id)
+        try data.write(to: target, options: .atomic)
+        return target
     }
     /// Identity belongs to a calibration, not to its lens/back name or capture body.
     /// Keep an imported revision alongside the local one without changing archived references.
