@@ -34,6 +34,12 @@ final class LCCProfileTests:XCTestCase {
         let store=LCCProfileStore(directory:dir);try store.installBundledProfile()
         let p=try store.load(LCCLensProfile.builtInID)
         XCTAssertEqual(p.captures(for:.landscape).count,36);XCTAssertEqual(p.captures(for:.portraitLeft).count,9)
+        XCTAssertEqual(p.aperture, 11)
+        XCTAssertTrue(p.notes.isEmpty)
+        let second = try store.load(LCCEndStopCalibration.lens80ID)
+        XCTAssertEqual(second.aperture, 11)
+        XCTAssertEqual(second.captures.count, 6)
+        XCTAssertTrue(store.catalog().profiles.allSatisfy { $0.aperture == 11 })
         let summary=LCCProfileSummary(p)
         XCTAssertEqual(summary.match(camera:"CFV 100C",exifOrientation:8,sensor:.init(width:32.9,height:43.8,source:""))?.orientation,.portraitLeft)
         XCTAssertNil(summary.match(camera:"CFV 100C",exifOrientation:6,sensor:.init(width:32.9,height:43.8,source:"")))
@@ -54,6 +60,29 @@ final class LCCProfileTests:XCTestCase {
         XCTAssertEqual(try Data(contentsOf:url),before)
         XCTAssertEqual(try store.load(profile.id).name,"我的测量")
     }
+    func testUpgradingPreviouslyShippedProfilesChangesOnlySampleMetadata() throws {
+        guard let path = ProcessInfo.processInfo.environment["PHOTONS_PREVIOUS_LCC_BUNDLE"] else {
+            throw XCTSkip("Set PHOTONS_PREVIOUS_LCC_BUNDLE to a previous Profiles resource directory")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = LCCProfileStore(directory: root)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let files = try FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: path), includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "photonslcc" }
+        XCTAssertFalse(files.isEmpty)
+        for file in files {
+            var expected = try LCCProfileCodec.decode(Data(contentsOf: file))
+            try FileManager.default.copyItem(at: file, to: store.url(for: expected.id))
+            expected.aperture = 11
+            if expected.id == LCCLensProfile.builtInID { expected.notes = "" }
+            try store.installBundledProfile()
+            XCTAssertEqual(try store.load(expected.id), expected)
+            try FileManager.default.removeItem(at: root)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        }
+    }
+
     func testLegacyEndStopsOnlyRelocateMarkedCapturesOnce() throws {
         for id in [LCCLensProfile.builtInID, LCCEndStopCalibration.lens80ID] {
             var original = sample()

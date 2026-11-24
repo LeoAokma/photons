@@ -100,6 +100,15 @@ public struct LCCProfileCatalog {
     public var issues: [String]
 }
 public struct LCCProfileStore {
+    private static let writeLock = NSLock()
+    // Exact file revisions distributed before both samples had editable f/11 metadata.
+    // The size check avoids reading an entire calibration on each catalog refresh.
+    private static let supersededSamples = [
+        42_229_536: "496fb9c3a0d19bee994b26ae0d64d76c35e1ff22aae945af2c1f0778310a50c2",
+        42_229_618: "d25fa4a33a1fc7fbd45849b29799362535b7abf80b3e1279411861dac509cd41",
+        3_702_535: "b99a41830f51423cde2fff5409c83b1e42bd3a1e6c2b488c76f7593ce344de27"
+    ]
+
     public let directory: URL
     public init(directory:URL? = nil) {
         self.directory=directory ?? FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0]
@@ -107,10 +116,17 @@ public struct LCCProfileStore {
     }
     public func url(for id:UUID)->URL { directory.appendingPathComponent(id.uuidString.lowercased()+".photonslcc") }
     public func installBundledProfile() throws {
+        Self.writeLock.lock(); defer { Self.writeLock.unlock() }
         let samples = [(LCCLensProfile.builtInID, "43xl-iiic-cfv100c"), (LCCEndStopCalibration.lens80ID, "80n-cfv100c")]
         for (id, name) in samples {
             let target = url(for: id)
-            guard !FileManager.default.fileExists(atPath: target.path) else { continue }
+            let installed = FileManager.default.fileExists(atPath: target.path)
+            if installed {
+                guard let size = try target.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+                      let previous = Self.supersededSamples[size] else { continue }
+                let data = try Data(contentsOf: target, options: .mappedIfSafe)
+                guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == previous else { continue }
+            }
             guard let source = Bundle.module.url(forResource: name, withExtension: "photonslcc", subdirectory: "Profiles") else {
                 throw PanoramaFailure(L10n.tr("a76334bd19b7"))
             }
@@ -120,6 +136,10 @@ public struct LCCProfileStore {
             let staged = directory.appendingPathComponent(UUID().uuidString + ".tmp")
             defer { try? FileManager.default.removeItem(at: staged) }
             try bytes.write(to: staged)
+            if installed {
+                _ = try FileManager.default.replaceItemAt(target, withItemAt: staged)
+                continue
+            }
             do { try FileManager.default.moveItem(at: staged, to: target) }
             catch CocoaError.fileWriteFileExists { continue }
         }
@@ -151,6 +171,7 @@ public struct LCCProfileStore {
     }
     @discardableResult public func save(_ profile:LCCLensProfile) throws -> URL {
         let data=try LCCProfileCodec.encode(profile)
+        Self.writeLock.lock(); defer { Self.writeLock.unlock() }
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         let target=url(for:profile.id);try data.write(to:target,options:.atomic);return target
     }
